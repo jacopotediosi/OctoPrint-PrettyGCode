@@ -1,22 +1,30 @@
+import type { NavigationModeKey } from './viewer'
+
 /** localStorage key holding the settings */
 const STORAGE_KEY = 'pg-settings'
 
 /** Plugin frontend settings, persisted in the browser */
 export class Settings {
-  /** Whether to use a dark background in the 3D view */
+  /** Navigation mode of the 3D view */
+  navigationMode: NavigationModeKey = 'prusaslicer'
+  /** Whether to use a dark theme */
   darkMode = false
   /** Whether to show a reflection of the print on the bed */
   showMirror = false
+  /** Whether to show gcode excluded from printing, greyed out */
+  showExcluded = true
   /** Whether to auto-orbit the camera when idle */
   orbitWhenIdle = false
   /** Whether to draw the lines with their real thickness */
   thickLines = true
-  /** Whether to highlight the topmost displayed layer */
-  highlightLayer = true
+  /** Shading intensity of the topmost displayed layer, in percent */
+  highlightIntensity = 30
   /** Whether to antialias the 3D view */
   antialias = true
-  /** Whether to show the nozzle model */
-  showNozzle = true
+  /** Transparency of the nozzle model, in percent */
+  nozzleTransparency = 0
+  /** Whether to reflect the scene on the nozzle model */
+  nozzleReflection = true
   /** Whether to show the temperature status bar */
   showStatusBar = true
 

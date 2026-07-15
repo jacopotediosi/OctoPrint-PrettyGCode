@@ -1,6 +1,24 @@
 /* === Variables === */
 :root {
-    --pg-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+    /* ---- Layout ---- */
+    --pg-margin-top: 20px;
+    --pg-margin-bottom: 20px;
+    --pg-margin-left: 20px;
+    --pg-margin-right: 20px;
+    --pg-slider-lane: 40px;
+    --pg-status-height: 24px;
+
+    /* ---- Windows ---- */
+    --pg-window-bg: rgba(250, 250, 250, 0.8);
+    --pg-window-text: #555;
+    --pg-window-radius: 4px;
+    --pg-window-header-height: 24px;
+
+    /* ---- Shadow ---- */
+    --pg-shadow-offset: 1px;
+    --pg-shadow-blur: 4px;
+    --pg-shadow-color: rgba(0, 0, 0, 0.2);
+    --pg-shadow: 0 var(--pg-shadow-offset) var(--pg-shadow-blur) var(--pg-shadow-color);
 }
 
 /* === Tab header === */
@@ -47,7 +65,8 @@
     z-index: 2000;
 }
 .pg-maximized .pg-status,
-.pg-maximized #pg-layer-slider-ui {
+.pg-maximized #pg-layer-slider-ui,
+.pg-maximized .pg-layer-step-button {
     z-index: 2001;
 }
 .pg-maximized {
@@ -57,11 +76,11 @@ html:has(.page-container.pg-maximized) {
     overflow: hidden;
 }
 /* Keep OctoPrint modals above the maximized plugin */
-html:has(.page-container.pg-maximized) .modal {
-    z-index: 2101;
+html:has(.page-container.pg-maximized) .modal-scrollable {
+    z-index: 2101 !important;
 }
 html:has(.page-container.pg-maximized) .modal-backdrop {
-    z-index: 2100;
+    z-index: 2100 !important;
 }
 
 /* === Toggle buttons === */
@@ -77,13 +96,15 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-maximized .pg-maximized-only {
     display: unset;
 }
-.pg-toggle-fullscreen { top: 20px; right: 60px; }
-.pg-toggle-maximized { top: 20px; right: 95px; }
-.pg-toggle-settings { top: 20px; right: 130px; }
-.pg-toggle-state { top: 20px; left: 20px; }
-.pg-toggle-files { top: 20px; left: 95px; }
-.pg-toggle-webcam { bottom: 20px; right: 50px; }
-.pg-toggle-dashboard { left: 20px; bottom: 20px; }
+.pg-toggle-fullscreen { top: var(--pg-margin-top); right: calc(var(--pg-margin-right) + var(--pg-slider-lane)); }
+.pg-toggle-maximized { top: var(--pg-margin-top); right: 95px; }
+.pg-toggle-settings { top: var(--pg-margin-top); right: 130px; }
+.pg-toggle-state { top: var(--pg-margin-top); left: var(--pg-margin-left); }
+.pg-toggle-files { top: var(--pg-margin-top); left: 55px; }
+.pg-reset-view { top: var(--pg-margin-top); left: var(--pg-margin-left); }
+.pg-maximized .pg-reset-view { left: 90px; }
+.pg-toggle-webcam { bottom: var(--pg-margin-bottom); right: calc(var(--pg-margin-right) + var(--pg-slider-lane)); }
+.pg-toggle-dashboard { left: var(--pg-margin-left); bottom: var(--pg-margin-bottom); }
 
 /* === Status bar === */
 .pg-status {
@@ -92,82 +113,148 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     top: 0px;
     left: 0px;
     width: 100%;
-    font-size: large;
+    height: var(--pg-status-height);
+    line-height: var(--pg-status-height);
+    font-size: calc(var(--pg-status-height) * 0.7);
     text-align: center;
     background: #ffffff50;
 }
+:root:has(.pg-status:not(.pg-hidden)) {
+    --pg-margin-top: calc(var(--pg-status-height) + 10px);
+}
 
 /* === Overlay windows === */
-.pg-maximized #state_wrapper {
-    top: 20px;
-    left: 20px;
+.pg-maximized #state_wrapper,
+.pg-maximized #files_wrapper {
+    top: var(--pg-margin-top);
+    left: var(--pg-margin-left);
     width: 300px;
+    padding-top: var(--pg-window-header-height);
     position: absolute;
     box-shadow: var(--pg-shadow);
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--pg-window-bg);
     z-index: 2005;
 }
 .pg-maximized #files_wrapper {
-    left: 95px;
-    top: 20px;
     max-width: 80%;
-    width: 300px;
-    position: absolute;
-    box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.70);
-    background: rgba(204, 204, 204, 0.9);
-    z-index: 2006;
 }
+.pg-maximized #state_wrapper .accordion-toggle,
+.pg-maximized #files_wrapper .accordion-toggle {
+    display: none;
+}
+.pg-maximized #state_wrapper .accordion-body,
+.pg-maximized #files_wrapper .accordion-body {
+    height: auto !important;
+}
+.pg-maximized #state_wrapper .accordion-heading,
+.pg-maximized #files_wrapper .accordion-heading {
+    display: flow-root;
+}
+.pg-maximized #state_wrapper .accordion-heading-button > a,
+.pg-maximized #files_wrapper .accordion-heading-button > a {
+    color: var(--pg-window-text);
+}
+.pg-maximized #state_wrapper::after,
+.pg-maximized #files_wrapper::after,
+#pg-view-settings::after {
+    position: absolute;
+    top: 0;
+    line-height: var(--pg-window-header-height);
+    font-weight: bold;
+    color: var(--pg-window-text);
+    pointer-events: none;
+}
+.pg-maximized #state_wrapper::after { content: "State"; right: 15px; }
+.pg-maximized #files_wrapper::after { content: "Files"; right: 15px; }
+#pg-view-settings::after { content: "Settings"; left: 15px; }
 /* View Settings (lil-gui host) */
 #pg-view-settings {
     position: absolute;
     right: 130px;
-    top: 20px;
+    top: var(--pg-margin-top);
+    padding-top: var(--pg-window-header-height);
     box-shadow: var(--pg-shadow);
-    background: rgba(255, 255, 255, 1.0);
-    opacity: 0.8;
+    background: var(--pg-window-bg);
+    border-radius: var(--pg-window-radius);
+    overflow: hidden;
 }
 .pg-maximized #pg-view-settings {
-    z-index: 2004;
+    z-index: 2007;
 }
 #pg-view-settings .lil-gui {
-    --name-width: 62%;
-    --background-color: #fafafa;
-    --text-color: #555;
-    --title-background-color: #e8e8e8;
-    --title-text-color: #555;
-    --widget-color: #e9e9e9;
-    --hover-color: #eee;
-    --focus-color: #ddd;
+    --font-size: 14px;
+    --width: 300px;
+    --name-width: 45%;
+    --background-color: transparent;
+    --text-color: var(--pg-window-text);
+    --title-background-color: rgba(0, 0, 0, 0.07);
+    --title-text-color: var(--pg-window-text);
+    --widget-color: rgba(0, 0, 0, 0.07);
+    --hover-color: rgba(0, 0, 0, 0.05);
+    --focus-color: rgba(0, 0, 0, 0.12);
+}
+#pg-view-settings .lil-root > .lil-title {
+    display: none;
+}
+#pg-view-settings .lil-controller.lil-option {
+    position: relative;
+}
+#pg-view-settings .lil-controller.lil-option .lil-widget {
+    position: static;
+}
+#pg-view-settings .lil-controller.lil-option select {
+    left: 0;
+}
+#pg-view-settings .lil-controller.lil-number input {
+    height: var(--widget-height);
+    margin-bottom: 0;
+    border: 0;
+    border-radius: var(--widget-border-radius);
+    background: var(--widget-color);
+    box-shadow: none;
+}
+#pg-view-settings .lil-controller.lil-number input:hover {
+    background: var(--hover-color);
+}
+#pg-view-settings .lil-controller.lil-number input:active,
+#pg-view-settings .lil-controller.lil-number input:focus {
+    background: var(--focus-color);
 }
 /* Bottom overlays (webcam & dashboard) commons */
 .pg-maximized #pg-webcam,
 .pg-maximized #tab_plugin_dashboard {
     display: block;
     position: absolute;
-    bottom: 20px;
+    bottom: var(--pg-margin-bottom);
     box-shadow: var(--pg-shadow);
+    background: var(--pg-window-bg);
+    border-radius: var(--pg-window-radius);
 }
 /* Webcam overlay */
 #pg-webcam {
     display: none;
 }
 .pg-maximized #pg-webcam {
-    right: 50px;
+    right: calc(var(--pg-margin-right) + var(--pg-slider-lane));
     z-index: 2005;
-    background: rgba(204, 204, 204, 0.9);
 }
 #pg-webcam #webcam_plugins_container {
     min-height: 0;
     margin-top: 0;
+    border-radius: var(--pg-window-radius);
 }
 /* Dashboard overlay */
 .pg-maximized #tab_plugin_dashboard {
-    left: 20px;
+    left: var(--pg-margin-left);
     z-index: 2004;
-    background: rgba(255, 255, 255, 0.2);
-    opacity: 0.8;
     transform: scale(var(--pg-dash-scale, 1));
     transform-origin: bottom left;
+    box-shadow: 0 calc(var(--pg-shadow-offset) / var(--pg-dash-scale, 1)) calc(var(--pg-shadow-blur) / var(--pg-dash-scale, 1)) var(--pg-shadow-color);
+    border-radius: calc(var(--pg-window-radius) / var(--pg-dash-scale, 1));
+}
+.pg-maximized #tab_plugin_dashboard #fullWindowIconLink,
+.pg-maximized #tab_plugin_dashboard #dashboard_fullScreenIcon {
+    display: none;
 }
 
 /* === Resize handles === */
@@ -205,12 +292,14 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 /* === Layer slider === */
 #pg-layer-slider-ui {
     position: absolute;
-    top: 5%;
-    right: 20px;
-    height: 90%;
+    top: calc(var(--pg-margin-top) + 40px);
+    right: var(--pg-margin-right);
+    bottom: calc(var(--pg-margin-bottom) + 40px);
+    height: auto;
 }
 #pg-layer-slider-ui .slider-track {
-    background: green;
+    background-clip: padding-box;
+    border-color: rgba(0, 0, 0, 0.3);
 }
 #pg-layer-slider-ui .slider-handle {
     left: 50%;
@@ -225,6 +314,90 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     line-height: 20px;
     text-align: center;
     white-space: nowrap;
+}
+.pg-layer-step-button {
+    position: absolute;
+    right: 16px;
+    width: 28px;
+    padding: 2px 0;
+    border-radius: 8px;
+    touch-action: manipulation;
+}
+#pg-layer-step-up-button {
+    top: var(--pg-margin-top);
+}
+#pg-layer-step-down-button {
+    bottom: var(--pg-margin-bottom);
+}
+
+/* === Dark mode === */
+.pg-dark {
+    --pg-window-bg: rgba(34, 34, 34, 0.85);
+    --pg-window-text: #ccc;
+    --pg-shadow-color: rgba(0, 0, 0, 0.6);
+}
+.pg-maximized.pg-dark {
+    color: #ddd;
+}
+.pg-dark .pg-status {
+    background: #ffffff20;
+    color: #e8e8e8;
+}
+.pg-dark .pg-toggle,
+.pg-dark .pg-layer-step-button {
+    color: #ddd;
+    text-shadow: none;
+    border: 1px solid #1a1a1a;
+    background-color: #333;
+    background-image: linear-gradient(to bottom, #3c3c3c, #2b2b2b);
+}
+.pg-dark .pg-toggle:hover,
+.pg-dark .pg-toggle:active,
+.pg-dark .pg-layer-step-button:hover,
+.pg-dark .pg-layer-step-button:active,
+.pg-dark .pg-layer-step-button[disabled] {
+    color: #ddd;
+    background-color: #2b2b2b;
+}
+.pg-dark #pg-layer-slider-ui .slider-track {
+    background-color: #333;
+    background-image: none;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+.pg-dark #pg-layer-slider-ui .slider-handle {
+    color: #ddd;
+    text-shadow: none;
+    border-color: #1a1a1a;
+    background-color: #333;
+    background-image: linear-gradient(to bottom, #3c3c3c, #2b2b2b);
+}
+.pg-dark #pg-layer-slider-ui.slider-disabled .slider-handle {
+    background-image: linear-gradient(to bottom, #555, #444);
+}
+.pg-dark #pg-view-settings .lil-gui {
+    --title-background-color: rgba(255, 255, 255, 0.08);
+    --widget-color: rgba(255, 255, 255, 0.1);
+    --hover-color: rgba(255, 255, 255, 0.15);
+    --focus-color: rgba(255, 255, 255, 0.22);
+}
+.pg-maximized.pg-dark #state_wrapper,
+.pg-maximized.pg-dark #files_wrapper {
+    border-color: #444;
+}
+.pg-maximized.pg-dark #state_wrapper hr {
+    border-top-color: #444;
+    border-bottom-color: transparent;
+}
+.pg-maximized.pg-dark #state_wrapper .progress,
+.pg-maximized.pg-dark #files_wrapper .progress {
+    background-color: rgba(255, 255, 255, 0.12);
+    background-image: none;
+}
+.pg-maximized.pg-dark #files .gcode_files .entry {
+    border-bottom-color: #444;
+}
+.pg-maximized.pg-dark #files .gcode_files .entry:hover {
+    background-color: rgba(255, 255, 255, 0.08);
 }
 
 /* === Misc === */

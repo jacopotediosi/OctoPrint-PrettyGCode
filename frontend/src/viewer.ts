@@ -1,7 +1,7 @@
 import * as THREE from './three-exports'
 import CameraControls from 'camera-controls'
 import { Vector2, Vector3, Vector4, Quaternion, Matrix4, Spherical, Box3, Sphere, Raycaster } from 'three'
-import type { PrettyGCodeApp } from './app'
+import type { Settings } from './settings'
 
 /**
  * Subset of three.js required by camera-controls.
@@ -14,69 +14,179 @@ const LIGHT_BACKGROUND = 0xd0d0d0
 /** Dark theme background color */
 const DARK_BACKGROUND = 0x000000
 
+/** Light theme bed grid center-line color */
+const LIGHT_GRID_CENTER = 0x000000
+/** Dark theme bed grid center-line color */
+const DARK_GRID_CENTER = 0xffffff
+
 /** Seconds the camera must sit idle before it starts auto-orbiting */
 const ORBIT_IDLE_DELAY_SECONDS = 5
 
+/** Zoom-out limit, in multiples of the largest bed or gcode dimension */
+const MAX_ZOOM_OUT_FACTOR = 5
+
+/** Slowest zoom speed, reached at the gcode surface */
+const MIN_ZOOM_SPEED = 0.5
+
+/** Polar angle of the default view, in radians from vertical */
+const DEFAULT_VIEW_POLAR_ANGLE = Math.PI / 4
+
+/** Mouse buttons usable in a navigation binding */
+type MouseButton = 'left' | 'middle' | 'right'
+/** Mouse button with an optional modifier key to hold */
+type MouseBinding = MouseButton | `${'shift' | 'ctrl'}+${MouseButton}`
+
+/** Mouse bindings of a navigation mode */
+interface NavigationMode {
+  /** Display name */
+  name: string
+  /** Bindings that rotate the camera around its target */
+  orbit: MouseBinding | MouseBinding[]
+  /** Bindings that pan the camera */
+  pan: MouseBinding | MouseBinding[]
+  /** Bindings that zoom by drag */
+  zoom?: MouseBinding | MouseBinding[]
+}
+
+/** Navigation modes mirroring popular slicers and CADs */
+export const NAVIGATION_MODES = {
+  prusaslicer: {
+    name: 'PrusaSlicer / Bambu Studio / OrcaSlicer / OpenSCAD',
+    orbit: 'left',
+    pan: ['right', 'middle']
+  },
+  cura: {
+    name: 'Cura / Tinkercad / Onshape',
+    orbit: ['right', 'ctrl+left'],
+    pan: ['middle', 'shift+right', 'ctrl+right']
+  },
+  fusion360: {
+    name: 'Fusion 360 / Inventor / AutoCAD',
+    orbit: 'shift+middle',
+    pan: 'middle'
+  },
+  blender: {
+    name: 'Blender / SketchUp / NX / Creo',
+    orbit: 'middle',
+    pan: 'shift+middle',
+    zoom: 'ctrl+middle'
+  },
+  solidworks: {
+    name: 'SOLIDWORKS',
+    orbit: 'middle',
+    pan: 'ctrl+middle',
+    zoom: 'shift+middle'
+  },
+  rhino: {
+    name: 'Rhinoceros',
+    orbit: 'right',
+    pan: 'shift+right',
+    zoom: 'ctrl+right'
+  }
+} satisfies Record<string, NavigationMode>
+
+/** Key identifying a navigation mode in NAVIGATION_MODES */
+export type NavigationModeKey = keyof typeof NAVIGATION_MODES
+
 /** URL of the nozzle 3D model */
 const NOZZLE_MODEL_URL = PLUGIN_BASEURL + 'prettygcode/static/js/models/ExtruderNozzle.obj'
+/** Nozzle color */
+const NOZZLE_COLOR = 0xba971b
+/** Brighter nozzle color compensating for the disabled reflection */
+const NOZZLE_UNREFLECTIVE_COLOR = 0xffd826
+/** Emissive lift applied to the unreflective nozzle color */
+const NOZZLE_UNREFLECTIVE_EMISSIVE = 0.36
 
 /** Planes clipping the gcode reflection when the camera is below the bed */
 const BELOW_BED_CLIP_PLANES = [new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)]
 /** Empty plane set, to disable clipping */
 const NO_CLIP_PLANES: THREE.Plane[] = []
 
+/** Print bed geometry */
+export interface BedVolume {
+  depth: number
+  height: number
+  origin: string
+  width: number
+}
+
+/** Per-frame print view outcome: whether the scene changed and the nozzle position to show */
+export interface PrintViewUpdate {
+  needRender: boolean
+  nozzlePosition: Vector3 | null
+}
+
 /** The plugin's 3D view: renders the bed, the gcode model and the nozzle */
 export class Viewer {
-  /** Owning application instance */
-  app: PrettyGCodeApp
+  /** Plugin frontend settings */
+  private readonly settings: Settings
+  /** Getter of the current print bed geometry */
+  private readonly getBedVolume: () => BedVolume
+  /** Callback advancing the print view each frame */
+  private readonly onFrame: (deltaSeconds: number) => PrintViewUpdate
 
   /** WebGL renderer */
-  renderer!: THREE.WebGLRenderer
+  private renderer!: THREE.WebGLRenderer
   /** Whether to render the next frame regardless of changes */
-  forceRender = true
+  private forceRender = true
   /** Timer measuring frame deltas */
-  timer!: THREE.Timer
+  private timer!: THREE.Timer
 
   /** The 3D scene */
   scene!: THREE.Scene
 
   /** Perspective camera */
-  camera!: THREE.PerspectiveCamera
+  private camera!: THREE.PerspectiveCamera
   /** Camera controls */
-  cameraControls!: CameraControls
+  private cameraControls!: CameraControls
   /** Seconds the camera has sat idle */
-  cameraIdleTime = 0
+  private cameraIdleTime = 0
+  /** Bounds of the displayed gcode */
+  private readonly gcodeBounds = new THREE.Box3()
+
+  /** The active navigation mode */
+  private navigationMode: NavigationMode = NAVIGATION_MODES.prusaslicer
+  /** Modifier key currently held down */
+  private navigationModifier: 'shift' | 'ctrl' | null = null
 
   /** Camera rendering the metallic reflections on the nozzle */
-  reflectionCamera!: THREE.CubeCamera
+  private nozzleReflectionCamera!: THREE.CubeCamera
 
   /** Light under the bed */
-  underBedLight!: THREE.PointLight
+  private underBedLight!: THREE.PointLight
   /** Light following the camera */
-  cameraLight!: THREE.PointLight
+  private cameraLight!: THREE.PointLight
 
   /** Nozzle model, once loaded */
-  nozzleModel: THREE.Group | null = null
+  private nozzleModel: THREE.Group | null = null
+  /** Material shared by the nozzle model meshes, once loaded */
+  private nozzleMaterial: THREE.MeshStandardMaterial | null = null
+  /** Offset from the nozzle position to the nozzle model center */
+  private readonly nozzleCenterOffset = new THREE.Vector3()
 
   /**
    * Planes bounding the gcode reflection to the bed surface, each through the camera and a bed
    * edge, so a reflected point shows only where the line of sight crosses the bed; updated each frame
    */
-  mirrorBoundsPlanes = [new THREE.Plane(), new THREE.Plane(), new THREE.Plane(), new THREE.Plane()]
+  readonly mirrorBoundsPlanes = [new THREE.Plane(), new THREE.Plane(), new THREE.Plane(), new THREE.Plane()]
 
   /* ---- Setup ---- */
 
   /**
-   * @param app - Owning application instance
+   * @param settings - Plugin frontend settings
+   * @param getBedVolume - Getter of the current print bed geometry
+   * @param onFrame - Callback advancing the print view each frame, run before rendering
    */
-  constructor (app: PrettyGCodeApp) {
-    this.app = app
+  constructor (settings: Settings, getBedVolume: () => BedVolume, onFrame: (deltaSeconds: number) => PrintViewUpdate) {
+    this.settings = settings
+    this.getBedVolume = getBedVolume
+    this.onFrame = onFrame
   }
 
   /** Sets up the 3D view and starts its render loop */
   init () {
-    const settings = this.app.settings
-    const bedVolume = this.app.bedVolume
+    const settings = this.settings
+    const bedVolume = this.getBedVolume()
     const canvas = document.getElementById('pg-canvas') as HTMLCanvasElement
 
     // Renderer
@@ -92,7 +202,13 @@ export class Viewer {
     this.cameraControls.dollyToCursor = true
     this.cameraControls.infinityDolly = true
     this.cameraControls.minDistance = 10
-    this.resetCameraTarget()
+    this.applyNavigationMode(settings.navigationMode)
+    this.applyDefaultView()
+
+    // Watch navigation modifiers
+    window.addEventListener('keydown', (event) => this.updateNavigationModifier(event))
+    window.addEventListener('keyup', (event) => this.updateNavigationModifier(event))
+    window.addEventListener('blur', () => this.updateNavigationModifier(null))
 
     // Scene
     this.scene = new THREE.Scene()
@@ -114,9 +230,8 @@ export class Viewer {
     this.scene.add(this.cameraLight)
 
     // Reflection camera
-    this.reflectionCamera = new THREE.CubeCamera(1, 100000, new THREE.WebGLCubeRenderTarget(128))
-    this.reflectionCamera.position.set(bedVolume.width / 2, bedVolume.depth / 2, 10)
-    this.scene.add(this.reflectionCamera)
+    this.nozzleReflectionCamera = new THREE.CubeCamera(1, 100000, new THREE.WebGLCubeRenderTarget(128))
+    this.scene.add(this.nozzleReflectionCamera)
 
     this.timer = new THREE.Timer()
     this.animate()
@@ -127,7 +242,7 @@ export class Viewer {
    * @param canvas - Canvas to render into
    * @param antialias - True to enable antialiasing
    */
-  createRenderer (canvas: HTMLCanvasElement, antialias: boolean) {
+  private createRenderer (canvas: HTMLCanvasElement, antialias: boolean) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias, logarithmicDepthBuffer: true })
     this.renderer.setPixelRatio(window.devicePixelRatio)
     this.renderer.localClippingEnabled = true // Needed for the gcode reflection on the bed surface
@@ -142,13 +257,23 @@ export class Viewer {
       const material = new THREE.MeshStandardMaterial({
         metalness: 1,
         roughness: 0.5,
-        envMap: this.reflectionCamera.renderTarget.texture,
-        color: 0xba971b
+        envMap: this.nozzleReflectionCamera.renderTarget.texture,
+        color: NOZZLE_COLOR
       })
-      obj.children.forEach((child) => {
-        if (child instanceof THREE.Mesh) child.material = material
+      // Depth-only twins drawn first keep the transparency uniform on the outer surface
+      const depthMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, transparent: true })
+      obj.children.slice().forEach((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.material = material
+          child.renderOrder = 2
+          const twin = new THREE.Mesh(child.geometry, depthMaterial)
+          twin.renderOrder = 1
+          obj.add(twin)
+        }
       })
       this.nozzleModel = obj
+      this.nozzleMaterial = material
+      new THREE.Box3().setFromObject(obj).getCenter(this.nozzleCenterOffset).sub(obj.position)
       this.scene.add(obj)
       this.requestRender()
     })
@@ -157,9 +282,8 @@ export class Viewer {
   /* ---- Render loop ---- */
 
   /** Renders a frame when needed and schedules the next one */
-  animate () {
-    const app = this.app
-    const settings = app.settings
+  private animate () {
+    const settings = this.settings
 
     this.timer.update()
     const deltaSeconds = this.timer.getDelta()
@@ -175,11 +299,21 @@ export class Viewer {
       return
     }
 
-    // Rebuild the nozzle reflection
-    if (needRender) this.reflectionCamera.update(this.renderer, this.scene)
+    // Toggle the nozzle reflection to match the setting
+    const envMap = settings.nozzleReflection ? this.nozzleReflectionCamera.renderTarget.texture : null
+    if (this.nozzleMaterial && this.nozzleMaterial.envMap !== envMap) {
+      this.nozzleMaterial.envMap = envMap
+      this.nozzleMaterial.metalness = envMap ? 1 : 0
+      this.nozzleMaterial.roughness = envMap ? 0.5 : 1
+      this.nozzleMaterial.color.setHex(envMap ? NOZZLE_COLOR : NOZZLE_UNREFLECTIVE_COLOR)
+      this.nozzleMaterial.emissive.setHex(envMap ? 0x000000 : NOZZLE_UNREFLECTIVE_COLOR)
+      this.nozzleMaterial.emissiveIntensity = NOZZLE_UNREFLECTIVE_EMISSIVE
+      this.nozzleMaterial.needsUpdate = true
+      needRender = true
+    }
 
     // Update and get the print view
-    const printView = app.updatePrintView(deltaSeconds)
+    const printView = this.onFrame(deltaSeconds)
     if (printView.needRender) needRender = true
 
     // Update nozzle model position
@@ -192,10 +326,37 @@ export class Viewer {
       }
     }
 
-    // Show or hide the nozzle to match the setting
-    if (this.nozzleModel && this.nozzleModel.visible !== settings.showNozzle) {
-      this.nozzleModel.visible = settings.showNozzle
+    // Fade the nozzle to match the transparency setting
+    const nozzleOpacity = 1 - settings.nozzleTransparency / 100
+    if (this.nozzleModel && this.nozzleMaterial && this.nozzleMaterial.opacity !== nozzleOpacity) {
+      this.nozzleMaterial.opacity = nozzleOpacity
+      this.nozzleMaterial.transparent = nozzleOpacity < 1
+      this.nozzleMaterial.needsUpdate = true
+      this.nozzleModel.visible = nozzleOpacity > 0
       needRender = true
+    }
+
+    // Rebuild the nozzle reflection, capturing the scene from the nozzle center with the nozzle hidden
+    if (needRender && settings.nozzleReflection && this.nozzleModel) {
+      const nozzleVisible = this.nozzleModel.visible
+      this.nozzleModel.visible = false
+      this.nozzleReflectionCamera.position.copy(this.nozzleModel.position).add(this.nozzleCenterOffset)
+      this.nozzleReflectionCamera.update(this.renderer, this.scene)
+      this.nozzleModel.visible = nozzleVisible
+    }
+
+    // Cap any pending dolly at the zoom-out limit
+    if (this.cameraControls.getSpherical(new Spherical()).radius > this.cameraControls.maxDistance) {
+      this.cameraControls.dollyTo(this.cameraControls.maxDistance, true)
+    }
+
+    // Slow the zoom near the gcode
+    if (!this.gcodeBounds.isEmpty()) {
+      const position = this.cameraControls.getPosition(new Vector3())
+      const size = this.gcodeBounds.getSize(new Vector3())
+      const gcodeSpan = Math.max(1, size.x, size.y, size.z)
+      const gcodeDistance = this.gcodeBounds.distanceToPoint(position)
+      this.cameraControls.dollySpeed = MIN_ZOOM_SPEED + (1 - MIN_ZOOM_SPEED) * Math.min(1, gcodeDistance / gcodeSpan)
     }
 
     // Auto-orbit once the camera has sat idle a while
@@ -237,7 +398,7 @@ export class Viewer {
    * Matches the rendering size to the canvas display size
    * @returns True if the size changed
    */
-  resizeCanvasToDisplaySize () {
+  private resizeCanvasToDisplaySize () {
     const canvas = this.renderer.domElement
     const width = canvas.clientWidth
     const height = canvas.clientHeight
@@ -256,11 +417,11 @@ export class Viewer {
 
   /* ---- Scene and camera ---- */
 
-  /** (Re)builds the bed plane and grid to match the current bed geometry */
+  /** (Re)builds the bed plane and grid and refits the camera limits to the current bed geometry */
   updateBedMesh () {
     if (!this.scene) return
 
-    const bedVolume = this.app.bedVolume
+    const bedVolume = this.getBedVolume()
 
     // Drop the previous bed before rebuilding it at the current size
     for (const name of ['plane', 'grid']) {
@@ -281,13 +442,37 @@ export class Viewer {
     this.scene.add(plane)
 
     // Grid lines, rotated from three's default XZ plane into the scene's z-up XY plane
-    const grid = new THREE.GridHelper(bedVolume.width, bedVolume.width / 10, 0x000000, 0x888888)
+    const grid = new THREE.GridHelper(bedVolume.width, bedVolume.width / 10, this.settings.darkMode ? DARK_GRID_CENTER : LIGHT_GRID_CENTER, 0x888888)
     grid.name = 'grid'
     grid.position.set(centerX, centerY, 0)
     grid.material.transparent = true
     grid.material.opacity = 0.6
     grid.quaternion.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0))
     this.scene.add(grid)
+
+    // Update camera limits
+    this.updateCameraLimits()
+  }
+
+  /** (Re)fits the camera limits to the current bed and gcode geometry */
+  private updateCameraLimits () {
+    const bedVolume = this.getBedVolume()
+    const gcodeSize = this.gcodeBounds.getSize(new Vector3())
+    const maxSceneDimension = Math.max(100, bedVolume.width, bedVolume.depth, bedVolume.height, gcodeSize.x, gcodeSize.y, gcodeSize.z)
+    const isLowerleft = bedVolume.origin === 'lowerleft'
+    const centerX = isLowerleft ? bedVolume.width / 2 : 0
+    const centerY = isLowerleft ? bedVolume.depth / 2 : 0
+
+    // Cap the zoom-out
+    this.cameraControls.maxDistance = MAX_ZOOM_OUT_FACTOR * maxSceneDimension
+    this.cameraControls.setBoundary(new Box3(
+      new Vector3(centerX - 2 * maxSceneDimension, centerY - 2 * maxSceneDimension, -2 * maxSceneDimension),
+      new Vector3(centerX + 2 * maxSceneDimension, centerY + 2 * maxSceneDimension, 2 * maxSceneDimension)
+    ))
+
+    // Keep the far plane past the zoom-out limit
+    this.camera.far = this.cameraControls.maxDistance * 1.2
+    this.camera.updateProjectionMatrix()
   }
 
   /**
@@ -297,7 +482,7 @@ export class Viewer {
   resetCameraTarget (enableTransition = false) {
     if (!this.cameraControls) return
 
-    const bedVolume = this.app.bedVolume
+    const bedVolume = this.getBedVolume()
     const lowerleft = bedVolume.origin === 'lowerleft'
 
     // Aim at the bed center
@@ -308,21 +493,42 @@ export class Viewer {
   }
 
   /**
+   * Moves the camera to the default view
+   * @param enableTransition - True to animate the move
+   * @param footprint - Print footprint to frame, the whole bed when omitted
+   */
+  applyDefaultView (enableTransition = false, footprint?: number) {
+    const bedVolume = this.getBedVolume()
+
+    // Re-center on the bed first
+    this.resetCameraTarget(enableTransition)
+
+    // Return to the elevated front view
+    this.cameraControls.normalizeRotations()
+    this.cameraControls.rotateTo(0, DEFAULT_VIEW_POLAR_ANGLE, enableTransition)
+
+    // Pull back to roughly the framed footprint, with a floor for tiny models
+    const distance = footprint ?? Math.max(bedVolume.width, bedVolume.depth)
+    this.cameraControls.dollyTo(Math.max(40, distance), enableTransition)
+  }
+
+  /**
    * Adjusts the camera to show the given bounds
    * @param bounds - Box to frame, in scene coordinates
    */
   frameBounds (bounds: THREE.Box3) {
-    // Re-center on the bed first
-    this.resetCameraTarget(true)
+    // Update gcode boundaries and camera limits
+    this.gcodeBounds.copy(bounds)
+    this.updateCameraLimits()
 
-    // Pull back to roughly the print's footprint, with a floor for tiny models
+    // Frame the print's footprint from the default view
     const size = bounds.getSize(new THREE.Vector3())
-    this.cameraControls.dollyTo(Math.max(40, size.x, size.y), true)
+    this.applyDefaultView(true, Math.max(size.x, size.y))
   }
 
   /** (Re)computes the planes that clip the bed reflection to the bed surface */
-  updateMirrorBoundsPlanes () {
-    const bedVolume = this.app.bedVolume
+  private updateMirrorBoundsPlanes () {
+    const bedVolume = this.getBedVolume()
     const lowerleft = bedVolume.origin === 'lowerleft'
     const xMin = lowerleft ? 0 : -bedVolume.width / 2
     const xMax = lowerleft ? bedVolume.width : bedVolume.width / 2
@@ -356,6 +562,47 @@ export class Viewer {
   applyBackground (darkMode: boolean) {
     this.scene.background = new THREE.Color(darkMode ? DARK_BACKGROUND : LIGHT_BACKGROUND)
     this.requestRender()
+  }
+
+  /**
+   * Switches the mouse mappings to the given navigation mode
+   * @param mode - NAVIGATION_MODES key
+   */
+  applyNavigationMode (mode: NavigationModeKey) {
+    this.navigationMode = NAVIGATION_MODES[mode] ?? NAVIGATION_MODES.prusaslicer
+    this.applyMouseBindings()
+  }
+
+  /**
+   * (Re)applies the mouse bindings for the held modifier key
+   * @param event - Event carrying the modifier key state, or null when the window loses focus
+   */
+  private updateNavigationModifier (event: KeyboardEvent | null) {
+    const modifier = event?.shiftKey ? 'shift' : event?.ctrlKey ? 'ctrl' : null
+    if (modifier !== this.navigationModifier) {
+      this.navigationModifier = modifier
+      this.applyMouseBindings()
+    }
+  }
+
+  /** Binds each mouse button to its action in the active navigation mode */
+  private applyMouseBindings () {
+    const actions: Array<[MouseBinding | MouseBinding[] | undefined, number]> = [
+      [this.navigationMode.orbit, CameraControls.ACTION.ROTATE],
+      [this.navigationMode.pan, CameraControls.ACTION.TRUCK],
+      [this.navigationMode.zoom, CameraControls.ACTION.DOLLY]
+    ]
+
+    const buttons: Record<MouseButton, number> = { left: CameraControls.ACTION.NONE, middle: CameraControls.ACTION.NONE, right: CameraControls.ACTION.NONE }
+    const modifierButtons: Partial<typeof buttons> = {}
+    for (const [bindings, action] of actions) {
+      for (const binding of [bindings ?? []].flat()) {
+        const [button, modifier] = binding.split('+').reverse() as [MouseButton, string?]
+        if (modifier === undefined) buttons[button] = action
+        else if (modifier === this.navigationModifier) modifierButtons[button] = action
+      }
+    }
+    Object.assign(this.cameraControls.mouseButtons, buttons, modifierButtons)
   }
 
   /**
