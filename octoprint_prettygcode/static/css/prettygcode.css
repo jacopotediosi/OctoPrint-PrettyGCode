@@ -6,6 +6,7 @@
     --pg-margin-left: 20px;
     --pg-margin-right: 20px;
     --pg-slider-lane: 40px;
+    --pg-stack-gap: 10px;
     --pg-status-height: 24px;
 
     /* ---- Toggle buttons ---- */
@@ -111,7 +112,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-top-right-buttons { top: var(--pg-margin-top); right: calc(var(--pg-margin-right) + var(--pg-slider-lane)); }
 .pg-camera-buttons { top: var(--pg-margin-top); left: var(--pg-margin-left); }
 .pg-maximized .pg-camera-buttons {
-    top: calc(var(--pg-margin-top) + var(--pg-toggle-height) + 10px);
+    top: calc(var(--pg-margin-top) + var(--pg-toggle-height) + var(--pg-stack-gap));
     left: auto;
     right: calc(var(--pg-margin-right) + var(--pg-slider-lane));
     flex-direction: column;
@@ -133,7 +134,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     background: #ffffff50;
 }
 :root:has(.pg-status:not(.pg-hidden)) {
-    --pg-margin-top: calc(var(--pg-status-height) + 10px);
+    --pg-margin-top: calc(var(--pg-status-height) + var(--pg-stack-gap));
 }
 
 /* === Overlay windows === */
@@ -142,8 +143,12 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     top: var(--pg-margin-top);
     left: var(--pg-margin-left);
     width: 300px;
+    max-height: calc(100vh - var(--pg-margin-top) - var(--pg-margin-bottom) - var(--pg-toggle-height) - var(--pg-stack-gap));
+    box-sizing: border-box;
     padding-top: var(--pg-window-header-height);
     position: absolute;
+    display: flex;
+    flex-direction: column;
     box-shadow: var(--pg-shadow);
     background: var(--pg-window-bg);
     z-index: 2005;
@@ -158,6 +163,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-maximized #state_wrapper .accordion-body,
 .pg-maximized #files_wrapper .accordion-body {
     height: auto !important;
+    overflow-y: auto !important;
 }
 .pg-maximized #state_wrapper .accordion-heading,
 .pg-maximized #files_wrapper .accordion-heading {
@@ -185,11 +191,21 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     position: absolute;
     right: 130px;
     top: var(--pg-margin-top);
+    max-height: calc(100% - var(--pg-margin-top) - var(--pg-margin-bottom) - var(--pg-toggle-height) - var(--pg-stack-gap));
+    box-sizing: border-box;
     padding-top: var(--pg-window-header-height);
+    display: flex;
+    flex-direction: column;
     box-shadow: var(--pg-shadow);
     background: var(--pg-window-bg);
     border-radius: var(--pg-window-radius);
     overflow: hidden;
+}
+#pg-view-settings > .lil-gui {
+    overflow-y: auto;
+}
+#pg-view-settings .lil-root > .lil-children {
+    overflow: visible;
 }
 .pg-maximized #pg-view-settings {
     z-index: 2007;
@@ -305,7 +321,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 /* === Layer slider === */
 #pg-layer-slider-ui {
     position: absolute;
-    top: calc(var(--pg-margin-top) + var(--pg-toggle-height) + 10px);
+    top: calc(var(--pg-margin-top) + var(--pg-toggle-height) + var(--pg-stack-gap));
     right: var(--pg-margin-right);
     bottom: calc(var(--pg-margin-bottom) + 40px);
     height: auto;
