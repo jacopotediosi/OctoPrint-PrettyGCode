@@ -31,6 +31,19 @@ const MIN_ZOOM_SPEED = 0.5
 /** Polar angle of the default view, in radians from vertical */
 const DEFAULT_VIEW_POLAR_ANGLE = Math.PI / 4
 
+/** Named camera view angles */
+export type ViewAngle = 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right'
+
+/** Azimuth and polar angles of the named views, in radians */
+const VIEW_ANGLES: Record<ViewAngle, [number, number]> = {
+  top: [0, 0],
+  bottom: [0, Math.PI],
+  front: [0, Math.PI / 2],
+  back: [Math.PI, Math.PI / 2],
+  left: [-Math.PI / 2, Math.PI / 2],
+  right: [Math.PI / 2, Math.PI / 2]
+}
+
 /** Height framed by the orthographic camera at zoom 1 */
 const ORTHOGRAPHIC_VIEW_HEIGHT_MM = 100
 
@@ -542,6 +555,17 @@ export class Viewer {
     const distance = Math.max(40, footprint ?? Math.max(bedVolume.width, bedVolume.depth))
     if (this.camera === this.perspectiveCamera) this.cameraControls.dollyTo(distance, enableTransition)
     else this.cameraControls.zoomTo(this.toOrthographicZoom(distance), enableTransition)
+  }
+
+  /**
+   * Rotates the camera to a named view angle
+   * @param view - View angle to rotate to
+   * @param enableTransition - True to animate the move
+   */
+  applyViewAngle (view: ViewAngle, enableTransition = false) {
+    const [azimuthAngle, polarAngle] = VIEW_ANGLES[view]
+    this.cameraControls.normalizeRotations()
+    this.cameraControls.rotateTo(azimuthAngle, polarAngle, enableTransition)
   }
 
   /**

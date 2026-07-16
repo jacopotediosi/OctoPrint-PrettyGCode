@@ -1,4 +1,5 @@
 import type { PrettyGCodeApp } from '../app'
+import type { ViewAngle } from '../viewer'
 
 /** Settings keys of the toggleable windows */
 type WindowKey = 'showState' | 'showFiles' | 'showWebcam' | 'showDashboard'
@@ -65,7 +66,9 @@ export function initToggleButtons (app: PrettyGCodeApp) {
 
   $('.pg-toggle-state').on('click', () => toggleWindow('showState', 'showFiles'))
   $('.pg-toggle-files').on('click', () => toggleWindow('showFiles', 'showState'))
+
   $('.pg-reset-view').on('click', () => app.resetView())
+  $('.pg-camera-buttons [data-view]').on('click', (event) => app.applyViewAngle(event.currentTarget.dataset.view as ViewAngle))
 
   $('.pg-toggle-settings').on('click', () => $('#pg-view-settings').toggleClass('pg-hidden'))
 

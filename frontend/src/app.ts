@@ -11,7 +11,7 @@ import { updateWebcamOverlay } from './ui/webcam'
 import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue } from './ui/layer-slider'
 import { initToggleButtons } from './ui/toggle-buttons'
 import { setStatusBarText, applyStatusBarVisibility } from './ui/status-bar'
-import type { BedVolume, PrintViewUpdate } from './viewer'
+import type { BedVolume, PrintViewUpdate, ViewAngle } from './viewer'
 import type { Vector3 } from 'three'
 
 /** Printer state reported by OctoPrint */
@@ -300,6 +300,14 @@ export class PrettyGCodeApp {
   resetView () {
     if (this.parsedGcode?.layers.length) this.viewer.frameBounds(this.parsedGcode.bounds)
     else this.viewer.applyDefaultView(true)
+  }
+
+  /**
+   * Rotates the camera to a named view angle
+   * @param view - View angle to rotate to
+   */
+  applyViewAngle (view: ViewAngle) {
+    this.viewer.applyViewAngle(view, true)
   }
 
   /** (Re)applies the navigation mode setting to the 3D view */
