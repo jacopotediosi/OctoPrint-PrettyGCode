@@ -90,12 +90,8 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 
 /* === Toggle buttons === */
 .pg-toggle {
-    position: absolute;
     width: var(--pg-toggle-width);
     height: var(--pg-toggle-height);
-}
-.pg-maximized .pg-toggle {
-    z-index: 2010;
 }
 .pg-maximized-only {
     display: none;
@@ -103,30 +99,25 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-maximized .pg-maximized-only {
     display: unset;
 }
-.pg-toggle-fullscreen { top: var(--pg-margin-top); right: calc(var(--pg-margin-right) + var(--pg-slider-lane)); }
-.pg-toggle-maximized { top: var(--pg-margin-top); right: 95px; }
-.pg-toggle-settings { top: var(--pg-margin-top); right: 130px; }
-.pg-toggle-state { top: var(--pg-margin-top); left: var(--pg-margin-left); }
-.pg-toggle-files { top: var(--pg-margin-top); left: 55px; }
-.pg-camera-buttons {
+.pg-buttons {
     position: absolute;
-    top: var(--pg-margin-top);
-    left: var(--pg-margin-left);
     display: flex;
     gap: var(--pg-buttons-gap);
 }
-.pg-camera-buttons .pg-toggle {
-    position: static;
+.pg-maximized .pg-buttons {
+    z-index: 2010;
 }
+.pg-top-left-buttons { top: var(--pg-margin-top); left: var(--pg-margin-left); }
+.pg-top-right-buttons { top: var(--pg-margin-top); right: calc(var(--pg-margin-right) + var(--pg-slider-lane)); }
+.pg-camera-buttons { top: var(--pg-margin-top); left: var(--pg-margin-left); }
 .pg-maximized .pg-camera-buttons {
     top: calc(var(--pg-margin-top) + var(--pg-toggle-height) + 10px);
     left: auto;
     right: calc(var(--pg-margin-right) + var(--pg-slider-lane));
     flex-direction: column;
-    z-index: 2010;
 }
-.pg-toggle-webcam { bottom: var(--pg-margin-bottom); right: calc(var(--pg-margin-right) + var(--pg-slider-lane)); }
-.pg-toggle-dashboard { left: var(--pg-margin-left); bottom: var(--pg-margin-bottom); }
+.pg-bottom-left-buttons { bottom: var(--pg-margin-bottom); left: var(--pg-margin-left); }
+.pg-bottom-right-buttons { bottom: var(--pg-margin-bottom); right: calc(var(--pg-margin-right) + var(--pg-slider-lane)); }
 
 /* === Status bar === */
 .pg-status {

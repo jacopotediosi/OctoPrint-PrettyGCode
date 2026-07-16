@@ -24,6 +24,15 @@ export function initToggleButtons (app: PrettyGCodeApp) {
     app.updateWindowStates()
   }
 
+  /* ---- Top left buttons ---- */
+
+  $('.pg-toggle-state').on('click', () => toggleWindow('showState', 'showFiles'))
+  $('.pg-toggle-files').on('click', () => toggleWindow('showFiles', 'showState'))
+
+  /* ---- Top right buttons ---- */
+
+  $('.pg-toggle-settings').on('click', () => $('#pg-view-settings').toggleClass('pg-hidden'))
+
   // Restore the maximized layout from the URL (bookmarked/embedded maximized view)
   if (new URLSearchParams(location.search).get('maximized')) $('.page-container').addClass('pg-maximized')
 
@@ -64,13 +73,12 @@ export function initToggleButtons (app: PrettyGCodeApp) {
     }
   })
 
-  $('.pg-toggle-state').on('click', () => toggleWindow('showState', 'showFiles'))
-  $('.pg-toggle-files').on('click', () => toggleWindow('showFiles', 'showState'))
+  /* ---- Camera buttons ---- */
 
   $('.pg-reset-view').on('click', () => app.resetView())
   $('.pg-camera-buttons [data-view]').on('click', (event) => app.applyViewAngle(event.currentTarget.dataset.view as ViewAngle))
 
-  $('.pg-toggle-settings').on('click', () => $('#pg-view-settings').toggleClass('pg-hidden'))
+  /* ---- Bottom buttons ---- */
 
   $('.pg-toggle-dashboard').on('click', () => toggleWindow('showDashboard'))
   $('.pg-toggle-webcam').on('click', () => toggleWindow('showWebcam'))
