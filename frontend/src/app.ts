@@ -115,6 +115,7 @@ export class PrettyGCodeApp {
         this.viewer.scene.add(this.exclusions.regionMarkersGroup)
         this.loadGcode(this.currentJobPath)
         this.fetchExclusions()
+        this.updateExclusionMarkersVisibility()
 
         // UI controls
         initSettingsPanel(this)
@@ -341,6 +342,17 @@ export class PrettyGCodeApp {
   /** Rebuilds the displayed gcode model to reflect the current settings */
   rebuildGcodeModel () {
     this.gcodeModel.rebuild()
+    this.viewer.requestRender()
+  }
+
+  /** (Re)applies the show bed setting to the 3D view */
+  updateBedVisibility () {
+    this.viewer.applyBedVisibility(this.settings.showBed)
+  }
+
+  /** (Re)applies the show exclusion markers setting to the 3D view */
+  updateExclusionMarkersVisibility () {
+    this.exclusions.regionMarkersGroup.visible = this.settings.showExclusionMarker
     this.viewer.requestRender()
   }
 

@@ -201,7 +201,7 @@ export class GCodeModel {
     this.linesGroup.add(line)
 
     // Build and add the part's line object to the mirror
-    if (this.settings.showMirror) {
+    if (this.settings.showBed && this.settings.showMirror) {
       const mirrorData = this.makeMirrorData(vertices, colors)
       const mirror = this.makeLine(mirrorData.vertices, mirrorData.colors, thickLines ? this.mirrorThickMaterial : this.mirrorThinMaterial)
       mirror.name = LAYER_PREFIX + layerNumber

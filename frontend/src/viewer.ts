@@ -406,8 +406,8 @@ export class Viewer {
     if (this.resizeCanvasToDisplaySize()) needRender = true
 
     // Keep the bed mirror clipped: refresh its bounds, and cull it when viewing from below the bed
-    if (needRender && settings.showMirror) this.updateMirrorBoundsPlanes()
-    this.renderer.clippingPlanes = (settings.showMirror && this.camera.position.z < 0) ? BELOW_BED_CLIP_PLANES : NO_CLIP_PLANES
+    if (needRender && settings.showBed && settings.showMirror) this.updateMirrorBoundsPlanes()
+    this.renderer.clippingPlanes = (settings.showBed && settings.showMirror && this.camera.position.z < 0) ? BELOW_BED_CLIP_PLANES : NO_CLIP_PLANES
 
     // Render only when something changed this frame
     if (needRender) this.renderer.render(this.scene, this.camera)
@@ -485,8 +485,23 @@ export class Viewer {
     grid.quaternion.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0))
     this.scene.add(grid)
 
+    // Apply the show bed setting
+    this.applyBedVisibility(this.settings.showBed)
+
     // Update camera limits
     this.updateCameraLimits()
+  }
+
+  /**
+   * Shows or hides the print bed
+   * @param visible - True to show the bed
+   */
+  applyBedVisibility (visible: boolean) {
+    for (const name of ['plane', 'grid']) {
+      const object = this.scene.getObjectByName(name)
+      if (object) object.visible = visible
+    }
+    this.requestRender()
   }
 
   /** (Re)fits the camera limits to the current bed and gcode geometry */

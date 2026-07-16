@@ -82,13 +82,6 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
 
   option(
     gcodeModelFolder,
-    'showMirror',
-    'Mirror',
-    'Show a reflection of the print on the bed.'
-  ).onFinishChange(() => app.rebuildGcodeModel())
-
-  option(
-    gcodeModelFolder,
     'showExcluded',
     'Excluded gcode',
     'Show gcode excluded by the Exclude Region and Cancel Object plugins, greyed out.'
@@ -107,6 +100,38 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
     'Nozzle reflection',
     'Reflect the surrounding scene on the nozzle 3D model.'
   )
+
+  /* ---- Bed ---- */
+
+  const bedFolder = gui.addFolder('Bed')
+
+  const bed = option(
+    bedFolder,
+    'showBed',
+    'Bed',
+    'Show the print bed.'
+  )
+
+  const mirror = option(
+    bedFolder,
+    'showMirror',
+    'Mirror',
+    'Show a reflection of the print on the bed.'
+  ).onFinishChange(() => app.rebuildGcodeModel())
+
+  option(
+    bedFolder,
+    'showExclusionMarker',
+    'Exclusion marker',
+    'Show the markers of the excluded regions.'
+  ).onFinishChange(() => app.updateExclusionMarkersVisibility())
+
+  bed.onFinishChange(() => {
+    app.updateBedVisibility()
+    app.rebuildGcodeModel()
+    mirror.enable(settings.showBed)
+  })
+  mirror.enable(settings.showBed)
 
   return gui
 }

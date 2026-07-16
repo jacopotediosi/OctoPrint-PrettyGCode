@@ -29,8 +29,6 @@ export class Settings {
   thickLines = true
   /** Shading intensity of the topmost displayed layer, in percent */
   highlightIntensity = 30
-  /** Whether to show a reflection of the print on the bed */
-  showMirror = false
   /** Whether to show gcode excluded from printing, greyed out */
   showExcluded = true
 
@@ -40,6 +38,15 @@ export class Settings {
   nozzleTransparency = 0
   /** Whether to reflect the scene on the nozzle model */
   nozzleReflection = true
+
+  /* ---- Bed ---- */
+
+  /** Whether to show the print bed */
+  showBed = true
+  /** Whether to show a reflection of the print on the bed */
+  showMirror = false
+  /** Whether to show the markers of the excluded regions */
+  showExclusionMarker = true
 
   /* ---- Top windows ---- */
 
