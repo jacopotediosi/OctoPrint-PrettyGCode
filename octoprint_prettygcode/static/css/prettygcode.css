@@ -25,6 +25,17 @@
     --pg-shadow-blur: 4px;
     --pg-shadow-color: rgba(0, 0, 0, 0.2);
     --pg-shadow: 0 var(--pg-shadow-offset) var(--pg-shadow-blur) var(--pg-shadow-color);
+
+    /* ---- Z-indexes ---- */
+    --pg-z-canvas: 2000;
+    --pg-z-layer-buttons: 2001;
+    --pg-z-dashboard: 2002;
+    --pg-z-webcam: 2003;
+    --pg-z-top-windows: 2004;
+    --pg-z-buttons: 2010;
+    --pg-z-resize-handles: 2020;
+    --pg-z-modals-backdrop: 2100;
+    --pg-z-modals: 2101;
 }
 
 /* === Tab header === */
@@ -68,12 +79,12 @@
 }
 .pg-maximized #pg-canvas {
     position: relative;
-    z-index: 2000;
+    z-index: var(--pg-z-canvas);
 }
 .pg-maximized .pg-status,
 .pg-maximized #pg-layer-slider-ui,
 .pg-maximized .pg-layer-step-button {
-    z-index: 2001;
+    z-index: var(--pg-z-layer-buttons);
 }
 .pg-maximized {
     color: black;
@@ -83,10 +94,10 @@ html:has(.page-container.pg-maximized) {
 }
 /* Keep OctoPrint modals above the maximized plugin */
 html:has(.page-container.pg-maximized) .modal-scrollable {
-    z-index: 2101 !important;
+    z-index: var(--pg-z-modals) !important;
 }
 html:has(.page-container.pg-maximized) .modal-backdrop {
-    z-index: 2100 !important;
+    z-index: var(--pg-z-modals-backdrop) !important;
 }
 
 /* === Toggle buttons === */
@@ -106,7 +117,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     gap: var(--pg-buttons-gap);
 }
 .pg-maximized .pg-buttons {
-    z-index: 2010;
+    z-index: var(--pg-z-buttons);
 }
 .pg-top-left-buttons { top: var(--pg-margin-top); left: var(--pg-margin-left); }
 .pg-top-right-buttons { top: var(--pg-margin-top); right: calc(var(--pg-margin-right) + var(--pg-slider-lane)); }
@@ -151,7 +162,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     flex-direction: column;
     box-shadow: var(--pg-shadow);
     background: var(--pg-window-bg);
-    z-index: 2005;
+    z-index: var(--pg-z-top-windows);
 }
 .pg-maximized #files_wrapper {
     max-width: 80%;
@@ -208,7 +219,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     overflow: visible;
 }
 .pg-maximized #pg-view-settings {
-    z-index: 2007;
+    z-index: var(--pg-z-top-windows);
 }
 #pg-view-settings .lil-gui {
     --font-size: 14px;
@@ -265,7 +276,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 }
 .pg-maximized #pg-webcam {
     right: calc(var(--pg-margin-right) + var(--pg-slider-lane));
-    z-index: 2005;
+    z-index: var(--pg-z-webcam);
 }
 #pg-webcam #webcam_plugins_container {
     min-height: 0;
@@ -275,7 +286,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 /* Dashboard overlay */
 .pg-maximized #tab_plugin_dashboard {
     left: var(--pg-margin-left);
-    z-index: 2004;
+    z-index: var(--pg-z-dashboard);
     transform: scale(var(--pg-dash-scale, 1));
     transform-origin: bottom left;
     box-shadow: 0 calc(var(--pg-shadow-offset) / var(--pg-dash-scale, 1)) calc(var(--pg-shadow-blur) / var(--pg-dash-scale, 1)) var(--pg-shadow-color);
@@ -291,7 +302,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     display: none;
     position: absolute;
     touch-action: none;
-    z-index: 2020;
+    z-index: var(--pg-z-resize-handles);
 }
 .pg-maximized .pg-resize-handle {
     display: block;
