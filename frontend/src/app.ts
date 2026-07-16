@@ -307,6 +307,11 @@ export class PrettyGCodeApp {
     this.viewer.applyNavigationMode(this.settings.navigationMode)
   }
 
+  /** (Re)applies the projection mode setting to the 3D view */
+  updateProjectionMode () {
+    this.viewer.applyProjectionMode(this.settings.projectionMode)
+  }
+
   /** (Re)applies the dark mode setting */
   updateDarkMode () {
     $('.page-container').toggleClass('pg-dark', this.settings.darkMode)

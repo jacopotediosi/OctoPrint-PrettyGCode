@@ -54,6 +54,10 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
   navigation.domElement.title = 'Set which mouse buttons rotate, pan and zoom the 3D view.'
   navigation.onFinishChange(() => app.updateNavigationMode())
 
+  const projection = cameraFolder.add(settings, 'projectionMode', { Perspective: 'perspective', Orthographic: 'orthographic' }).name('Projection mode')
+  projection.domElement.title = 'Set whether the 3D view is drawn with a perspective or an orthographic projection.'
+  projection.onFinishChange(() => app.updateProjectionMode())
+
   option(
     cameraFolder,
     'orbitWhenIdle',

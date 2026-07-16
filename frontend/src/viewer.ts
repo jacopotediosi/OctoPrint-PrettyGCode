@@ -31,6 +31,9 @@ const MIN_ZOOM_SPEED = 0.5
 /** Polar angle of the default view, in radians from vertical */
 const DEFAULT_VIEW_POLAR_ANGLE = Math.PI / 4
 
+/** Height framed by the orthographic camera at zoom 1 */
+const ORTHOGRAPHIC_VIEW_HEIGHT_MM = 100
+
 /** Mouse buttons usable in a navigation binding */
 type MouseButton = 'left' | 'middle' | 'right'
 /** Mouse button with an optional modifier key to hold */
@@ -88,6 +91,9 @@ export const NAVIGATION_MODES = {
 /** Key identifying a navigation mode in NAVIGATION_MODES */
 export type NavigationModeKey = keyof typeof NAVIGATION_MODES
 
+/** Projection mode of the 3D view */
+export type ProjectionMode = 'perspective' | 'orthographic'
+
 /** URL of the nozzle 3D model */
 const NOZZLE_MODEL_URL = PLUGIN_BASEURL + 'prettygcode/static/js/models/ExtruderNozzle.obj'
 /** Nozzle color */
@@ -136,7 +142,11 @@ export class Viewer {
   scene!: THREE.Scene
 
   /** Perspective camera */
-  private camera!: THREE.PerspectiveCamera
+  private perspectiveCamera!: THREE.PerspectiveCamera
+  /** Orthographic camera */
+  private orthographicCamera!: THREE.OrthographicCamera
+  /** The active camera */
+  private camera!: THREE.PerspectiveCamera | THREE.OrthographicCamera
   /** Camera controls */
   private cameraControls!: CameraControls
   /** Seconds the camera has sat idle */
@@ -165,8 +175,8 @@ export class Viewer {
   private readonly nozzleCenterOffset = new THREE.Vector3()
 
   /**
-   * Planes bounding the gcode reflection to the bed surface, each through the camera and a bed
-   * edge, so a reflected point shows only where the line of sight crosses the bed; updated each frame
+   * Planes clipping the gcode reflection to where the line of sight crosses the bed;
+   * updated each frame
    */
   readonly mirrorBoundsPlanes = [new THREE.Plane(), new THREE.Plane(), new THREE.Plane(), new THREE.Plane()]
 
@@ -194,9 +204,13 @@ export class Viewer {
     this.createRenderer(canvas, settings.antialias)
 
     // Camera and controls
-    this.camera = new THREE.PerspectiveCamera(70, 2, 1, 5000)
-    this.camera.up.set(0, 0, 1)
-    this.camera.position.set(bedVolume.width, 0, 50)
+    this.perspectiveCamera = new THREE.PerspectiveCamera(70, 2, 1, 5000)
+    this.orthographicCamera = new THREE.OrthographicCamera(-ORTHOGRAPHIC_VIEW_HEIGHT_MM, ORTHOGRAPHIC_VIEW_HEIGHT_MM, ORTHOGRAPHIC_VIEW_HEIGHT_MM / 2, -ORTHOGRAPHIC_VIEW_HEIGHT_MM / 2, 1, 5000)
+    this.camera = settings.projectionMode === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera
+    for (const camera of [this.perspectiveCamera, this.orthographicCamera]) {
+      camera.up.set(0, 0, 1)
+      camera.position.set(bedVolume.width, 0, 50)
+    }
     CameraControls.install({ THREE: CAMERA_CONTROLS_THREE })
     this.cameraControls = new CameraControls(this.camera, canvas)
     this.cameraControls.dollyToCursor = true
@@ -346,12 +360,12 @@ export class Viewer {
     }
 
     // Cap any pending dolly at the zoom-out limit
-    if (this.cameraControls.getSpherical(new Spherical()).radius > this.cameraControls.maxDistance) {
+    if (this.camera === this.perspectiveCamera && this.cameraControls.getSpherical(new Spherical()).radius > this.cameraControls.maxDistance) {
       this.cameraControls.dollyTo(this.cameraControls.maxDistance, true)
     }
 
     // Slow the zoom near the gcode
-    if (!this.gcodeBounds.isEmpty()) {
+    if (this.camera === this.perspectiveCamera && !this.gcodeBounds.isEmpty()) {
       const position = this.cameraControls.getPosition(new Vector3())
       const size = this.gcodeBounds.getSize(new Vector3())
       const gcodeSpan = Math.max(1, size.x, size.y, size.z)
@@ -399,6 +413,7 @@ export class Viewer {
    * @returns True if the size changed
    */
   private resizeCanvasToDisplaySize () {
+    // Get new canvas size
     const canvas = this.renderer.domElement
     const width = canvas.clientWidth
     const height = canvas.clientHeight
@@ -409,9 +424,16 @@ export class Viewer {
 
     // Resize canvas
     this.renderer.setSize(width, height, false)
-    this.camera.aspect = width / height
-    this.camera.updateProjectionMatrix()
+
+    // Refit cameras to the new aspect
+    const aspect = width / height
+    this.perspectiveCamera.aspect = aspect
+    this.perspectiveCamera.updateProjectionMatrix()
+    this.orthographicCamera.left = -ORTHOGRAPHIC_VIEW_HEIGHT_MM * aspect / 2
+    this.orthographicCamera.right = ORTHOGRAPHIC_VIEW_HEIGHT_MM * aspect / 2
+    this.orthographicCamera.updateProjectionMatrix()
     this.cameraControls.setViewport(0, 0, width, height)
+
     return true
   }
 
@@ -465,14 +487,23 @@ export class Viewer {
 
     // Cap the zoom-out
     this.cameraControls.maxDistance = MAX_ZOOM_OUT_FACTOR * maxSceneDimension
+    this.cameraControls.minZoom = this.toOrthographicZoom(this.cameraControls.maxDistance)
     this.cameraControls.setBoundary(new Box3(
       new Vector3(centerX - 2 * maxSceneDimension, centerY - 2 * maxSceneDimension, -2 * maxSceneDimension),
       new Vector3(centerX + 2 * maxSceneDimension, centerY + 2 * maxSceneDimension, 2 * maxSceneDimension)
     ))
 
-    // Keep the far plane past the zoom-out limit
-    this.camera.far = this.cameraControls.maxDistance * 1.2
-    this.camera.updateProjectionMatrix()
+    // Cameras only render between their near and far planes: put the far planes
+    // past the zoom-out limit so the scene never gets clipped while zooming out
+    const far = this.cameraControls.maxDistance * 1.2
+    this.perspectiveCamera.far = far
+    this.perspectiveCamera.updateProjectionMatrix()
+
+    // The orthographic camera zooms by scaling the view without moving, so the scene
+    // can extend behind it: a negative near plane keeps that part visible too
+    this.orthographicCamera.near = -far
+    this.orthographicCamera.far = far
+    this.orthographicCamera.updateProjectionMatrix()
   }
 
   /**
@@ -508,8 +539,27 @@ export class Viewer {
     this.cameraControls.rotateTo(0, DEFAULT_VIEW_POLAR_ANGLE, enableTransition)
 
     // Pull back to roughly the framed footprint, with a floor for tiny models
-    const distance = footprint ?? Math.max(bedVolume.width, bedVolume.depth)
-    this.cameraControls.dollyTo(Math.max(40, distance), enableTransition)
+    const distance = Math.max(40, footprint ?? Math.max(bedVolume.width, bedVolume.depth))
+    if (this.camera === this.perspectiveCamera) this.cameraControls.dollyTo(distance, enableTransition)
+    else this.cameraControls.zoomTo(this.toOrthographicZoom(distance), enableTransition)
+  }
+
+  /**
+   * Converts a perspective camera distance to the orthographic zoom framing the same height
+   * @param distance - Distance from the camera target
+   */
+  private toOrthographicZoom (distance: number) {
+    const viewHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.perspectiveCamera.fov) / 2)
+    return ORTHOGRAPHIC_VIEW_HEIGHT_MM / viewHeight
+  }
+
+  /**
+   * Converts an orthographic zoom to the perspective camera distance framing the same height
+   * @param zoom - Orthographic camera zoom
+   */
+  private toPerspectiveDistance (zoom: number) {
+    const viewHeight = ORTHOGRAPHIC_VIEW_HEIGHT_MM / zoom
+    return viewHeight / (2 * Math.tan(THREE.MathUtils.degToRad(this.perspectiveCamera.fov) / 2))
   }
 
   /**
@@ -543,12 +593,20 @@ export class Viewer {
     ]
     const center = new Vector3((xMin + xMax) / 2, (yMin + yMax) / 2, 0)
     const cameraPosition = this.camera.position
+    const viewDirection = this.camera.getWorldDirection(new Vector3())
 
-    // Each plane passes through the camera and one bed edge; orient it so the bed
-    // interior (and the reflection over it) stays in the kept half-space
+    // Each plane contains one bed edge and the line of sight grazing it, so a reflected
+    // point shows only where the view crosses the bed
     for (let i = 0; i < 4; i++) {
       const plane = this.mirrorBoundsPlanes[i]
-      plane.setFromCoplanarPoints(cameraPosition, corners[i], corners[(i + 1) % 4])
+      if (this.camera === this.perspectiveCamera) {
+        // All sight lines meet at the camera: pass the plane through it and the edge
+        plane.setFromCoplanarPoints(cameraPosition, corners[i], corners[(i + 1) % 4])
+      } else {
+        // Sight lines are parallel: pass the plane through the edge and a point one step behind it along the view direction
+        plane.setFromCoplanarPoints(new Vector3().subVectors(corners[i], viewDirection), corners[i], corners[(i + 1) % 4])
+      }
+      // Orient the plane so the bed interior (and the reflection over it) is on the kept side
       if (plane.distanceToPoint(center) < 0) plane.negate()
     }
   }
@@ -587,10 +645,12 @@ export class Viewer {
 
   /** Binds each mouse button to its action in the active navigation mode */
   private applyMouseBindings () {
+    const isPerspective = this.camera === this.perspectiveCamera
+    const zoomAction = isPerspective ? CameraControls.ACTION.DOLLY : CameraControls.ACTION.ZOOM
     const actions: Array<[MouseBinding | MouseBinding[] | undefined, number]> = [
       [this.navigationMode.orbit, CameraControls.ACTION.ROTATE],
       [this.navigationMode.pan, CameraControls.ACTION.TRUCK],
-      [this.navigationMode.zoom, CameraControls.ACTION.DOLLY]
+      [this.navigationMode.zoom, zoomAction]
     ]
 
     const buttons: Record<MouseButton, number> = { left: CameraControls.ACTION.NONE, middle: CameraControls.ACTION.NONE, right: CameraControls.ACTION.NONE }
@@ -602,7 +662,31 @@ export class Viewer {
         else if (modifier === this.navigationModifier) modifierButtons[button] = action
       }
     }
-    Object.assign(this.cameraControls.mouseButtons, buttons, modifierButtons)
+    Object.assign(this.cameraControls.mouseButtons, buttons, modifierButtons, { wheel: zoomAction })
+    this.cameraControls.touches.two = isPerspective ? CameraControls.ACTION.TOUCH_DOLLY_TRUCK : CameraControls.ACTION.TOUCH_ZOOM_TRUCK
+  }
+
+  /**
+   * Switches the 3D view to the given camera projection
+   * @param mode - Camera projection to use
+   */
+  applyProjectionMode (mode: ProjectionMode) {
+    const camera = mode === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera
+    if (camera === this.camera) return
+
+    // Swap the camera into the controls, converting the framing between distance and zoom
+    const distance = this.cameraControls.distance
+    this.camera = camera
+    this.cameraControls.camera = camera
+    if (camera === this.orthographicCamera) {
+      this.cameraControls.zoomTo(this.toOrthographicZoom(distance), false)
+      this.cameraControls.dollySpeed = 1
+    } else {
+      this.cameraControls.dollyTo(this.toPerspectiveDistance(this.orthographicCamera.zoom), false)
+      this.cameraControls.zoomTo(1, false)
+    }
+    this.applyMouseBindings()
+    this.requestRender()
   }
 
   /**
