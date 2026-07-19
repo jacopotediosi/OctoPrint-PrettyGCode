@@ -2,16 +2,19 @@ import * as THREE from '../three-exports'
 import type { Vector3 } from 'three'
 import type { Settings } from '../settings'
 
-/** URL of the nozzle 3D model */
-const NOZZLE_MODEL_URL = PLUGIN_BASEURL + 'prettygcode/static/js/models/ExtruderNozzle.obj'
-/** Nozzle color */
-const NOZZLE_COLOR = 0xba971b
-/** Brighter nozzle color compensating for the disabled reflection */
-const NOZZLE_UNREFLECTIVE_COLOR = 0xffd826
-/** Emissive lift applied to the unreflective nozzle color */
-const NOZZLE_UNREFLECTIVE_EMISSIVE = 0.36
+/** Markers available for the nozzle position */
+export type NozzleStyle = 'none' | 'model' | 'dot'
 
-/** The nozzle model of the 3D view */
+/** URL of the nozzle 3D model */
+const MODEL_URL = PLUGIN_BASEURL + 'prettygcode/static/js/models/ExtruderNozzle.obj'
+/** Color of the nozzle model */
+const MODEL_COLOR = 0xba971b
+/** Brighter model color compensating for the disabled reflection */
+const MODEL_UNREFLECTIVE_COLOR = 0xffd826
+/** Emissive lift applied to the unreflective model color */
+const MODEL_UNREFLECTIVE_EMISSIVE = 0.36
+
+/** The nozzle marker of the 3D view */
 export class Nozzle {
   /** Plugin frontend settings */
   private readonly settings: Settings
@@ -21,15 +24,20 @@ export class Nozzle {
   /** Callback forcing a render on the next animation frame */
   private readonly requestRender: () => void
 
-  /** Camera rendering the metallic reflections on the nozzle */
+  /** Camera rendering the metallic reflections on the nozzle model */
   private readonly reflectionCamera = new THREE.CubeCamera(1, 100000, new THREE.WebGLCubeRenderTarget(128))
 
   /** Nozzle model, once loaded */
   private model: THREE.Group | null = null
   /** Material shared by the nozzle model meshes, once loaded */
-  private material: THREE.MeshStandardMaterial | null = null
+  private modelMaterial: THREE.MeshStandardMaterial | null = null
   /** Offset from the nozzle position to the nozzle model center */
-  private readonly centerOffset = new THREE.Vector3()
+  private readonly modelCenterOffset = new THREE.Vector3()
+
+  /** Material of the nozzle dot */
+  private readonly dotMaterial = new THREE.MeshBasicMaterial()
+  /** Dot marking the nozzle position */
+  private readonly dot = new THREE.Mesh(new THREE.SphereGeometry(0.5), this.dotMaterial)
 
   /**
    * @param settings - Plugin frontend settings
@@ -41,11 +49,13 @@ export class Nozzle {
     this.scene = scene
     this.requestRender = requestRender
     scene.add(this.reflectionCamera)
+    this.dot.visible = false
+    scene.add(this.dot)
   }
 
-  /** Loads the nozzle model and shows it in the scene once ready */
+  /** Loads the nozzle marker assets and shows them in the scene once ready */
   load () {
-    new THREE.OBJLoader().load(NOZZLE_MODEL_URL, (obj) => {
+    new THREE.OBJLoader().load(MODEL_URL, (obj) => {
       obj.rotation.x = Math.PI / 2
       obj.scale.setScalar(0.1)
       obj.position.set(0, 0, 10)
@@ -53,7 +63,7 @@ export class Nozzle {
         metalness: 1,
         roughness: 0.5,
         envMap: this.reflectionCamera.renderTarget.texture,
-        color: NOZZLE_COLOR
+        color: MODEL_COLOR
       })
       // Depth-only twins drawn first keep the transparency uniform on the outer surface
       const depthMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, transparent: true })
@@ -67,8 +77,8 @@ export class Nozzle {
         }
       })
       this.model = obj
-      this.material = material
-      new THREE.Box3().setFromObject(obj).getCenter(this.centerOffset).sub(obj.position)
+      this.modelMaterial = material
+      new THREE.Box3().setFromObject(obj).getCenter(this.modelCenterOffset).sub(obj.position)
       this.scene.add(obj)
       this.requestRender()
     })
@@ -77,52 +87,81 @@ export class Nozzle {
   /**
    * Updates the nozzle for a new frame
    * @param position - Nozzle position to show, or null to move the nozzle back to the origin
+   * @param nozzleDiameter - Nozzle diameter in mm
    * @param renderer - The WebGL renderer
    * @param sceneChanged - True if the scene already changed this frame
    * @returns True if the nozzle changed the scene
    */
-  update (position: Vector3 | null, renderer: THREE.WebGLRenderer, sceneChanged: boolean) {
+  update (position: Vector3 | null, nozzleDiameter: number, renderer: THREE.WebGLRenderer, sceneChanged: boolean) {
     const settings = this.settings
+    const style = settings.nozzleStyle
     let needRender = false
 
-    // Update nozzle model position
-    if (this.model) {
+    // Update nozzle position
+    for (const marker of [this.model, this.dot]) {
+      if (!marker) continue
       if (position) {
-        this.model.position.copy(position)
-      } else if (this.model.position.lengthSq()) {
-        this.model.position.set(0, 0, 0)
+        marker.position.copy(position)
+      } else if (marker.position.lengthSq()) {
+        marker.position.set(0, 0, 0)
         needRender = true
       }
     }
 
+    // Size the dot to match the size setting
+    const dotDiameter = nozzleDiameter * settings.nozzleDotSize
+    if (this.dot.scale.x !== dotDiameter) {
+      this.dot.scale.setScalar(dotDiameter)
+      needRender = true
+    }
+
+    // Recolor the dot to match the setting
+    if ('#' + this.dotMaterial.color.getHexString() !== settings.nozzleDotColor) {
+      this.dotMaterial.color.set(settings.nozzleDotColor)
+      needRender = true
+    }
+
     // Fade the nozzle to match the transparency setting
     const opacity = 1 - settings.nozzleTransparency / 100
-    if (this.model && this.material && this.material.opacity !== opacity) {
-      this.material.opacity = opacity
-      this.material.transparent = opacity < 1
-      this.material.needsUpdate = true
-      this.model.visible = opacity > 0
+    for (const material of [this.modelMaterial, this.dotMaterial]) {
+      if (material && material.opacity !== opacity) {
+        material.opacity = opacity
+        material.transparent = opacity < 1
+        material.needsUpdate = true
+        needRender = true
+      }
+    }
+
+    // Show the marker selected by the style setting
+    const modelVisible = style === 'model' && opacity > 0
+    if (this.model && this.model.visible !== modelVisible) {
+      this.model.visible = modelVisible
+      needRender = true
+    }
+    const dotVisible = style === 'dot' && opacity > 0
+    if (this.dot.visible !== dotVisible) {
+      this.dot.visible = dotVisible
       needRender = true
     }
 
-    // Toggle the nozzle reflection to match the setting
+    // Toggle the model reflection to match the setting
     const envMap = settings.nozzleReflection ? this.reflectionCamera.renderTarget.texture : null
-    if (this.material && this.material.envMap !== envMap) {
-      this.material.envMap = envMap
-      this.material.metalness = envMap ? 1 : 0
-      this.material.roughness = envMap ? 0.5 : 1
-      this.material.color.setHex(envMap ? NOZZLE_COLOR : NOZZLE_UNREFLECTIVE_COLOR)
-      this.material.emissive.setHex(envMap ? 0x000000 : NOZZLE_UNREFLECTIVE_COLOR)
-      this.material.emissiveIntensity = NOZZLE_UNREFLECTIVE_EMISSIVE
-      this.material.needsUpdate = true
+    if (this.modelMaterial && this.modelMaterial.envMap !== envMap) {
+      this.modelMaterial.envMap = envMap
+      this.modelMaterial.metalness = envMap ? 1 : 0
+      this.modelMaterial.roughness = envMap ? 0.5 : 1
+      this.modelMaterial.color.setHex(envMap ? MODEL_COLOR : MODEL_UNREFLECTIVE_COLOR)
+      this.modelMaterial.emissive.setHex(envMap ? 0x000000 : MODEL_UNREFLECTIVE_COLOR)
+      this.modelMaterial.emissiveIntensity = MODEL_UNREFLECTIVE_EMISSIVE
+      this.modelMaterial.needsUpdate = true
       needRender = true
     }
 
-    // Rebuild the reflection when the scene changed, capturing it from the nozzle center with the nozzle hidden
-    if ((sceneChanged || needRender) && settings.nozzleReflection && this.model) {
+    // Rebuild the reflection when the scene changed, capturing it from the model center with the model hidden
+    if ((sceneChanged || needRender) && settings.nozzleReflection && style === 'model' && this.model) {
       const visible = this.model.visible
       this.model.visible = false
-      this.reflectionCamera.position.copy(this.model.position).add(this.centerOffset)
+      this.reflectionCamera.position.copy(this.model.position).add(this.modelCenterOffset)
       this.reflectionCamera.update(renderer, this.scene)
       this.model.visible = visible
     }

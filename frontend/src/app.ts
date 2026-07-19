@@ -3,7 +3,7 @@ import { Viewer } from './viewer/viewer'
 import { parseGcodeFile, GCodeParser } from './gcode/parser'
 import { PrintTimeline } from './gcode/print-timeline'
 import { PrintExclusions } from './gcode/exclusions'
-import { GCodeModel } from './gcode/gcode-model'
+import { GCodeModel, DEFAULT_NOZZLE_DIAMETER } from './gcode/gcode-model'
 import { initSettingsPanel } from './ui/settings-panel'
 import { initOverlayWindows } from './ui/overlay-windows'
 import { updateDashboardOverlay } from './ui/dashboard'
@@ -242,7 +242,7 @@ export class PrettyGCodeApp {
   /**
    * Advances the displayed print progress for a new frame
    * @param deltaSeconds - Seconds elapsed since the previous call
-   * @returns Whether the scene changed and the nozzle position to show, if any
+   * @returns Whether the scene changed, the nozzle position to show, if any, and the nozzle diameter
    */
   private updatePrintView (deltaSeconds: number): PrintViewUpdate {
     const state = this.currentPrinterState
@@ -271,7 +271,8 @@ export class PrettyGCodeApp {
     // Highlight the revealed layer
     if (revealedLayer != null) this.gcodeModel.highlightLayer(revealedLayer)
 
-    return { needRender, nozzlePosition }
+    const nozzleDiameter = this.parsedGcode?.slicerNozzleDiameter ?? this.nozzleDiameter ?? DEFAULT_NOZZLE_DIAMETER
+    return { needRender, nozzlePosition, nozzleDiameter }
   }
 
   /* ---- UI events ---- */

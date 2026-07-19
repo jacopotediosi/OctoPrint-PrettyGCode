@@ -12,10 +12,11 @@ const LIGHT_BACKGROUND = 0xd0d0d0
 /** Dark theme background color */
 const DARK_BACKGROUND = 0x000000
 
-/** Per-frame print view outcome: whether the scene changed and the nozzle position to show */
+/** Per-frame print view outcome: whether the scene changed, the nozzle position to show and the nozzle diameter */
 export interface PrintViewUpdate {
   needRender: boolean
   nozzlePosition: THREE.Vector3 | null
+  nozzleDiameter: number
 }
 
 /** The plugin's 3D view: renders the bed, the gcode model and the nozzle */
@@ -41,7 +42,7 @@ export class Viewer {
 
   /** The print bed */
   private readonly bed: Bed
-  /** The nozzle model */
+  /** The nozzle marker */
   private readonly nozzle: Nozzle
 
   /** Light under the bed */
@@ -89,7 +90,7 @@ export class Viewer {
     // Bed (grid)
     this.updateBedMesh()
 
-    // Nozzle model
+    // Nozzle marker
     this.nozzle.load()
 
     // Under bed light
@@ -142,7 +143,7 @@ export class Viewer {
     if (printView.needRender) needRender = true
 
     // Update the nozzle
-    if (this.nozzle.update(printView.nozzlePosition, this.renderer, needRender)) needRender = true
+    if (this.nozzle.update(printView.nozzlePosition, printView.nozzleDiameter, this.renderer, needRender)) needRender = true
 
     // Update the camera
     if (this.camera.update(deltaSeconds)) needRender = true

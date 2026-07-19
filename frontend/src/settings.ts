@@ -1,4 +1,5 @@
 import type { NavigationModeKey, ProjectionMode } from './viewer/navigation'
+import type { NozzleStyle } from './viewer/nozzle'
 
 /** localStorage key holding the settings */
 const STORAGE_KEY = 'pg-settings'
@@ -34,10 +35,16 @@ export class Settings {
 
   /* ---- Nozzle ---- */
 
-  /** Transparency of the nozzle model, in percent */
+  /** Marker shown at the nozzle position */
+  nozzleStyle: NozzleStyle = 'model'
+  /** Transparency of the nozzle marker, in percent */
   nozzleTransparency = 0
   /** Whether to reflect the scene on the nozzle model */
   nozzleReflection = true
+  /** Diameter of the nozzle dot as a multiple of the nozzle diameter */
+  nozzleDotSize = 2
+  /** Color of the nozzle dot */
+  nozzleDotColor = '#ffd826'
 
   /* ---- Bed ---- */
 

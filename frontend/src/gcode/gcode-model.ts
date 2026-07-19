@@ -18,7 +18,7 @@ const LAYER_PREFIX = 'layer#'
 const isLayerObject = (child: THREE.Object3D): child is LayerLine => child.name.startsWith(LAYER_PREFIX)
 
 /** Nozzle diameter in mm assumed when none is known */
-const DEFAULT_NOZZLE_DIAMETER = 0.4
+export const DEFAULT_NOZZLE_DIAMETER = 0.4
 /** Oversize factor of the drawn lines, to avoid gaps */
 const LINE_THICKNESS_FACTOR = 1.1
 /**

@@ -91,15 +91,33 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
 
   const nozzleFolder = gui.addFolder('Nozzle')
 
-  const nozzleTransparency = nozzleFolder.add(settings, 'nozzleTransparency', 0, 100, 1).name('Nozzle transparency')
-  nozzleTransparency.domElement.title = 'Set how transparent the nozzle 3D model at the current print position is.'
+  const nozzleStyle = nozzleFolder.add(settings, 'nozzleStyle', { None: 'none', '3D model': 'model', Dot: 'dot' }).name('Nozzle style')
+  nozzleStyle.domElement.title = 'Set the marker shown at the current print position.'
 
-  option(
+  const nozzleTransparency = nozzleFolder.add(settings, 'nozzleTransparency', 0, 100, 1).name('Nozzle transparency')
+  nozzleTransparency.domElement.title = 'Set how transparent the nozzle marker at the current print position is.'
+
+  const nozzleReflection = option(
     nozzleFolder,
     'nozzleReflection',
     'Nozzle reflection',
     'Reflect the surrounding scene on the nozzle 3D model.'
   )
+
+  const nozzleDotSize = nozzleFolder.add(settings, 'nozzleDotSize', 0.5, 5, 0.1).name('Dot size')
+  nozzleDotSize.domElement.title = 'Set the dot diameter as a multiple of the nozzle diameter.'
+
+  const nozzleDotColor = nozzleFolder.addColor(settings, 'nozzleDotColor').name('Dot color')
+  nozzleDotColor.domElement.title = 'Set the color of the nozzle dot.'
+
+  const updateNozzleControls = () => {
+    nozzleTransparency.show(settings.nozzleStyle !== 'none')
+    nozzleReflection.show(settings.nozzleStyle === 'model')
+    nozzleDotSize.show(settings.nozzleStyle === 'dot')
+    nozzleDotColor.show(settings.nozzleStyle === 'dot')
+  }
+  nozzleStyle.onFinishChange(updateNozzleControls)
+  updateNozzleControls()
 
   /* ---- Bed ---- */
 
@@ -129,9 +147,9 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
   bed.onFinishChange(() => {
     app.updateBedVisibility()
     app.rebuildGcodeModel()
-    mirror.enable(settings.showBed)
+    mirror.show(settings.showBed)
   })
-  mirror.enable(settings.showBed)
+  mirror.show(settings.showBed)
 
   return gui
 }
