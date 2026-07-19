@@ -1,5 +1,5 @@
 import GUI from 'lil-gui'
-import { NAVIGATION_MODES } from '../viewer'
+import { NAVIGATION_MODES } from '../viewer/navigation'
 import type { Settings } from '../settings'
 import type { PrettyGCodeApp } from '../app'
 

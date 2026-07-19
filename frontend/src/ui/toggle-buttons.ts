@@ -1,5 +1,5 @@
 import type { PrettyGCodeApp } from '../app'
-import type { ViewAngle } from '../viewer'
+import type { ViewAngle } from '../viewer/navigation'
 
 /** Settings keys of the toggleable windows */
 type WindowKey = 'showState' | 'showFiles' | 'showWebcam' | 'showDashboard'

@@ -1,5 +1,5 @@
 import { Settings } from './settings'
-import { Viewer } from './viewer'
+import { Viewer } from './viewer/viewer'
 import { parseGcodeFile, GCodeParser } from './gcode/parser'
 import { PrintTimeline } from './gcode/print-timeline'
 import { PrintExclusions } from './gcode/exclusions'
@@ -11,7 +11,9 @@ import { updateWebcamOverlay } from './ui/webcam'
 import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue } from './ui/layer-slider'
 import { initToggleButtons } from './ui/toggle-buttons'
 import { setStatusBarText, applyStatusBarVisibility } from './ui/status-bar'
-import type { BedVolume, PrintViewUpdate, ViewAngle } from './viewer'
+import type { BedVolume } from './viewer/bed'
+import type { ViewAngle } from './viewer/navigation'
+import type { PrintViewUpdate } from './viewer/viewer'
 import type { Vector3 } from 'three'
 
 /** Printer state reported by OctoPrint */
@@ -110,7 +112,6 @@ export class PrettyGCodeApp {
 
         // 3D view and gcode
         this.viewer.init()
-        this.viewer.loadNozzle()
         this.viewer.scene.add(this.gcodeModel.linesGroup)
         this.viewer.scene.add(this.exclusions.regionMarkersGroup)
         this.loadGcode(this.currentJobPath)

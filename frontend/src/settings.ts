@@ -1,4 +1,4 @@
-import type { NavigationModeKey, ProjectionMode } from './viewer'
+import type { NavigationModeKey, ProjectionMode } from './viewer/navigation'
 
 /** localStorage key holding the settings */
 const STORAGE_KEY = 'pg-settings'
