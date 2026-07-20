@@ -8,7 +8,7 @@ import type { NavigationModeKey, ProjectionMode, ViewAngle } from './navigation'
 import type { Settings } from '../settings'
 
 /** Light theme background color */
-const LIGHT_BACKGROUND = 0xd0d0d0
+const LIGHT_BACKGROUND = 0xe9e9e9
 /** Dark theme background color */
 const DARK_BACKGROUND = 0x000000
 
@@ -78,7 +78,6 @@ export class Viewer {
     const canvas = document.getElementById('pg-canvas') as HTMLCanvasElement
 
     // Renderer
-    THREE.ColorManagement.enabled = false
     this.createRenderer(canvas, settings.antialias)
 
     // Camera

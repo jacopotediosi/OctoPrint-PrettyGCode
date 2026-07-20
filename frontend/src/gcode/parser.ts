@@ -43,19 +43,19 @@ const LAYER_EPSILON_MM = 0.04
 const DEFAULT_COLOR = new THREE.Color('white')
 /** Colors for slicer feature types; the first keyword found in a comment wins */
 const COLOR_KEYWORDS: [string[], string][] = [
-  [['overhang'], 'blue'], // Orca "Overhang wall", PrusaSlicer "Overhang perimeter"
-  [['external', 'outer'], 'coral'], // Cura "WALL-OUTER", Orca "Outer wall", PrusaSlicer "External perimeter", Simplify3D "outer perimeter"
-  [['top solid', 'skin', 'surface'], 'tomato'], // Cura "SKIN", Orca "Top surface"/"Bottom surface", PrusaSlicer "Top solid infill"
-  [['bridge'], 'steelblue'], // ideaMaker "BRIDGE", Orca "Bridge", PrusaSlicer "Bridge infill"/"Internal bridge infill", Simplify3D "bridge"
-  [['solid'], 'mediumpurple'], // Orca "Internal solid infill", PrusaSlicer "Solid infill", Simplify3D "solid layer"
-  [['gap'], 'white'], // Orca "Gap infill", PrusaSlicer "Gap fill"
-  [['ironing'], 'salmon'], // Orca "Ironing", PrusaSlicer "Ironing"
-  [['interface'], 'green'], // Cura "SUPPORT-INTERFACE", Orca "Support interface", PrusaSlicer "Support material interface"
-  [['support'], 'lime'], // Cura "SUPPORT", Orca "Support"/"Support transition", PrusaSlicer "Support material", Simplify3D "support"/"dense support"
-  [['skirt', 'brim', 'raft'], 'teal'], // Cura "SKIRT"/"RAFT", ideaMaker "RAFT", Orca "Skirt"/"Brim", PrusaSlicer "Skirt/Brim", Simplify3D "skirt"/"raft"
-  [['tower', 'pillar'], 'lightgreen'], // Cura "PRIME-TOWER", Orca "Prime tower", PrusaSlicer "Wipe tower", Simplify3D "prime pillar"
-  [['inner', 'perimeter'], 'gold'], // Cura "WALL-INNER", Orca "Inner wall", PrusaSlicer "Perimeter", Simplify3D "inner perimeter"
-  [['fill'], 'firebrick'] // Cura "FILL", Orca "Sparse infill", PrusaSlicer "Internal infill", Simplify3D "infill"
+  [['overhang'], '#1f1fff'], // Orca "Overhang wall", PrusaSlicer "Overhang perimeter"
+  [['external', 'outer'], '#ff7d38'], // Cura "WALL-OUTER", Orca "Outer wall", PrusaSlicer "External perimeter", Simplify3D "outer perimeter"
+  [['top solid', 'skin', 'surface'], '#f04040'], // Cura "SKIN", Orca "Top surface"/"Bottom surface", PrusaSlicer "Top solid infill"
+  [['bridge'], '#4d80ba'], // ideaMaker "BRIDGE", Orca "Bridge", PrusaSlicer "Bridge infill"/"Internal bridge infill", Simplify3D "bridge"
+  [['solid'], '#9654cc'], // Orca "Internal solid infill", PrusaSlicer "Solid infill", Simplify3D "solid layer"
+  [['gap'], '#ffffff'], // Orca "Gap infill", PrusaSlicer "Gap fill"
+  [['ironing'], '#ff8c69'], // Orca "Ironing", PrusaSlicer "Ironing"
+  [['interface'], '#008000'], // Cura "SUPPORT-INTERFACE", Orca "Support interface", PrusaSlicer "Support material interface"
+  [['support'], '#00ff00'], // Cura "SUPPORT", Orca "Support"/"Support transition", PrusaSlicer "Support material", Simplify3D "support"/"dense support"
+  [['skirt', 'brim', 'raft'], '#00876e'], // Cura "SKIRT"/"RAFT", ideaMaker "RAFT", Orca "Skirt"/"Brim", PrusaSlicer "Skirt/Brim", Simplify3D "skirt"/"raft"
+  [['tower', 'pillar'], '#b3e3ab'], // Cura "PRIME-TOWER", Orca "Prime tower", PrusaSlicer "Wipe tower", Simplify3D "prime pillar"
+  [['inner', 'perimeter'], '#ffe64d'], // Cura "WALL-INNER", Orca "Inner wall", PrusaSlicer "Perimeter", Simplify3D "inner perimeter"
+  [['fill'], '#b03029'] // Cura "FILL", Orca "Sparse infill", PrusaSlicer "Internal infill", Simplify3D "infill"
 ]
 
 /** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */

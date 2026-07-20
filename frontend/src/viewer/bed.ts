@@ -71,14 +71,14 @@ export class Bed {
     if (this.grid) this.scene.remove(this.grid)
 
     // Translucent bed surface
-    const planeMaterial = new THREE.MeshBasicMaterial({ color: 0x909090, side: THREE.DoubleSide, transparent: true, opacity: 0.2 })
+    const planeMaterial = new THREE.MeshBasicMaterial({ color: 0xc6c6c6, side: THREE.DoubleSide, transparent: true, opacity: 0.2 })
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(bedVolume.width, bedVolume.depth), planeMaterial)
     plane.position.set(center.x, center.y, -0.1) // The bed is just below the grid to avoid z-fighting
     this.scene.add(plane)
     this.plane = plane
 
     // Grid lines
-    const grid = new THREE.GridHelper(bedVolume.width, bedVolume.width / 10, this.settings.darkMode ? DARK_GRID_CENTER : LIGHT_GRID_CENTER, 0x888888)
+    const grid = new THREE.GridHelper(bedVolume.width, bedVolume.width / 10, this.settings.darkMode ? DARK_GRID_CENTER : LIGHT_GRID_CENTER, 0xc1c1c1)
     grid.position.set(center.x, center.y, 0)
     grid.material.transparent = true
     grid.material.opacity = 0.6
