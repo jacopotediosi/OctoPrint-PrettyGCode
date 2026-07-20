@@ -185,8 +185,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     color: var(--pg-window-text);
 }
 .pg-maximized #state_wrapper::after,
-.pg-maximized #files_wrapper::after,
-#pg-view-settings::after {
+.pg-maximized #files_wrapper::after {
     position: absolute;
     top: 0;
     line-height: var(--pg-window-header-height);
@@ -196,7 +195,6 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 }
 .pg-maximized #state_wrapper::after { content: "State"; right: 15px; }
 .pg-maximized #files_wrapper::after { content: "Files"; right: 15px; }
-#pg-view-settings::after { content: "Settings"; left: 15px; }
 /* View Settings (lil-gui host) */
 #pg-view-settings {
     position: absolute;
@@ -246,6 +244,12 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 #pg-view-settings .lil-controller.lil-option select {
     left: 0;
 }
+#pg-view-settings .lil-controller.lil-option .lil-display {
+    flex-grow: 1;
+}
+#pg-view-settings .lil-controller.lil-boolean input[type="checkbox"] {
+    margin: 0;
+}
 #pg-view-settings .lil-controller.lil-number input,
 #pg-view-settings .lil-controller.lil-color input[type="text"] {
     height: var(--widget-height);
@@ -268,6 +272,50 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 #pg-view-settings .lil-controller.lil-color input[type="text"]:active,
 #pg-view-settings .lil-controller.lil-color input[type="text"]:focus {
     background: var(--focus-color);
+}
+/* Reset buttons */
+#pg-view-settings .pg-reset {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--pg-window-text);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+}
+#pg-view-settings .pg-reset:hover:not(:disabled) {
+    background: rgba(128, 128, 128, 0.2);
+}
+#pg-view-settings .pg-reset:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+#pg-view-settings .lil-controller .pg-reset {
+    position: relative;
+    flex-shrink: 0;
+    width: var(--widget-height);
+    height: var(--widget-height);
+    margin-left: var(--spacing);
+    border-radius: var(--widget-border-radius);
+}
+#pg-settings-header {
+    position: absolute;
+    top: 0;
+    left: 15px;
+    height: var(--pg-window-header-height);
+    display: flex;
+    align-items: center;
+    gap: var(--pg-buttons-gap);
+    font-weight: bold;
+    color: var(--pg-window-text);
+}
+#pg-reset-all {
+    width: var(--pg-window-header-height);
+    height: var(--pg-window-header-height);
+    border-radius: var(--pg-window-radius);
 }
 /* Bottom overlays (webcam & dashboard) commons */
 .pg-maximized #pg-webcam,

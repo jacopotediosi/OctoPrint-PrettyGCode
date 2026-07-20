@@ -1,7 +1,10 @@
-import GUI from 'lil-gui'
+import GUI, { type Controller } from 'lil-gui'
 import { NAVIGATION_MODES } from '../viewer/navigation'
-import type { Settings } from '../settings'
+import { Settings } from '../settings'
 import type { PrettyGCodeApp } from '../app'
+
+/** Default value of every setting */
+const DEFAULTS = new Settings()
 
 /**
  * Builds the plugin settings panel
@@ -12,7 +15,13 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
   const settings = app.settings
   const gui = new GUI({ autoPlace: false })
   $('#pg-view-settings').append(gui.domElement)
-  gui.onChange(() => settings.save())
+
+  const refreshers: Array<() => void> = []
+  const refreshResets = () => refreshers.forEach((refresh) => refresh())
+  gui.onChange(() => {
+    settings.save()
+    refreshResets()
+  })
 
   const option = (folder: GUI, prop: keyof Settings, name: string, help: string) => {
     const controller = folder.add(settings, prop).name(name)
@@ -150,6 +159,44 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
     mirror.show(settings.showBed)
   })
   mirror.show(settings.showBed)
+
+  /* ---- Reset buttons ---- */
+
+  const defaultOf = (controller: Controller) => (DEFAULTS as any)[controller.property]
+  const isDefault = (controller: Controller) => controller.getValue() === defaultOf(controller)
+  const reset = (controller: Controller) => controller.load(defaultOf(controller))
+  const makeResetButton = (title: string) => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'pg-reset'
+    button.title = title
+    const icon = document.createElement('i')
+    icon.className = 'fa-solid fa-arrow-rotate-left'
+    button.append(icon)
+    return button
+  }
+
+  const controllers = gui.controllersRecursive()
+
+  // One reset button at the right of each setting's row, disabled while the setting is at its default
+  for (const controller of controllers) {
+    const button = makeResetButton('Reset this setting to its default value')
+    button.addEventListener('click', () => reset(controller))
+    controller.domElement.append(button)
+    refreshers.push(() => { button.disabled = isDefault(controller) })
+  }
+
+  // Panel header: the title and a reset button for every setting, disabled while all are at their default
+  const resetAll = makeResetButton('Reset all settings to their default values')
+  resetAll.id = 'pg-reset-all'
+  resetAll.addEventListener('click', () => controllers.forEach(reset))
+  const header = document.createElement('div')
+  header.id = 'pg-settings-header'
+  header.append('Settings', resetAll)
+  $('#pg-view-settings').append(header)
+  refreshers.push(() => { resetAll.disabled = controllers.every(isDefault) })
+
+  refreshResets()
 
   return gui
 }
