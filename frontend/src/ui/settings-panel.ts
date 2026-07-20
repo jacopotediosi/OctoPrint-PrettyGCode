@@ -94,8 +94,8 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
   const nozzleStyle = nozzleFolder.add(settings, 'nozzleStyle', { None: 'none', '3D model': 'model', Dot: 'dot' }).name('Nozzle style')
   nozzleStyle.domElement.title = 'Set the marker shown at the current print position.'
 
-  const nozzleDotSize = nozzleFolder.add(settings, 'nozzleDotSize', 0.5, 5, 0.1).name('Dot size')
-  nozzleDotSize.domElement.title = 'Set the dot diameter as a multiple of the nozzle diameter.'
+  const nozzleSize = nozzleFolder.add(settings, 'nozzleSize', 50, 200, 5).name('Nozzle size')
+  nozzleSize.domElement.title = 'Set the size of the nozzle marker, in percent of its default.'
 
   const nozzleColor = nozzleFolder.addColor(settings, 'nozzleColor').name('Nozzle color')
   nozzleColor.domElement.title = 'Set the color of the nozzle marker.'
@@ -111,7 +111,7 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
   )
 
   const updateNozzleControls = () => {
-    nozzleDotSize.show(settings.nozzleStyle === 'dot')
+    nozzleSize.show(settings.nozzleStyle !== 'none')
     nozzleColor.show(settings.nozzleStyle !== 'none')
     nozzleTransparency.show(settings.nozzleStyle !== 'none')
     nozzleReflection.show(settings.nozzleStyle === 'model')

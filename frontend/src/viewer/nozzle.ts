@@ -7,6 +7,10 @@ export type NozzleStyle = 'none' | 'model' | 'dot'
 
 /** URL of the nozzle 3D model */
 const MODEL_URL = PLUGIN_BASEURL + 'prettygcode/static/js/models/ExtruderNozzle.obj'
+/** Nozzle model scale at size 100% */
+const MODEL_BASE_SCALE = 0.1
+/** Dot diameter at size 100%, as a multiple of the nozzle diameter */
+const DOT_BASE_DIAMETERS = 4
 
 /** The nozzle marker of the 3D view */
 export class Nozzle {
@@ -51,7 +55,7 @@ export class Nozzle {
   load () {
     new THREE.OBJLoader().load(MODEL_URL, (obj) => {
       obj.rotation.x = Math.PI / 2
-      obj.scale.setScalar(0.1)
+      obj.scale.setScalar(MODEL_BASE_SCALE * this.settings.nozzleSize / 100)
       obj.position.set(0, 0, 10)
       const material = new THREE.MeshStandardMaterial({
         metalness: 1,
@@ -103,10 +107,16 @@ export class Nozzle {
       }
     }
 
-    // Size the dot to match the size setting
-    const dotDiameter = nozzleDiameter * settings.nozzleDotSize
+    // Size the markers to match the size setting
+    const dotDiameter = nozzleDiameter * DOT_BASE_DIAMETERS * settings.nozzleSize / 100
     if (this.dot.scale.x !== dotDiameter) {
       this.dot.scale.setScalar(dotDiameter)
+      needRender = true
+    }
+    const modelScale = MODEL_BASE_SCALE * settings.nozzleSize / 100
+    if (this.model && this.model.scale.x !== modelScale) {
+      this.model.scale.setScalar(modelScale)
+      new THREE.Box3().setFromObject(this.model).getCenter(this.modelCenterOffset).sub(this.model.position)
       needRender = true
     }
 

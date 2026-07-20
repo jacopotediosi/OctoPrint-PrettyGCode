@@ -37,8 +37,8 @@ export class Settings {
 
   /** Marker shown at the nozzle position */
   nozzleStyle: NozzleStyle = 'model'
-  /** Diameter of the nozzle dot as a multiple of the nozzle diameter */
-  nozzleDotSize = 2
+  /** Size of the nozzle marker, in percent of its default */
+  nozzleSize = 100
   /** Color of the nozzle marker */
   nozzleColor = '#e6d36b'
   /** Transparency of the nozzle marker, in percent */
