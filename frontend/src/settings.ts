@@ -37,14 +37,14 @@ export class Settings {
 
   /** Marker shown at the nozzle position */
   nozzleStyle: NozzleStyle = 'model'
+  /** Diameter of the nozzle dot as a multiple of the nozzle diameter */
+  nozzleDotSize = 2
+  /** Color of the nozzle marker */
+  nozzleColor = '#e6d36b'
   /** Transparency of the nozzle marker, in percent */
   nozzleTransparency = 0
   /** Whether to reflect the scene on the nozzle model */
   nozzleReflection = true
-  /** Diameter of the nozzle dot as a multiple of the nozzle diameter */
-  nozzleDotSize = 2
-  /** Color of the nozzle dot */
-  nozzleDotColor = '#ffd826'
 
   /* ---- Bed ---- */
 

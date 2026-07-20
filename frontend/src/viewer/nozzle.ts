@@ -7,12 +7,6 @@ export type NozzleStyle = 'none' | 'model' | 'dot'
 
 /** URL of the nozzle 3D model */
 const MODEL_URL = PLUGIN_BASEURL + 'prettygcode/static/js/models/ExtruderNozzle.obj'
-/** Color of the nozzle model */
-const MODEL_COLOR = 0xba971b
-/** Brighter model color compensating for the disabled reflection */
-const MODEL_UNREFLECTIVE_COLOR = 0xffd826
-/** Emissive lift applied to the unreflective model color */
-const MODEL_UNREFLECTIVE_EMISSIVE = 0.36
 
 /** The nozzle marker of the 3D view */
 export class Nozzle {
@@ -63,7 +57,8 @@ export class Nozzle {
         metalness: 1,
         roughness: 0.5,
         envMap: this.reflectionCamera.renderTarget.texture,
-        color: MODEL_COLOR
+        color: this.settings.nozzleColor,
+        emissiveIntensity: 0.7
       })
       // Depth-only twins drawn first keep the transparency uniform on the outer surface
       const depthMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, transparent: true })
@@ -115,9 +110,19 @@ export class Nozzle {
       needRender = true
     }
 
-    // Recolor the dot to match the setting
-    if ('#' + this.dotMaterial.color.getHexString() !== settings.nozzleDotColor) {
-      this.dotMaterial.color.set(settings.nozzleDotColor)
+    // Recolor the nozzle markers to match the setting
+    const color = settings.nozzleColor
+    for (const material of [this.modelMaterial, this.dotMaterial]) {
+      if (material && '#' + material.color.getHexString() !== color) {
+        material.color.set(color)
+        needRender = true
+      }
+    }
+
+    // Light the unreflective model with its own color to compensate the missing reflection
+    const emissive = settings.nozzleReflection ? '#000000' : color
+    if (this.modelMaterial && '#' + this.modelMaterial.emissive.getHexString() !== emissive) {
+      this.modelMaterial.emissive.set(emissive)
       needRender = true
     }
 
@@ -150,9 +155,6 @@ export class Nozzle {
       this.modelMaterial.envMap = envMap
       this.modelMaterial.metalness = envMap ? 1 : 0
       this.modelMaterial.roughness = envMap ? 0.5 : 1
-      this.modelMaterial.color.setHex(envMap ? MODEL_COLOR : MODEL_UNREFLECTIVE_COLOR)
-      this.modelMaterial.emissive.setHex(envMap ? 0x000000 : MODEL_UNREFLECTIVE_COLOR)
-      this.modelMaterial.emissiveIntensity = MODEL_UNREFLECTIVE_EMISSIVE
       this.modelMaterial.needsUpdate = true
       needRender = true
     }
