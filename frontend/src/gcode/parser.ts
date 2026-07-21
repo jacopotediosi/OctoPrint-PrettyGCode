@@ -82,6 +82,14 @@ export function cloneColorRules (colorRules: ColorRule[]): ColorRule[] {
 /** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */
 const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
 
+/**
+ * Matches the marker opening a slicer's feature-type comment
+ * - ;TYPE:<label>      PrusaSlicer/SuperSlicer/Cura, OrcaSlicer (non-Bambu-Lab printers)
+ * - ; FEATURE: <label> Bambu Studio, OrcaSlicer (Bambu Lab printers)
+ * - ; feature <label>  Simplify3D
+ */
+const FEATURE_TYPE_COMMENT = /;\s*(type:|feature[ :])/i
+
 /** Scratch vector reused across segments to avoid allocations */
 const scratchPoint = new THREE.Vector3()
 /** Scratch vector reused across segments to avoid allocations */
@@ -174,11 +182,13 @@ export class GCodeParser {
       if (rawLine.includes(';')) {
         const commentLower = rawLine.toLowerCase()
 
-        // Pick the color based on the feature type
-        const match = this.colorRules.find(({ keywords }) => keywords.some((keyword) => commentLower.includes(keyword)))
-        if (match) {
-          this.currentColor = match.color
-          this.featureTypeSeen = true
+        // Pick the color from feature-type comments only
+        if (FEATURE_TYPE_COMMENT.test(commentLower)) {
+          const match = this.colorRules.find(({ keywords }) => keywords.some((keyword) => commentLower.includes(keyword)))
+          if (match) {
+            this.currentColor = match.color
+            this.featureTypeSeen = true
+          }
         }
 
         // First nozzle diameter the slicer states wins
