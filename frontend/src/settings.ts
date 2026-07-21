@@ -1,5 +1,6 @@
 import type { NavigationModeKey, ProjectionMode } from './viewer/navigation'
 import type { NozzleStyle } from './viewer/nozzle'
+import { type ColorRule, DEFAULT_COLOR_RULES, DEFAULT_COLOR, cloneColorRules } from './gcode/parser'
 
 /** localStorage key holding the settings */
 const STORAGE_KEY = 'pg-settings'
@@ -32,6 +33,10 @@ export class Settings {
   highlightIntensity = 30
   /** Whether to show gcode excluded from printing, greyed out */
   showExcluded = true
+  /** Model color rules, tried in order */
+  modelColorRules: ColorRule[] = cloneColorRules(DEFAULT_COLOR_RULES)
+  /** Color of segments matching no color rule */
+  modelDefaultColor = DEFAULT_COLOR
 
   /* ---- Nozzle ---- */
 

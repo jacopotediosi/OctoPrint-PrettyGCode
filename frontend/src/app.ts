@@ -67,6 +67,8 @@ export class PrettyGCodeApp {
   private currentJobPath = ''
   /** Upload date of the currently loaded job */
   private currentJobDate = 0
+  /** Id of the most recent gcode load */
+  private loadSequence = 0
 
   /** Latest printer state reported by OctoPrint */
   private currentPrinterState: PrinterState | null = null
@@ -195,11 +197,20 @@ export class PrettyGCodeApp {
   /**
    * Loads a job file and displays it in the 3D view
    * @param jobPath - Server path of the job file
+   * @param preserveView - Whether to keep the current layer and camera instead of framing the whole model
    */
-  private async loadGcode (jobPath: string) {
+  private async loadGcode (jobPath: string, preserveView = false) {
+    const sequence = ++this.loadSequence
+
     // The object marker tag comes from the Cancel Object plugin settings
     const objectTag = this.settingsVM.settings?.plugins?.cancelobject?.reptag?.()
-    this.parsedGcode = await parseGcodeFile(jobPath, objectTag)
+    const colors = { colorRules: this.settings.modelColorRules, defaultColor: this.settings.modelDefaultColor }
+    const parsedGcode = await parseGcodeFile(jobPath, objectTag, colors)
+
+    // Stop if a newer load has started
+    if (sequence !== this.loadSequence) return
+
+    this.parsedGcode = parsedGcode
     this.exclusions.setGcodeObjectNames(this.parsedGcode.objectNames)
 
     // Index the timeline and build the model
@@ -207,10 +218,15 @@ export class PrettyGCodeApp {
     this.gcodeModel.build(this.parsedGcode.layers)
     this.updateLineWidth()
 
-    // Show the whole model: slider max and current layer at the top
     updateLayerSliderMax(this)
-    this.setCurrentLayerNumber(this.layerCount)
-    this.resetView()
+    if (preserveView) {
+      // Keep the current layer
+      this.setCurrentLayerNumber(Math.min(this.currentLayerNumber || this.layerCount, this.layerCount))
+    } else {
+      // Show the whole model: current layer at the top and camera framed
+      this.setCurrentLayerNumber(this.layerCount)
+      this.resetView()
+    }
     this.viewer.requestRender()
   }
 
@@ -345,6 +361,12 @@ export class PrettyGCodeApp {
   rebuildGcodeModel () {
     this.gcodeModel.rebuild()
     this.viewer.requestRender()
+  }
+
+  /** (Re)applies the model color settings */
+  updateModelColors () {
+    this.settings.save()
+    this.loadGcode(this.currentJobPath, true)
   }
 
   /** (Re)applies the show bed setting to the 3D view */

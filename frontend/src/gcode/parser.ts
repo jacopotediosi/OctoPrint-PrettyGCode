@@ -39,24 +39,45 @@ const textEncoder = new TextEncoder()
 /** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
 const LAYER_EPSILON_MM = 0.04
 
-/** Color used before any slicer feature type is seen */
-const DEFAULT_COLOR = new THREE.Color('white')
-/** Colors for slicer feature types; the first keyword found in a comment wins */
-const COLOR_KEYWORDS: [string[], string][] = [
-  [['overhang'], '#1f1fff'], // Orca "Overhang wall", PrusaSlicer "Overhang perimeter"
-  [['external', 'outer'], '#ff7d38'], // Cura "WALL-OUTER", Orca "Outer wall", PrusaSlicer "External perimeter", Simplify3D "outer perimeter"
-  [['top solid', 'skin', 'surface'], '#f04040'], // Cura "SKIN", Orca "Top surface"/"Bottom surface", PrusaSlicer "Top solid infill"
-  [['bridge'], '#4d80ba'], // ideaMaker "BRIDGE", Orca "Bridge", PrusaSlicer "Bridge infill"/"Internal bridge infill", Simplify3D "bridge"
-  [['solid'], '#9654cc'], // Orca "Internal solid infill", PrusaSlicer "Solid infill", Simplify3D "solid layer"
-  [['gap'], '#ffffff'], // Orca "Gap infill", PrusaSlicer "Gap fill"
-  [['ironing'], '#ff8c69'], // Orca "Ironing", PrusaSlicer "Ironing"
-  [['interface'], '#008000'], // Cura "SUPPORT-INTERFACE", Orca "Support interface", PrusaSlicer "Support material interface"
-  [['support'], '#00ff00'], // Cura "SUPPORT", Orca "Support"/"Support transition", PrusaSlicer "Support material", Simplify3D "support"/"dense support"
-  [['skirt', 'brim', 'raft'], '#00876e'], // Cura "SKIRT"/"RAFT", ideaMaker "RAFT", Orca "Skirt"/"Brim", PrusaSlicer "Skirt/Brim", Simplify3D "skirt"/"raft"
-  [['tower', 'pillar'], '#b3e3ab'], // Cura "PRIME-TOWER", Orca "Prime tower", PrusaSlicer "Wipe tower", Simplify3D "prime pillar"
-  [['inner', 'perimeter'], '#ffe64d'], // Cura "WALL-INNER", Orca "Inner wall", PrusaSlicer "Perimeter", Simplify3D "inner perimeter"
-  [['fill'], '#b03029'] // Cura "FILL", Orca "Sparse infill", PrusaSlicer "Internal infill", Simplify3D "infill"
+/** One color rule: keywords to look for in comments, and the color to paint their segments */
+export interface ColorRule {
+  keywords: string[]
+  color: string
+}
+
+/** The parser's color rules and the default color used for segments matching no color rule */
+export interface ParserColors {
+  colorRules: ColorRule[]
+  defaultColor: string
+}
+
+/** Default color of segments matching no color rule */
+export const DEFAULT_COLOR = '#ffffff'
+/** Default color rules, in priority order */
+export const DEFAULT_COLOR_RULES: ColorRule[] = [
+  { keywords: ['overhang'], color: '#1f1fff' }, // Orca "Overhang wall", PrusaSlicer "Overhang perimeter"
+  { keywords: ['external', 'outer'], color: '#ff7d38' }, // Cura "WALL-OUTER", Orca "Outer wall", PrusaSlicer "External perimeter", Simplify3D "outer perimeter"
+  { keywords: ['top solid', 'skin', 'surface'], color: '#f04040' }, // Cura "SKIN", Orca "Top surface"/"Bottom surface", PrusaSlicer "Top solid infill"
+  { keywords: ['bridge'], color: '#4d80ba' }, // ideaMaker "BRIDGE", Orca "Bridge", PrusaSlicer "Bridge infill"/"Internal bridge infill", Simplify3D "bridge"
+  { keywords: ['solid'], color: '#9654cc' }, // Orca "Internal solid infill", PrusaSlicer "Solid infill", Simplify3D "solid layer"
+  { keywords: ['gap'], color: '#ffffff' }, // Orca "Gap infill", PrusaSlicer "Gap fill"
+  { keywords: ['ironing'], color: '#ff8c69' }, // Orca "Ironing", PrusaSlicer "Ironing"
+  { keywords: ['interface'], color: '#008000' }, // Cura "SUPPORT-INTERFACE", Orca "Support interface", PrusaSlicer "Support material interface"
+  { keywords: ['support'], color: '#00ff00' }, // Cura "SUPPORT", Orca "Support"/"Support transition", PrusaSlicer "Support material", Simplify3D "support"/"dense support"
+  { keywords: ['skirt', 'brim', 'raft'], color: '#00876e' }, // Cura "SKIRT"/"RAFT", ideaMaker "RAFT", Orca "Skirt"/"Brim", PrusaSlicer "Skirt/Brim", Simplify3D "skirt"/"raft"
+  { keywords: ['tower', 'pillar'], color: '#b3e3ab' }, // Cura "PRIME-TOWER", Orca "Prime tower", PrusaSlicer "Wipe tower", Simplify3D "prime pillar"
+  { keywords: ['inner', 'perimeter'], color: '#ffe64d' }, // Cura "WALL-INNER", Orca "Inner wall", PrusaSlicer "Perimeter", Simplify3D "inner perimeter"
+  { keywords: ['fill'], color: '#b03029' } // Cura "FILL", Orca "Sparse infill", PrusaSlicer "Internal infill", Simplify3D "infill"
 ]
+
+/**
+ * Copies color rules into an editable array
+ * @param colorRules - Color rules to copy
+ * @returns The copied rules
+ */
+export function cloneColorRules (colorRules: ColorRule[]): ColorRule[] {
+  return colorRules.map((rule) => ({ keywords: [...rule.keywords], color: rule.color }))
+}
 
 /** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */
 const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
@@ -91,8 +112,14 @@ export class GCodeParser {
   private machineState: MachineState = INITIAL_MACHINE_STATE
   /** Layer being filled, if any */
   private currentLayer: Layer | null = null
+  /** Color rules, in priority order */
+  private readonly colorRules: { keywords: string[], color: THREE.Color }[]
+  /** Color of segments matching no color rule */
+  private readonly defaultColor: THREE.Color
   /** Color of the current feature type */
-  private currentColor = DEFAULT_COLOR
+  private currentColor: THREE.Color
+  /** Whether a slicer feature type has been seen yet */
+  private featureTypeSeen = false
   /** Id of the object the parsed segments belong to, -1 for none */
   private currentObjectId = -1
   /** Partial line left over from the previous chunk */
@@ -108,9 +135,18 @@ export class GCodeParser {
 
   /**
    * @param objectTag - Tag of the "@<tag> <name>" object markers
+   * @param colors - Colors the parser paints segments with
    */
-  constructor (objectTag = 'Object') {
+  constructor (objectTag = 'Object', colors: ParserColors = { colorRules: DEFAULT_COLOR_RULES, defaultColor: DEFAULT_COLOR }) {
     this.objectTag = objectTag.toLowerCase()
+
+    // Precompute the colors and lowercase the keywords, dropping the empty ones
+    this.defaultColor = new THREE.Color(colors.defaultColor)
+    this.currentColor = this.defaultColor
+    this.colorRules = colors.colorRules.map((rule) => ({
+      keywords: rule.keywords.map((keyword) => keyword.toLowerCase()).filter(Boolean),
+      color: new THREE.Color(rule.color)
+    }))
   }
 
   /**
@@ -139,8 +175,11 @@ export class GCodeParser {
         const commentLower = rawLine.toLowerCase()
 
         // Pick the color based on the feature type
-        const match = COLOR_KEYWORDS.find(([keywords]) => keywords.some((keyword) => commentLower.includes(keyword)))
-        if (match) this.currentColor = new THREE.Color(match[1])
+        const match = this.colorRules.find(({ keywords }) => keywords.some((keyword) => commentLower.includes(keyword)))
+        if (match) {
+          this.currentColor = match.color
+          this.featureTypeSeen = true
+        }
 
         // First nozzle diameter the slicer states wins
         if (this.slicerNozzleDiameter == null) {
@@ -352,7 +391,7 @@ export class GCodeParser {
     this.pendingTravelSeconds = 0
 
     // Grow the model bounds only after a slicer color is set, so pre-print moves don't skew the framing
-    if (this.currentColor !== DEFAULT_COLOR) {
+    if (this.featureTypeSeen) {
       this.bounds.expandByPoint(scratchPoint.set(start.x, start.y, start.z))
       this.bounds.expandByPoint(scratchPoint.set(end.x, end.y, end.z))
     }
@@ -374,10 +413,11 @@ export class GCodeParser {
  * Downloads and parses a job's gcode; an empty path yields an empty result
  * @param jobPath - Server path of the job file
  * @param objectTag - Tag of the "@<tag> <name>" object markers
+ * @param colors - Colors the parser paints segments with
  * @returns The parser holding the parsed gcode
  */
-export async function parseGcodeFile (jobPath: string, objectTag?: string) {
-  const parser = new GCodeParser(objectTag)
+export async function parseGcodeFile (jobPath: string, objectTag?: string, colors?: ParserColors) {
+  const parser = new GCodeParser(objectTag, colors)
   if (!jobPath) return parser
 
   const fileUrl = OctoPrint.files.downloadPath('local', jobPath)

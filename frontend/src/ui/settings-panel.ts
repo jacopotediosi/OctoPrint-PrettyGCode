@@ -1,6 +1,7 @@
 import GUI, { type Controller } from 'lil-gui'
 import { NAVIGATION_MODES } from '../viewer/navigation'
 import { Settings } from '../settings'
+import { initModelColorsModal } from './model-colors-modal'
 import type { PrettyGCodeApp } from '../app'
 
 /** Default value of every setting */
@@ -96,6 +97,10 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
     'Show gcode excluded by the Exclude Region and Cancel Object plugins, greyed out.'
   ).onFinishChange(() => app.rebuildGcodeModel())
 
+  const modelColorsModal = initModelColorsModal(app, refreshResets)
+  const customizeColors = gcodeModelFolder.add({ customize: () => modelColorsModal.open() }, 'customize').name('Customize colors…')
+  customizeColors.domElement.title = 'Customize the colors used for the gcode model.'
+
   /* ---- Nozzle ---- */
 
   const nozzleFolder = gui.addFolder('Nozzle')
@@ -165,6 +170,9 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
   const defaultOf = (controller: Controller) => (DEFAULTS as any)[controller.property]
   const isDefault = (controller: Controller) => controller.getValue() === defaultOf(controller)
   const reset = (controller: Controller) => controller.load(defaultOf(controller))
+  const colorsAtDefault = () =>
+    settings.modelDefaultColor === DEFAULTS.modelDefaultColor &&
+    JSON.stringify(settings.modelColorRules) === JSON.stringify(DEFAULTS.modelColorRules)
   const makeResetButton = (title: string) => {
     const button = document.createElement('button')
     button.type = 'button'
@@ -176,27 +184,44 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
     return button
   }
 
-  const controllers = gui.controllersRecursive()
+  // How to reset a setting row and tell whether it is at its default
+  type ResetEntry = { controller: Controller, atDefault: () => boolean, resetToDefault: () => void }
+
+  // Rows that reset through their own logic instead of loading a default value
+  const customResets: ResetEntry[] = [
+    { controller: customizeColors, atDefault: colorsAtDefault, resetToDefault: modelColorsModal.resetToDefault }
+  ]
+  const customControllers = new Set(customResets.map((entry) => entry.controller))
+
+  // One reset entry per setting row, the custom ones keeping their own logic
+  const resetEntries: ResetEntry[] = [
+    ...gui.controllersRecursive()
+      .filter((controller) => !customControllers.has(controller))
+      .map((controller) => ({ controller, atDefault: () => isDefault(controller), resetToDefault: () => reset(controller) })),
+    ...customResets
+  ]
 
   // One reset button at the right of each setting's row, disabled while the setting is at its default
-  for (const controller of controllers) {
+  for (const { controller, atDefault, resetToDefault } of resetEntries) {
     const button = makeResetButton('Reset this setting to its default value')
-    button.addEventListener('click', () => reset(controller))
+    button.addEventListener('click', resetToDefault)
     controller.domElement.append(button)
-    refreshers.push(() => { button.disabled = isDefault(controller) })
+    refreshers.push(() => { button.disabled = atDefault() })
   }
 
   // Panel header: the title and a reset button for every setting, disabled while all are at their default
   const resetAll = makeResetButton('Reset all settings to their default values')
   resetAll.id = 'pg-reset-all'
-  resetAll.addEventListener('click', () => controllers.forEach(reset))
+  resetAll.addEventListener('click', () => resetEntries.forEach((entry) => entry.resetToDefault()))
   const header = document.createElement('div')
   header.id = 'pg-settings-header'
   header.append('Settings', resetAll)
   $('#pg-view-settings').append(header)
-  refreshers.push(() => { resetAll.disabled = controllers.every(isDefault) })
+  refreshers.push(() => { resetAll.disabled = resetEntries.every((entry) => entry.atDefault()) })
 
   refreshResets()
+
+  /* ---- Return ---- */
 
   return gui
 }
