@@ -60,7 +60,7 @@ export function initToggleButtons (app: PrettyGCodeApp) {
       wasMaximized = $('.page-container').hasClass('pg-maximized')
 
       $('.page-container').addClass('pg-maximized')
-      $('.page-container')[0].requestFullscreen()
+      document.documentElement.requestFullscreen()
 
       app.updateWindowStates()
     }
