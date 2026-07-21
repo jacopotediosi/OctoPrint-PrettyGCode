@@ -1,5 +1,6 @@
 import * as THREE from '../three-exports'
 import { arcOffsetFromRadius, interpolateArc } from './arc-interpolation'
+import { type ParserColors, DEFAULT_COLOR_RULES, DEFAULT_COLOR } from './model-colors'
 
 /** Machine state the parser tracks */
 export interface MachineState {
@@ -38,46 +39,6 @@ const textEncoder = new TextEncoder()
 
 /** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
 const LAYER_EPSILON_MM = 0.04
-
-/** One color rule: keywords to look for in comments, and the color to paint their segments */
-export interface ColorRule {
-  keywords: string[]
-  color: string
-}
-
-/** The parser's color rules and the default color used for segments matching no color rule */
-export interface ParserColors {
-  colorRules: ColorRule[]
-  defaultColor: string
-}
-
-/** Default color of segments matching no color rule */
-export const DEFAULT_COLOR = '#ffffff'
-/** Default color rules, in priority order */
-export const DEFAULT_COLOR_RULES: ColorRule[] = [
-  { keywords: ['overhang'], color: '#1f1fff' }, // Orca "Overhang wall", PrusaSlicer "Overhang perimeter"
-  { keywords: ['external', 'outer'], color: '#ff7d38' }, // Cura "WALL-OUTER", Orca "Outer wall", PrusaSlicer "External perimeter", Simplify3D "outer perimeter"
-  { keywords: ['top solid', 'skin', 'surface'], color: '#f04040' }, // Cura "SKIN", Orca "Top surface"/"Bottom surface", PrusaSlicer "Top solid infill"
-  { keywords: ['bridge'], color: '#4d80ba' }, // ideaMaker "BRIDGE", Orca "Bridge", PrusaSlicer "Bridge infill"/"Internal bridge infill", Simplify3D "bridge"
-  { keywords: ['solid'], color: '#9654cc' }, // Orca "Internal solid infill", PrusaSlicer "Solid infill", Simplify3D "solid layer"
-  { keywords: ['gap'], color: '#ffffff' }, // Orca "Gap infill", PrusaSlicer "Gap fill"
-  { keywords: ['ironing'], color: '#ff8c69' }, // Orca "Ironing", PrusaSlicer "Ironing"
-  { keywords: ['interface'], color: '#008000' }, // Cura "SUPPORT-INTERFACE", Orca "Support interface", PrusaSlicer "Support material interface"
-  { keywords: ['support'], color: '#00ff00' }, // Cura "SUPPORT", Orca "Support"/"Support transition", PrusaSlicer "Support material", Simplify3D "support"/"dense support"
-  { keywords: ['skirt', 'brim', 'raft'], color: '#00876e' }, // Cura "SKIRT"/"RAFT", ideaMaker "RAFT", Orca "Skirt"/"Brim", PrusaSlicer "Skirt/Brim", Simplify3D "skirt"/"raft"
-  { keywords: ['tower', 'pillar'], color: '#b3e3ab' }, // Cura "PRIME-TOWER", Orca "Prime tower", PrusaSlicer "Wipe tower", Simplify3D "prime pillar"
-  { keywords: ['inner', 'perimeter'], color: '#ffe64d' }, // Cura "WALL-INNER", Orca "Inner wall", PrusaSlicer "Perimeter", Simplify3D "inner perimeter"
-  { keywords: ['fill'], color: '#b03029' } // Cura "FILL", Orca "Sparse infill", PrusaSlicer "Internal infill", Simplify3D "infill"
-]
-
-/**
- * Copies color rules into an editable array
- * @param colorRules - Color rules to copy
- * @returns The copied rules
- */
-export function cloneColorRules (colorRules: ColorRule[]): ColorRule[] {
-  return colorRules.map((rule) => ({ keywords: [...rule.keywords], color: rule.color }))
-}
 
 /** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */
 const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i

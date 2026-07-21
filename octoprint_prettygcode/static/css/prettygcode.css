@@ -364,9 +364,31 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     color: #999;
     cursor: pointer;
 }
+.pg-modal-color-title .pg-modal-color-reset:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
 /* Modal help text */
 .pg-modal-color .help-block {
     text-align: justify;
+}
+/* Preset row */
+.pg-modal-color-preset {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.pg-modal-color-preset-label {
+    flex-shrink: 0;
+}
+.pg-modal-color .pg-modal-color-preset-select {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+}
+.pg-modal-color-preset-load {
+    flex-shrink: 0;
 }
 /* Modal rows (both default color and color rules) are flex */
 .pg-modal-color-default,

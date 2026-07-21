@@ -1,6 +1,6 @@
 import type { NavigationModeKey, ProjectionMode } from './viewer/navigation'
 import type { NozzleStyle } from './viewer/nozzle'
-import { type ColorRule, DEFAULT_COLOR_RULES, DEFAULT_COLOR, cloneColorRules } from './gcode/parser'
+import { type ColorRule, DEFAULT_COLOR_RULES, DEFAULT_COLOR, cloneColorRules } from './gcode/model-colors'
 
 /** localStorage key holding the settings */
 const STORAGE_KEY = 'pg-settings'
