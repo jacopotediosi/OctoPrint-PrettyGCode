@@ -77,6 +77,9 @@ export class GCodeParser {
   /** Tag of the object markers, lowercased */
   private readonly objectTag: string
 
+  /** Whether G90/G91 also switch the extrusion mode, not only the axes */
+  private readonly g90InfluencesExtruder: boolean
+
   /** Current machine state */
   private machineState: MachineState = INITIAL_MACHINE_STATE
   /** Layer being filled, if any */
@@ -105,9 +108,11 @@ export class GCodeParser {
   /**
    * @param objectTag - Tag of the "@<tag> <name>" object markers
    * @param colors - Colors the parser paints segments with
+   * @param g90InfluencesExtruder - Whether G90/G91 also switch the extrusion mode
    */
-  constructor (objectTag = 'Object', colors: ParserColors = { colorRules: DEFAULT_COLOR_RULES, defaultColor: DEFAULT_COLOR }) {
+  constructor (objectTag = 'Object', colors: ParserColors = { colorRules: DEFAULT_COLOR_RULES, defaultColor: DEFAULT_COLOR }, g90InfluencesExtruder = false) {
     this.objectTag = objectTag.toLowerCase()
+    this.g90InfluencesExtruder = g90InfluencesExtruder
 
     // Precompute the colors and lowercase the keywords, dropping the empty ones
     this.defaultColor = new THREE.Color(colors.defaultColor)
@@ -256,12 +261,12 @@ export class GCodeParser {
         // Absolute positioning
         case 'G90':
           this.axesRelative = false
-          this.extrusionRelative = false
+          if (this.g90InfluencesExtruder) this.extrusionRelative = false
           break
           // Relative positioning
         case 'G91':
           this.axesRelative = true
-          this.extrusionRelative = true
+          if (this.g90InfluencesExtruder) this.extrusionRelative = true
           break
           // Absolute extrusion
         case 'M82':
@@ -385,10 +390,11 @@ export class GCodeParser {
  * @param jobPath - Server path of the job file
  * @param objectTag - Tag of the "@<tag> <name>" object markers
  * @param colors - Colors the parser paints segments with
+ * @param g90InfluencesExtruder - Whether G90/G91 also switch the extrusion mode
  * @returns The parser holding the parsed gcode
  */
-export async function parseGcodeFile (jobPath: string, objectTag?: string, colors?: ParserColors) {
-  const parser = new GCodeParser(objectTag, colors)
+export async function parseGcodeFile (jobPath: string, objectTag?: string, colors?: ParserColors, g90InfluencesExtruder?: boolean) {
+  const parser = new GCodeParser(objectTag, colors, g90InfluencesExtruder)
   if (!jobPath) return parser
 
   const fileUrl = OctoPrint.files.downloadPath('local', jobPath)

@@ -209,7 +209,9 @@ export class PrettyGCodeApp {
     // The object marker tag comes from the Cancel Object plugin settings
     const objectTag = this.settingsVM.settings?.plugins?.cancelobject?.reptag?.()
     const colors = { colorRules: this.settings.modelColorRules, defaultColor: this.settings.modelDefaultColor }
-    const parsedGcode = await parseGcodeFile(jobPath, objectTag, colors)
+    // Whether G90/G91 affect extrusion follows OctoPrint's firmware setting
+    const g90InfluencesExtruder = this.settingsVM.settings?.feature?.g90InfluencesExtruder?.() ?? false
+    const parsedGcode = await parseGcodeFile(jobPath, objectTag, colors, g90InfluencesExtruder)
 
     // Stop if a newer load has started
     if (sequence !== this.loadSequence) return
