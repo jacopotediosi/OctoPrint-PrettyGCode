@@ -8,8 +8,8 @@ import { initSettingsPanel } from './ui/settings-panel'
 import { initOverlayWindows } from './ui/overlay-windows'
 import { updateDashboardOverlay } from './ui/dashboard'
 import { updateWebcamOverlay } from './ui/webcam'
-import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue } from './ui/layer-slider'
-import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue } from './ui/segment-slider'
+import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue, applyLayerSliderVisibility } from './ui/layer-slider'
+import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue, applySegmentSliderVisibility } from './ui/segment-slider'
 import { initToggleButtons } from './ui/toggle-buttons'
 import { setStatusBarText, applyStatusBarVisibility } from './ui/status-bar'
 import type { BedVolume } from './viewer/bed'
@@ -418,6 +418,8 @@ export class PrettyGCodeApp {
   /** Shows or hides the overlay windows to match the current settings */
   updateWindowStates () {
     applyStatusBarVisibility(this.settings.showStatusBar)
+    applyLayerSliderVisibility(this.settings.showLayerSlider)
+    applySegmentSliderVisibility(this.settings.showSegmentSlider)
 
     $('#state_wrapper').toggleClass('pg-hidden', !this.settings.showState)
     $('#files_wrapper').toggleClass('pg-hidden', !this.settings.showFiles)

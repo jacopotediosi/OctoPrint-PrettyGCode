@@ -13,6 +13,10 @@ export class Settings {
   darkMode = false
   /** Whether to show the temperature status bar */
   showStatusBar = true
+  /** Whether to show the layer slider */
+  showLayerSlider = true
+  /** Whether to show the segment slider */
+  showSegmentSlider = true
   /** Whether to antialias the 3D view */
   antialias = true
 

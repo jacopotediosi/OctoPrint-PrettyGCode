@@ -52,6 +52,14 @@ export function initLayerSlider (app: PrettyGCodeApp) {
 }
 
 /**
+ * Shows or hides the layer slider
+ * @param show - True to show the layer slider
+ */
+export function applyLayerSliderVisibility (show: boolean) {
+  $('#pg-layer-slider-ui, .pg-layer-step-button').toggleClass('pg-hidden', !show)
+}
+
+/**
  * (Re)adapts the slider to the loaded gcode's layer count
  * @param app - Application instance
  */

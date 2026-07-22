@@ -51,6 +51,14 @@ export function initSegmentSlider (app: PrettyGCodeApp) {
 }
 
 /**
+ * Shows or hides the segment slider
+ * @param show - True to show the segment slider
+ */
+export function applySegmentSliderVisibility (show: boolean) {
+  $('#pg-segment-slider-ui, .pg-segment-step-button').toggleClass('pg-hidden', !show)
+}
+
+/**
  * (Re)adapts the slider to the current layer's segment count
  * @param app - Application instance
  */

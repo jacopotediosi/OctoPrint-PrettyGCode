@@ -50,6 +50,20 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
 
   option(
     interfaceFolder,
+    'showLayerSlider',
+    'Layer slider',
+    'Show the layer slider along the right edge of the view.'
+  ).onFinishChange(() => app.updateWindowStates())
+
+  option(
+    interfaceFolder,
+    'showSegmentSlider',
+    'Segment slider',
+    'Show the segment slider along the bottom edge of the view.'
+  ).onFinishChange(() => app.updateWindowStates())
+
+  option(
+    interfaceFolder,
     'antialias',
     'Antialiasing',
     'Smooth jagged edges in the 3D view.'

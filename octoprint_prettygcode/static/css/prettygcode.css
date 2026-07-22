@@ -157,7 +157,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     top: var(--pg-margin-top);
     left: var(--pg-margin-left);
     width: 300px;
-    max-height: calc(100vh - var(--pg-margin-top) - var(--pg-margin-bottom) - var(--pg-toggle-height) - var(--pg-stack-gap));
+    max-height: calc(100vh - var(--pg-margin-top) - var(--pg-margin-bottom) - var(--pg-toggle-height) - var(--pg-stack-gap) - var(--pg-segment-lane));
     box-sizing: border-box;
     padding-top: var(--pg-window-header-height);
     position: absolute;
@@ -203,7 +203,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     position: absolute;
     right: 130px;
     top: var(--pg-margin-top);
-    max-height: calc(100% - var(--pg-margin-top) - var(--pg-margin-bottom) - var(--pg-toggle-height) - var(--pg-stack-gap));
+    max-height: calc(100% - var(--pg-margin-top) - var(--pg-margin-bottom) - var(--pg-toggle-height) - var(--pg-stack-gap) - var(--pg-segment-lane));
     box-sizing: border-box;
     padding-top: var(--pg-window-header-height);
     display: flex;
@@ -531,6 +531,9 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 #pg-layer-step-down-button {
     bottom: var(--pg-margin-bottom);
 }
+:root:has(#pg-layer-slider-ui.pg-hidden) {
+    --pg-slider-lane: 0px;
+}
 
 /* === Segment slider === */
 #pg-segment-slider-ui {
@@ -572,6 +575,9 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 }
 #pg-segment-step-forward-button {
     right: calc(var(--pg-margin-right) + var(--pg-slider-lane));
+}
+:root:has(#pg-segment-slider-ui.pg-hidden) {
+    --pg-segment-lane: 0px;
 }
 
 /* === Dark mode === */
