@@ -656,6 +656,11 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-dark .pg-maximized #files .gcode_files .entry:hover {
     background-color: rgba(255, 255, 255, 0.08);
 }
+.pg-dark #pg-view-settings,
+.pg-dark #state_wrapper,
+.pg-dark #files_wrapper {
+    color-scheme: dark;
+}
 
 /* === Dark mode: modals === */
 .pg-dark .modal-backdrop,
@@ -664,6 +669,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 }
 .pg-dark .modal {
     color: #ccc;
+    color-scheme: dark;
     background-color: #2a2a2a;
     border-color: rgba(255, 255, 255, 0.15);
     box-shadow: 0 3px 7px rgba(0, 0, 0, 0.6);
