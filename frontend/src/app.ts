@@ -418,8 +418,11 @@ export class PrettyGCodeApp {
   /** Shows or hides the overlay windows to match the current settings */
   updateWindowStates () {
     applyStatusBarVisibility(this.settings.showStatusBar)
+
     applyLayerSliderVisibility(this.settings.showLayerSlider)
     applySegmentSliderVisibility(this.settings.showSegmentSlider)
+    if (!this.settings.showLayerSlider) this.setCurrentLayerNumber(this.layerCount)
+    else if (!this.settings.showSegmentSlider) this.setCurrentSegmentNumber(this.currentLayerSegmentCount)
 
     $('#state_wrapper').toggleClass('pg-hidden', !this.settings.showState)
     $('#files_wrapper').toggleClass('pg-hidden', !this.settings.showFiles)
