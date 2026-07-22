@@ -26,20 +26,20 @@ repos:
       - id: check-merge-conflict
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.17
+    rev: v0.15.22
     hooks:
       - id: ruff-check
         args: [--target-version=py37]
       - id: ruff-format
 
   - repo: https://github.com/djlint/djLint
-    rev: v1.39.2
+    rev: v1.42.2
     hooks:
       - id: djlint-reformat-jinja
       - id: djlint-jinja
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.2
+    rev: v2.4.3
     hooks:
       - id: codespell
         additional_dependencies:
