@@ -181,8 +181,8 @@ export class GCodeParser {
         case 'G1': {
           const move = { x: coord('x'), y: coord('y'), z: coord('z'), e: coord('e'), f: coord('f') }
 
-          // New layer only when extrusion climbs to a higher Z
-          if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || move.z > this.currentLayer.z + LAYER_EPSILON_MM)) {
+          // New layer when extrusion moves to a different Z
+          if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
             this.newLayer(move)
           }
 
@@ -203,8 +203,8 @@ export class GCodeParser {
             f: coord('f') // feedrate
           }
 
-          // New layer only when extrusion climbs to a higher Z
-          if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || move.z > this.currentLayer.z + LAYER_EPSILON_MM)) {
+          // New layer when extrusion moves to a different Z
+          if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
             this.newLayer(move)
           }
 
