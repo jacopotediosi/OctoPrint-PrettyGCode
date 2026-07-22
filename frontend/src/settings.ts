@@ -30,7 +30,7 @@ export class Settings {
   /** Whether to draw the lines with their real thickness */
   thickLines = true
   /** Shading intensity of the topmost displayed layer, in percent */
-  highlightIntensity = 30
+  highlightIntensity = 40
   /** Whether to show gcode excluded from printing, greyed out */
   showExcluded = true
   /** Model color rules, tried in order */
