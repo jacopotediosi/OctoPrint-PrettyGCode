@@ -9,6 +9,7 @@ import { initOverlayWindows } from './ui/overlay-windows'
 import { updateDashboardOverlay } from './ui/dashboard'
 import { updateWebcamOverlay } from './ui/webcam'
 import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue } from './ui/layer-slider'
+import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue } from './ui/segment-slider'
 import { initToggleButtons } from './ui/toggle-buttons'
 import { setStatusBarText, applyStatusBarVisibility } from './ui/status-bar'
 import type { BedVolume } from './viewer/bed'
@@ -76,8 +77,10 @@ export class PrettyGCodeApp {
   private currentFilePosition = 0
   /** 1-based current layer */
   private _currentLayerNumber = 0
-  /** Whether the user is browsing layers manually */
-  private manualLayerControl = false
+  /** Revealed segments of the current layer */
+  private _currentSegmentNumber = 0
+  /** Whether the user is sliding the layer or segment manually */
+  private manualSliding = false
 
   /** Prefix of received terminal log lines */
   private readonly recvLogPrefix = parseInt(VERSION, 10) < 2 ? 'Recv: ' : '<<< '
@@ -123,6 +126,7 @@ export class PrettyGCodeApp {
         // UI controls
         initSettingsPanel(this)
         initLayerSlider(this)
+        initSegmentSlider(this)
         initOverlayWindows(this.settings)
         initToggleButtons(this)
         this.updateDarkMode()
@@ -262,7 +266,7 @@ export class PrettyGCodeApp {
    */
   private updatePrintView (deltaSeconds: number): PrintViewUpdate {
     const state = this.currentPrinterState
-    const tracking = state && !this.manualLayerControl && (state.flags.printing || state.flags.paused)
+    const tracking = state && !this.manualSliding && (state.flags.printing || state.flags.paused)
 
     let needRender = false
     let nozzlePosition: Vector3 | null = null
@@ -273,14 +277,15 @@ export class PrettyGCodeApp {
       const spot = this.printTimeline.advance(this.currentFilePosition, deltaSeconds)
       if (spot) {
         this.gcodeModel.revealTo(spot)
-        revealedLayer = this.printTimeline.layerNumberAt(spot.segmentIndex)
-        this.setCurrentLayerNumber(revealedLayer)
+        const { layerNumber, segmentNumber } = this.printTimeline.revealPosition(spot.segmentIndex)
+        this.setReveal(layerNumber, segmentNumber)
+        revealedLayer = layerNumber
       }
       needRender = true
       nozzlePosition = this.printTimeline.getNozzlePosition()
     } else {
-      // Reveal gcode up to the selected layer
-      needRender = this.gcodeModel.syncToLayer(this.currentLayerNumber)
+      // Reveal gcode up to the selected within-layer position
+      needRender = this.gcodeModel.syncToLayerSegment(this.currentLayerNumber, this.currentSegmentNumber)
       if (needRender) revealedLayer = this.currentLayerNumber
     }
 
@@ -298,21 +303,51 @@ export class PrettyGCodeApp {
     return this._currentLayerNumber
   }
 
-  /**
-   * Selects the current layer
-   * @param layerNumber - 1-based layer number
-   */
-  setCurrentLayerNumber (layerNumber: number) {
-    this._currentLayerNumber = layerNumber
-    setLayerSliderValue(this, layerNumber)
+  /** Revealed segments of the current layer, 0 to its total */
+  get currentSegmentNumber () {
+    return this._currentSegmentNumber
+  }
+
+  /** Total segments the current layer is made of */
+  get currentLayerSegmentCount () {
+    return this.printTimeline.layerSegmentCount(this._currentLayerNumber)
   }
 
   /**
-   * Turns manual layer browsing on or off
-   * @param manual - True to enable manual layer browsing
+   * Selects the current layer, revealing it whole
+   * @param layerNumber - 1-based layer number
    */
-  setManualLayerControl (manual: boolean) {
-    this.manualLayerControl = manual
+  setCurrentLayerNumber (layerNumber: number) {
+    this.setReveal(layerNumber, this.printTimeline.layerSegmentCount(layerNumber))
+  }
+
+  /**
+   * Reveals a part of the current layer, up to a within-layer segment
+   * @param segmentNumber - Segments of the current layer to reveal
+   */
+  setCurrentSegmentNumber (segmentNumber: number) {
+    this._currentSegmentNumber = Math.min(Math.max(segmentNumber, 0), this.currentLayerSegmentCount)
+    setSegmentSliderValue(this, this._currentSegmentNumber)
+  }
+
+  /**
+   * Sets the reveal position and syncs both layer and segment sliders
+   * @param layerNumber - 1-based layer number
+   * @param segmentNumber - Revealed segments of that layer
+   */
+  private setReveal (layerNumber: number, segmentNumber: number) {
+    this._currentLayerNumber = layerNumber
+    this._currentSegmentNumber = segmentNumber
+    setLayerSliderValue(this, layerNumber)
+    updateSegmentSliderMax(this)
+  }
+
+  /**
+   * Turns manual sliding on or off
+   * @param manual - True to enable manual sliding
+   */
+  setManualSliding (manual: boolean) {
+    this.manualSliding = manual
   }
 
   /** Resets the camera to the default view */

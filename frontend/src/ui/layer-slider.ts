@@ -1,15 +1,14 @@
 import type { PrettyGCodeApp } from '../app'
-
-/** Milliseconds a step button must be held before it auto-repeats */
-const STEP_HOLD_DELAY_MS = 500
-/** Milliseconds between steps while a step button is held */
-const STEP_HOLD_REPEAT_MS = 50
+import { bindStepButton } from './slider-step-button'
 
 /**
  * Creates the layer slider
  * @param app - Application instance
  */
 export function initLayerSlider (app: PrettyGCodeApp) {
+  const onStart = () => app.setManualSliding(true)
+  const onStop = () => app.setManualSliding(false)
+
   /**
    * Moves the displayed layer by a delta
    * @param delta - Layers to move by, negative to go down
@@ -19,44 +18,11 @@ export function initLayerSlider (app: PrettyGCodeApp) {
     app.setCurrentLayerNumber(layer)
   }
 
-  /**
-   * Makes a button step the layer once per click and repeatedly while held
-   * @param button - Selector of the step button
-   * @param delta - Layers to move per step
-   */
-  const bindStepButton = (button: string, delta: number) => {
-    let delayTimer: number | undefined
-    let repeatTimer: number | undefined
-    let repeated = false
-
-    const release = () => {
-      clearTimeout(delayTimer)
-      clearInterval(repeatTimer)
-      app.setManualLayerControl(false)
-      $(document).off('pointerup pointercancel', release)
-    }
-
-    $(button).on('pointerdown', () => {
-      repeated = false
-      app.setManualLayerControl(true)
-      delayTimer = window.setTimeout(() => {
-        repeatTimer = window.setInterval(() => {
-          repeated = true
-          stepLayer(delta)
-        }, STEP_HOLD_REPEAT_MS)
-      }, STEP_HOLD_DELAY_MS)
-      $(document).on('pointerup pointercancel', release)
-    }).on('click', () => {
-      if (!repeated) stepLayer(delta)
-      repeated = false
-    })
-  }
-
-  // Create HTML elements
+  // Create HTML elements, slider last so its handle paints over the step buttons
   $('.pg-view').append(
     '<button id="pg-layer-step-up-button" class="pg-layer-step-button btn" title="Layer up" disabled><i class="fa-solid fa-chevron-up"></i></button>',
-    '<div id="pg-layer-slider"></div>',
-    '<button id="pg-layer-step-down-button" class="pg-layer-step-button btn" title="Layer down" disabled><i class="fa-solid fa-chevron-down"></i></button>'
+    '<button id="pg-layer-step-down-button" class="pg-layer-step-button btn" title="Layer down" disabled><i class="fa-solid fa-chevron-down"></i></button>',
+    '<div id="pg-layer-slider"></div>'
   )
 
   // Initialize the slider
@@ -71,11 +37,7 @@ export function initLayerSlider (app: PrettyGCodeApp) {
     value: 100
   }).on('slide', (event: any) => {
     app.setCurrentLayerNumber(event.value)
-  }).on('slideStart', () => {
-    app.setManualLayerControl(true)
-  }).on('slideStop', () => {
-    app.setManualLayerControl(false)
-  })
+  }).on('slideStart', onStart).on('slideStop', onStop)
 
   // Step layers with the mouse wheel while hovering the slider
   $('#pg-layer-slider-ui').on('wheel', (event: any) => {
@@ -85,8 +47,8 @@ export function initLayerSlider (app: PrettyGCodeApp) {
   })
 
   // Bind the step buttons
-  bindStepButton('#pg-layer-step-up-button', 1)
-  bindStepButton('#pg-layer-step-down-button', -1)
+  bindStepButton('#pg-layer-step-up-button', { onStep: () => stepLayer(1), onStart, onStop })
+  bindStepButton('#pg-layer-step-down-button', { onStep: () => stepLayer(-1), onStart, onStop })
 }
 
 /**

@@ -294,34 +294,21 @@ export class GCodeModel {
   }
 
   /**
-   * Shows the layers up to the given one, hiding the ones above
+   * Shows a layer up to a within-layer position, hiding the layers above
    * @param layerNumber - 1-based topmost layer to show
+   * @param segmentsShown - Segments of that layer to reveal
    * @returns True if anything changed
    */
-  syncToLayer (layerNumber: number) {
+  syncToLayerSegment (layerNumber: number, segmentsShown: number) {
     let needUpdate = false
 
-    // Hide the growing tip while a layer is manually browsed
+    // Hide the growing tip while sliding layer/segments manually
     if (this.tipLine && this.tipLine.visible) {
       this.tipLine.visible = false
       needUpdate = true
     }
 
-    this.linesGroup.traverse((child) => {
-      if (!isLayerObject(child)) return
-
-      // Layers above the current one are hidden
-      if (child.userData.layerNumber > layerNumber) {
-        if (child.visible) needUpdate = true
-        child.visible = false
-        return
-      }
-
-      // The rest are shown whole
-      if (!child.visible) needUpdate = true
-      child.visible = true
-      if (this.setRevealCount(child, child.userData.numSegments)) needUpdate = true
-    })
+    if (this.revealUpTo(this.timeline.revealIndex(layerNumber, segmentsShown))) needUpdate = true
 
     return needUpdate
   }
@@ -331,18 +318,32 @@ export class GCodeModel {
    * @param spot - Timeline position to reveal up to
    */
   revealTo (spot: TimelineSpot) {
-    const revealed = spot.segmentIndex
-
-    // Show each part's segments up to the reveal position, hide parts it hasn't reached
-    this.linesGroup.traverse((child) => {
-      if (!isLayerObject(child)) return
-      const count = this.partRevealCount(child, revealed)
-      child.visible = count > 0
-      if (count > 0) this.setRevealCount(child, count)
-    })
+    this.revealUpTo(spot.segmentIndex)
 
     // Grow the segment the nozzle is mid-way through
     this.updateTipLine(spot)
+  }
+
+  /**
+   * Reveals the model up to a global segment index, hiding the parts it hasn't reached
+   * @param index - Global index of the reveal position
+   * @returns True if anything changed
+   */
+  private revealUpTo (index: number) {
+    let needUpdate = false
+
+    this.linesGroup.traverse((child) => {
+      if (!isLayerObject(child)) return
+      const count = this.partRevealCount(child, index)
+      const visible = count > 0
+      if (child.visible !== visible) {
+        child.visible = visible
+        needUpdate = true
+      }
+      if (visible && this.setRevealCount(child, count)) needUpdate = true
+    })
+
+    return needUpdate
   }
 
   /**
