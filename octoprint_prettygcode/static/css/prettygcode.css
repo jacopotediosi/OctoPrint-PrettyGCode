@@ -32,8 +32,10 @@
     --pg-z-sliders: 2001;
     --pg-z-dashboard: 2002;
     --pg-z-webcam: 2003;
-    --pg-z-top-windows: 2004;
-    --pg-z-buttons: 2010;
+    --pg-z-bottom-buttons: 2004;
+    --pg-z-camera-buttons: 2005;
+    --pg-z-top-windows: 2006;
+    --pg-z-top-buttons: 2010;
     --pg-z-resize-handles: 2020;
     --pg-z-modals-backdrop: 2100;
     --pg-z-modals: 2101;
@@ -119,8 +121,16 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     display: flex;
     gap: var(--pg-buttons-gap);
 }
-.pg-maximized .pg-buttons {
-    z-index: var(--pg-z-buttons);
+.pg-maximized .pg-top-left-buttons,
+.pg-maximized .pg-top-right-buttons {
+    z-index: var(--pg-z-top-buttons);
+}
+.pg-maximized .pg-camera-buttons {
+    z-index: var(--pg-z-camera-buttons);
+}
+.pg-maximized .pg-bottom-left-buttons,
+.pg-maximized .pg-bottom-right-buttons {
+    z-index: var(--pg-z-bottom-buttons);
 }
 .pg-top-left-buttons { top: var(--pg-margin-top); left: var(--pg-margin-left); }
 .pg-top-right-buttons { top: var(--pg-margin-top); right: calc(var(--pg-margin-right) + var(--pg-slider-lane)); }
