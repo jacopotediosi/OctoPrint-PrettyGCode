@@ -10,13 +10,13 @@
     "dependencies": {
         "camera-controls": "3.1.2",
         "lil-gui": "0.21.0",
-        "three": "0.184.0"
+        "three": "0.185.1"
     },
     "devDependencies": {
         "@types/jquery": "^4.0.1",
-        "@types/three": "0.184.0",
-        "esbuild": "^0.28.0",
-        "eslint": "^9.39.4",
+        "@types/three": "0.185.1",
+        "esbuild": "^0.28.1",
+        "eslint": "^9.39.5",
         "neostandard": "^0.13.0",
         "typescript": "^6.0.3"
     },
