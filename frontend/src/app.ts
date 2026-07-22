@@ -376,7 +376,7 @@ export class PrettyGCodeApp {
 
   /** (Re)applies the dark mode setting */
   updateDarkMode () {
-    $('.page-container').toggleClass('pg-dark', this.settings.darkMode)
+    $('html').toggleClass('pg-dark', this.settings.darkMode)
     this.viewer.applyBackground(this.settings.darkMode)
     this.viewer.updateBedMesh()
   }

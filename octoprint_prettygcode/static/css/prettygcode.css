@@ -586,7 +586,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     --pg-window-text: #ccc;
     --pg-shadow-color: rgba(0, 0, 0, 0.6);
 }
-.pg-maximized.pg-dark {
+.pg-dark .pg-maximized {
     color: #ddd;
 }
 .pg-dark .pg-status {
@@ -637,24 +637,85 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     --hover-color: rgba(255, 255, 255, 0.15);
     --focus-color: rgba(255, 255, 255, 0.22);
 }
-.pg-maximized.pg-dark #state_wrapper,
-.pg-maximized.pg-dark #files_wrapper {
+.pg-dark .pg-maximized #state_wrapper,
+.pg-dark .pg-maximized #files_wrapper {
     border-color: #444;
 }
-.pg-maximized.pg-dark #state_wrapper hr {
+.pg-dark .pg-maximized #state_wrapper hr {
     border-top-color: #444;
     border-bottom-color: transparent;
 }
-.pg-maximized.pg-dark #state_wrapper .progress,
-.pg-maximized.pg-dark #files_wrapper .progress {
+.pg-dark .pg-maximized #state_wrapper .progress,
+.pg-dark .pg-maximized #files_wrapper .progress {
     background-color: rgba(255, 255, 255, 0.12);
     background-image: none;
 }
-.pg-maximized.pg-dark #files .gcode_files .entry {
+.pg-dark .pg-maximized #files .gcode_files .entry {
     border-bottom-color: #444;
 }
-.pg-maximized.pg-dark #files .gcode_files .entry:hover {
+.pg-dark .pg-maximized #files .gcode_files .entry:hover {
     background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* === Dark mode: modals === */
+.pg-dark .modal-backdrop,
+.pg-dark .modal-backdrop.fade.in {
+    background: #000;
+}
+.pg-dark .modal {
+    color: #ccc;
+    background-color: #2a2a2a;
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 3px 7px rgba(0, 0, 0, 0.6);
+}
+.pg-dark .modal-header {
+    border-bottom-color: #444;
+}
+.pg-dark .modal-footer {
+    background-color: #222;
+    border-top-color: #444;
+    box-shadow: none;
+}
+.pg-dark .modal .close {
+    color: #ccc;
+    text-shadow: none;
+    opacity: 0.6;
+}
+.pg-dark .modal .close:hover {
+    opacity: 1;
+}
+.pg-dark .modal hr {
+    border-top-color: #444;
+    border-bottom-color: transparent;
+}
+.pg-dark .modal .help-block {
+    color: #bbb;
+}
+.pg-dark .modal a:not(.btn):not(.close) {
+    color: #4db3ff;
+}
+.pg-dark .modal input:not([type="color"]):not([type="checkbox"]):not([type="radio"]),
+.pg-dark .modal textarea,
+.pg-dark .modal select {
+    color: #ddd;
+    border-color: #1a1a1a;
+    background-color: #333;
+}
+.pg-dark .modal input::placeholder,
+.pg-dark .modal textarea::placeholder {
+    color: #888;
+}
+.pg-dark .modal .btn:not(.btn-primary):not(.btn-danger):not(.btn-success):not(.btn-info):not(.btn-warning):not(.btn-inverse):not(.btn-link) {
+    color: #ddd;
+    text-shadow: none;
+    border-color: #1a1a1a;
+    background-color: #333;
+    background-image: linear-gradient(to bottom, #3c3c3c, #2b2b2b);
+}
+.pg-dark .modal .btn:not(.btn-primary):not(.btn-danger):not(.btn-success):not(.btn-info):not(.btn-warning):not(.btn-inverse):not(.btn-link):hover {
+    color: #fff;
+    background-color: #2b2b2b;
+    background-image: none;
 }
 
 /* === Misc === */
