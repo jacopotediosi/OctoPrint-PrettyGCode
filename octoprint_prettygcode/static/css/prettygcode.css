@@ -29,13 +29,13 @@
 
     /* ---- Z-indexes ---- */
     --pg-z-canvas: 2000;
-    --pg-z-sliders: 2001;
-    --pg-z-dashboard: 2002;
-    --pg-z-webcam: 2003;
-    --pg-z-bottom-buttons: 2004;
-    --pg-z-camera-buttons: 2005;
-    --pg-z-top-windows: 2006;
-    --pg-z-top-buttons: 2010;
+    --pg-z-dashboard: 2001;
+    --pg-z-webcam: 2002;
+    --pg-z-bottom-buttons: 2003;
+    --pg-z-camera-buttons: 2004;
+    --pg-z-top-windows: 2005;
+    --pg-z-top-buttons: 2006;
+    --pg-z-sliders: 2007;
     --pg-z-resize-handles: 2020;
     --pg-z-modals-backdrop: 2100;
     --pg-z-modals: 2101;
@@ -527,6 +527,18 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     text-align: center;
     white-space: nowrap;
 }
+#pg-layer-slider-ui .tooltip {
+    right: 100%;
+    left: auto !important;
+    margin: 0 3px 0 0;
+}
+#pg-layer-slider-ui .tooltip-arrow {
+    right: 0;
+    left: auto;
+    border-width: 5px 0 5px 5px;
+    border-right-color: transparent;
+    border-left-color: #000;
+}
 .pg-layer-step-button {
     position: absolute;
     right: 16px;
@@ -570,6 +582,9 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     line-height: 20px;
     text-align: center;
     white-space: nowrap;
+}
+#pg-segment-slider-ui .tooltip {
+    margin-top: -9px;
 }
 .pg-segment-step-button {
     position: absolute;

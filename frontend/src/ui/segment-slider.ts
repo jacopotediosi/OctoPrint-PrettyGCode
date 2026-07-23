@@ -30,7 +30,7 @@ export function initSegmentSlider (app: PrettyGCodeApp) {
     id: 'pg-segment-slider-ui',
     orientation: 'horizontal',
     selection: 'before',
-    tooltip: 'hide',
+    formatter: () => `Segment: ${app.currentSegmentNumber}/${app.currentLayerSegmentCount}`,
     min: 0,
     max: 100,
     value: 100
@@ -45,9 +45,20 @@ export function initSegmentSlider (app: PrettyGCodeApp) {
     if (deltaY) stepSegment(deltaY < 0 ? 1 : -1)
   })
 
+  // On hover, re-apply the value to reposition the tooltip onto the handle
+  $('#pg-segment-slider-ui').on('mouseenter', () => {
+    const slider = $('#pg-segment-slider')
+    slider.slider('setValue', slider.slider('getValue'))
+  })
+
   // Bind the step buttons
   bindStepButton('#pg-segment-step-back-button', { onStep: () => stepSegment(-1), onStart, onStop })
   bindStepButton('#pg-segment-step-forward-button', { onStep: () => stepSegment(1), onStart, onStop })
+
+  // Show the slider tooltip while hovering the step buttons
+  $('.pg-segment-step-button').on('mouseenter mouseleave', (event: any) => {
+    $('#pg-segment-slider-ui').trigger(event.type)
+  })
 }
 
 /**

@@ -31,7 +31,7 @@ export function initLayerSlider (app: PrettyGCodeApp) {
     orientation: 'vertical',
     reversed: true,
     selection: 'after',
-    tooltip: 'hide',
+    formatter: () => `Z: ${app.currentLayerZ}`,
     min: 0,
     max: 100,
     value: 100
@@ -46,9 +46,20 @@ export function initLayerSlider (app: PrettyGCodeApp) {
     if (deltaY) stepLayer(deltaY < 0 ? 1 : -1)
   })
 
+  // On hover, re-apply the value to reposition the tooltip onto the handle
+  $('#pg-layer-slider-ui').on('mouseenter', () => {
+    const slider = $('#pg-layer-slider')
+    slider.slider('setValue', slider.slider('getValue'))
+  })
+
   // Bind the step buttons
   bindStepButton('#pg-layer-step-up-button', { onStep: () => stepLayer(1), onStart, onStop })
   bindStepButton('#pg-layer-step-down-button', { onStep: () => stepLayer(-1), onStart, onStop })
+
+  // Show the slider tooltip while hovering the step buttons
+  $('.pg-layer-step-button').on('mouseenter mouseleave', (event: any) => {
+    $('#pg-layer-slider-ui').trigger(event.type)
+  })
 }
 
 /**

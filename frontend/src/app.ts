@@ -315,6 +315,11 @@ export class PrettyGCodeApp {
     return this.printTimeline.layerSegmentCount(this._currentLayerNumber)
   }
 
+  /** Z height of the current layer */
+  get currentLayerZ () {
+    return this.parsedGcode?.layers[this._currentLayerNumber - 1]?.z ?? 0
+  }
+
   /**
    * Selects the current layer, revealing it whole
    * @param layerNumber - 1-based layer number
