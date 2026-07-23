@@ -224,12 +224,15 @@ export class PrettyGCodeApp {
     this.gcodeModel.build(this.parsedGcode.layers)
     this.updateLineWidth()
 
+    // Apply the gcode bounds
+    this.viewer.applyGcodeBounds(this.parsedGcode.bounds)
+
     updateLayerSliderMax(this)
     if (preserveView) {
       // Keep the current layer
       this.setCurrentLayerNumber(Math.min(this.currentLayerNumber || this.layerCount, this.layerCount))
     } else {
-      // Show the whole model: current layer at the top and camera framed
+      // Show the whole model: current layer at the top and the camera reset to the default view
       this.setCurrentLayerNumber(this.layerCount)
       this.resetView()
     }
@@ -359,8 +362,7 @@ export class PrettyGCodeApp {
 
   /** Resets the camera to the default view */
   resetView () {
-    if (this.parsedGcode?.layers.length) this.viewer.frameBounds(this.parsedGcode.bounds)
-    else this.viewer.applyDefaultView(true)
+    this.viewer.applyDefaultView(true)
   }
 
   /**

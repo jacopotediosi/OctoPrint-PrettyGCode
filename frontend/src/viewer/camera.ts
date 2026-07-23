@@ -202,9 +202,8 @@ export class Camera {
    * Moves the camera to the default view
    * @param bedVolume - Print bed geometry
    * @param enableTransition - True to animate the move
-   * @param footprint - Print footprint to frame, the whole bed when omitted
    */
-  applyDefaultView (bedVolume: BedVolume, enableTransition = false, footprint?: number) {
+  applyDefaultView (bedVolume: BedVolume, enableTransition = false) {
     // Re-center on the bed first
     this.resetTarget(bedVolume, enableTransition)
 
@@ -212,8 +211,8 @@ export class Camera {
     this.controls.normalizeRotations()
     this.controls.rotateTo(0, DEFAULT_VIEW_POLAR_ANGLE, enableTransition)
 
-    // Pull back to roughly the framed footprint, with a floor for tiny models
-    const distance = Math.max(40, footprint ?? Math.max(bedVolume.width, bedVolume.depth))
+    // Pull back to fit the whole bed, with a floor for tiny beds
+    const distance = Math.max(40, bedVolume.width, bedVolume.depth)
     if (this.activeCamera === this.perspectiveCamera) this.controls.dollyTo(distance, enableTransition)
     else this.controls.zoomTo(this.toOrthographicZoom(distance), enableTransition)
   }
@@ -248,18 +247,13 @@ export class Camera {
   }
 
   /**
-   * Adjusts the camera to show the given bounds
-   * @param bounds - Box to frame, in scene coordinates
+   * Updates the camera limits to the loaded gcode bounds
+   * @param bounds - Gcode bounding box, in scene coordinates
    * @param bedVolume - Print bed geometry
    */
-  frameBounds (bounds: THREE.Box3, bedVolume: BedVolume) {
-    // Update gcode boundaries and camera limits
+  applyGcodeBounds (bounds: THREE.Box3, bedVolume: BedVolume) {
     this.gcodeBounds.copy(bounds)
     this.applyBedVolume(bedVolume)
-
-    // Frame the print's footprint from the default view
-    const size = bounds.getSize(new THREE.Vector3())
-    this.applyDefaultView(bedVolume, true, Math.max(size.x, size.y))
   }
 
   /* ---- Navigation ---- */

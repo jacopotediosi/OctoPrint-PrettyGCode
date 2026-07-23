@@ -90,8 +90,8 @@ export class GCodeParser {
   private readonly defaultColor: THREE.Color
   /** Color of the current feature type */
   private currentColor: THREE.Color
-  /** Whether a slicer feature type has been seen yet */
-  private featureTypeSeen = false
+  /** Whether a slicer feature type comment has been seen yet */
+  private featureTypeCommentSeen = false
   /** Id of the object the parsed segments belong to, -1 for none */
   private currentObjectId = -1
   /** Partial line left over from the previous chunk */
@@ -153,7 +153,12 @@ export class GCodeParser {
           const match = this.colorRules.find(({ keywords }) => keywords.some((keyword) => commentLower.includes(keyword)))
           if (match) {
             this.currentColor = match.color
-            this.featureTypeSeen = true
+            // First feature type seen
+            if (!this.featureTypeCommentSeen) {
+              this.featureTypeCommentSeen = true
+              // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
+              this.bounds.makeEmpty()
+            }
           }
         }
 
@@ -366,8 +371,8 @@ export class GCodeParser {
     layer.durations.push(this.pendingTravelSeconds, length / feedrateMmPerSecond(end.f))
     this.pendingTravelSeconds = 0
 
-    // Grow the model bounds only after a slicer color is set, so pre-print moves don't skew the framing
-    if (this.featureTypeSeen) {
+    // Grow the model bounds only on moves that change position
+    if (start.x !== end.x || start.y !== end.y || start.z !== end.z) {
       this.bounds.expandByPoint(scratchPoint.set(start.x, start.y, start.z))
       this.bounds.expandByPoint(scratchPoint.set(end.x, end.y, end.z))
     }

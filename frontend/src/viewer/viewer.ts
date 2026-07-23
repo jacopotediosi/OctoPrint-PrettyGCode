@@ -222,10 +222,9 @@ export class Viewer {
   /**
    * Moves the camera to the default view
    * @param enableTransition - True to animate the move
-   * @param footprint - Print footprint to frame, the whole bed when omitted
    */
-  applyDefaultView (enableTransition = false, footprint?: number) {
-    this.camera.applyDefaultView(this.getBedVolume(), enableTransition, footprint)
+  applyDefaultView (enableTransition = false) {
+    this.camera.applyDefaultView(this.getBedVolume(), enableTransition)
   }
 
   /**
@@ -238,11 +237,11 @@ export class Viewer {
   }
 
   /**
-   * Adjusts the camera to show the given bounds
-   * @param bounds - Box to frame, in scene coordinates
+   * Updates the camera limits to the loaded gcode bounds
+   * @param bounds - Gcode bounding box, in scene coordinates
    */
-  frameBounds (bounds: THREE.Box3) {
-    this.camera.frameBounds(bounds, this.getBedVolume())
+  applyGcodeBounds (bounds: THREE.Box3) {
+    this.camera.applyGcodeBounds(bounds, this.getBedVolume())
   }
 
   /* ---- Apply settings ---- */
