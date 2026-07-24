@@ -21,7 +21,7 @@ export interface CancelObjectEntry {
 }
 
 /** Material shared by the region markers */
-const regionMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xcc2222, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })
+const regionMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xe76666, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })
 
 /**
  * Tells whether a region contains a point

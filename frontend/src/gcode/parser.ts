@@ -1,5 +1,6 @@
 import * as THREE from '../three-exports'
 import { arcOffsetFromRadius, interpolateArc } from './arc-interpolation'
+import { type ParserColors, DEFAULT_COLOR_RULES, DEFAULT_COLOR } from './model-colors'
 
 /** Machine state the parser tracks */
 export interface MachineState {
@@ -39,27 +40,16 @@ const textEncoder = new TextEncoder()
 /** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
 const LAYER_EPSILON_MM = 0.04
 
-/** Color used before any slicer feature type is seen */
-const DEFAULT_COLOR = new THREE.Color('white')
-/** Colors for slicer feature types; the first keyword found in a comment wins */
-const COLOR_KEYWORDS: [string[], string][] = [
-  [['overhang'], 'blue'], // Orca "Overhang wall", PrusaSlicer "Overhang perimeter"
-  [['external', 'outer'], 'coral'], // Cura "WALL-OUTER", Orca "Outer wall", PrusaSlicer "External perimeter", Simplify3D "outer perimeter"
-  [['top solid', 'skin', 'surface'], 'tomato'], // Cura "SKIN", Orca "Top surface"/"Bottom surface", PrusaSlicer "Top solid infill"
-  [['bridge'], 'steelblue'], // ideaMaker "BRIDGE", Orca "Bridge", PrusaSlicer "Bridge infill"/"Internal bridge infill", Simplify3D "bridge"
-  [['solid'], 'mediumpurple'], // Orca "Internal solid infill", PrusaSlicer "Solid infill", Simplify3D "solid layer"
-  [['gap'], 'white'], // Orca "Gap infill", PrusaSlicer "Gap fill"
-  [['ironing'], 'salmon'], // Orca "Ironing", PrusaSlicer "Ironing"
-  [['interface'], 'green'], // Cura "SUPPORT-INTERFACE", Orca "Support interface", PrusaSlicer "Support material interface"
-  [['support'], 'lime'], // Cura "SUPPORT", Orca "Support"/"Support transition", PrusaSlicer "Support material", Simplify3D "support"/"dense support"
-  [['skirt', 'brim', 'raft'], 'teal'], // Cura "SKIRT"/"RAFT", ideaMaker "RAFT", Orca "Skirt"/"Brim", PrusaSlicer "Skirt/Brim", Simplify3D "skirt"/"raft"
-  [['tower', 'pillar'], 'lightgreen'], // Cura "PRIME-TOWER", Orca "Prime tower", PrusaSlicer "Wipe tower", Simplify3D "prime pillar"
-  [['inner', 'perimeter'], 'gold'], // Cura "WALL-INNER", Orca "Inner wall", PrusaSlicer "Perimeter", Simplify3D "inner perimeter"
-  [['fill'], 'firebrick'] // Cura "FILL", Orca "Sparse infill", PrusaSlicer "Internal infill", Simplify3D "infill"
-]
-
 /** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */
 const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
+
+/**
+ * Matches the marker opening a slicer's feature-type comment
+ * - ;TYPE:<label>      PrusaSlicer/SuperSlicer/Cura, OrcaSlicer (non-Bambu-Lab printers)
+ * - ; FEATURE: <label> Bambu Studio, OrcaSlicer (Bambu Lab printers)
+ * - ; feature <label>  Simplify3D
+ */
+const FEATURE_TYPE_COMMENT = /;\s*(type:|feature[ :])/i
 
 /** Scratch vector reused across segments to avoid allocations */
 const scratchPoint = new THREE.Vector3()
@@ -87,12 +77,21 @@ export class GCodeParser {
   /** Tag of the object markers, lowercased */
   private readonly objectTag: string
 
+  /** Whether G90/G91 also switch the extrusion mode, not only the axes */
+  private readonly g90InfluencesExtruder: boolean
+
   /** Current machine state */
   private machineState: MachineState = INITIAL_MACHINE_STATE
   /** Layer being filled, if any */
   private currentLayer: Layer | null = null
+  /** Color rules, in priority order */
+  private readonly colorRules: { keywords: string[], color: THREE.Color }[]
+  /** Color of segments matching no color rule */
+  private readonly defaultColor: THREE.Color
   /** Color of the current feature type */
-  private currentColor = DEFAULT_COLOR
+  private currentColor: THREE.Color
+  /** Whether a slicer feature type comment has been seen yet */
+  private featureTypeCommentSeen = false
   /** Id of the object the parsed segments belong to, -1 for none */
   private currentObjectId = -1
   /** Partial line left over from the previous chunk */
@@ -108,9 +107,20 @@ export class GCodeParser {
 
   /**
    * @param objectTag - Tag of the "@<tag> <name>" object markers
+   * @param colors - Colors the parser paints segments with
+   * @param g90InfluencesExtruder - Whether G90/G91 also switch the extrusion mode
    */
-  constructor (objectTag = 'Object') {
+  constructor (objectTag = 'Object', colors: ParserColors = { colorRules: DEFAULT_COLOR_RULES, defaultColor: DEFAULT_COLOR }, g90InfluencesExtruder = false) {
     this.objectTag = objectTag.toLowerCase()
+    this.g90InfluencesExtruder = g90InfluencesExtruder
+
+    // Precompute the colors and lowercase the keywords, dropping the empty ones
+    this.defaultColor = new THREE.Color(colors.defaultColor)
+    this.currentColor = this.defaultColor
+    this.colorRules = colors.colorRules.map((rule) => ({
+      keywords: rule.keywords.map((keyword) => keyword.toLowerCase()).filter(Boolean),
+      color: new THREE.Color(rule.color)
+    }))
   }
 
   /**
@@ -138,9 +148,19 @@ export class GCodeParser {
       if (rawLine.includes(';')) {
         const commentLower = rawLine.toLowerCase()
 
-        // Pick the color based on the feature type
-        const match = COLOR_KEYWORDS.find(([keywords]) => keywords.some((keyword) => commentLower.includes(keyword)))
-        if (match) this.currentColor = new THREE.Color(match[1])
+        // Pick the color from feature-type comments only
+        if (FEATURE_TYPE_COMMENT.test(commentLower)) {
+          const match = this.colorRules.find(({ keywords }) => keywords.some((keyword) => commentLower.includes(keyword)))
+          if (match) {
+            this.currentColor = match.color
+            // First feature type seen
+            if (!this.featureTypeCommentSeen) {
+              this.featureTypeCommentSeen = true
+              // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
+              this.bounds.makeEmpty()
+            }
+          }
+        }
 
         // First nozzle diameter the slicer states wins
         if (this.slicerNozzleDiameter == null) {
@@ -171,8 +191,8 @@ export class GCodeParser {
         case 'G1': {
           const move = { x: coord('x'), y: coord('y'), z: coord('z'), e: coord('e'), f: coord('f') }
 
-          // New layer only when extrusion climbs to a higher Z
-          if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || move.z > this.currentLayer.z + LAYER_EPSILON_MM)) {
+          // New layer when extrusion moves to a different Z
+          if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
             this.newLayer(move)
           }
 
@@ -193,8 +213,8 @@ export class GCodeParser {
             f: coord('f') // feedrate
           }
 
-          // New layer only when extrusion climbs to a higher Z
-          if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || move.z > this.currentLayer.z + LAYER_EPSILON_MM)) {
+          // New layer when extrusion moves to a different Z
+          if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
             this.newLayer(move)
           }
 
@@ -246,12 +266,12 @@ export class GCodeParser {
         // Absolute positioning
         case 'G90':
           this.axesRelative = false
-          this.extrusionRelative = false
+          if (this.g90InfluencesExtruder) this.extrusionRelative = false
           break
           // Relative positioning
         case 'G91':
           this.axesRelative = true
-          this.extrusionRelative = true
+          if (this.g90InfluencesExtruder) this.extrusionRelative = true
           break
           // Absolute extrusion
         case 'M82':
@@ -351,8 +371,8 @@ export class GCodeParser {
     layer.durations.push(this.pendingTravelSeconds, length / feedrateMmPerSecond(end.f))
     this.pendingTravelSeconds = 0
 
-    // Grow the model bounds only after a slicer color is set, so pre-print moves don't skew the framing
-    if (this.currentColor !== DEFAULT_COLOR) {
+    // Grow the model bounds only on moves that change position
+    if (start.x !== end.x || start.y !== end.y || start.z !== end.z) {
       this.bounds.expandByPoint(scratchPoint.set(start.x, start.y, start.z))
       this.bounds.expandByPoint(scratchPoint.set(end.x, end.y, end.z))
     }
@@ -374,10 +394,12 @@ export class GCodeParser {
  * Downloads and parses a job's gcode; an empty path yields an empty result
  * @param jobPath - Server path of the job file
  * @param objectTag - Tag of the "@<tag> <name>" object markers
+ * @param colors - Colors the parser paints segments with
+ * @param g90InfluencesExtruder - Whether G90/G91 also switch the extrusion mode
  * @returns The parser holding the parsed gcode
  */
-export async function parseGcodeFile (jobPath: string, objectTag?: string) {
-  const parser = new GCodeParser(objectTag)
+export async function parseGcodeFile (jobPath: string, objectTag?: string, colors?: ParserColors, g90InfluencesExtruder?: boolean) {
+  const parser = new GCodeParser(objectTag, colors, g90InfluencesExtruder)
   if (!jobPath) return parser
 
   const fileUrl = OctoPrint.files.downloadPath('local', jobPath)

@@ -15,4 +15,6 @@ declare const PLUGIN_BASEURL: string
 interface JQuery {
   /** bootstrap-slider jQuery plugin */
   slider (methodOrOptions?: any, ...args: any[]): JQuery
+  /** bootstrap-modal jQuery plugin */
+  modal (methodOrOptions?: any, ...args: any[]): JQuery
 }

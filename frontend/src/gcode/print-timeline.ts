@@ -133,17 +133,55 @@ export class PrintTimeline {
   }
 
   /**
+   * Locates a reveal position by layer and within-layer segment
+   * @param index - Global index of the reveal position
+   * @returns The 1-based layer and its shown segment count
+   */
+  revealPosition (index: number) {
+    const layerNumber = this.layerNumberAt(index)
+    return { layerNumber, segmentNumber: Math.max(0, index - this.revealIndex(layerNumber, 0)) }
+  }
+
+  /**
    * Finds the layer holding the last revealed segment
    * @param segmentIndex - Global index of the reveal position
    * @returns The 1-based layer number, or 0 before the first segment
    */
-  layerNumberAt (segmentIndex: number) {
+  private layerNumberAt (segmentIndex: number) {
     let layerNumber = 0
     for (const layer of this.drawnLayers) {
       if (segmentIndex <= layer.globalBase) break
       layerNumber = layer.layerNumber
     }
     return layerNumber
+  }
+
+  /**
+   * Counts the drawn segments of a layer
+   * @param layerNumber - 1-based layer number
+   * @returns The drawn segment count, or 0 for an empty layer
+   */
+  layerSegmentCount (layerNumber: number) {
+    for (const layer of this.drawnLayers) {
+      if (layer.layerNumber === layerNumber) return layer.numSegments
+    }
+    return 0
+  }
+
+  /**
+   * Maps a within-layer position to a global reveal index
+   * @param layerNumber - 1-based topmost layer to show
+   * @param segmentsShown - Segments of that layer to include
+   * @returns The global segment index to reveal up to
+   */
+  revealIndex (layerNumber: number, segmentsShown: number) {
+    let index = 0
+    for (const layer of this.drawnLayers) {
+      if (layer.layerNumber > layerNumber) break
+      if (layer.layerNumber === layerNumber) return layer.globalBase + Math.min(segmentsShown, layer.numSegments)
+      index = layer.globalBase + layer.numSegments
+    }
+    return index
   }
 
   /**

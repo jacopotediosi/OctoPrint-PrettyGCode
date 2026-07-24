@@ -1,4 +1,5 @@
 import type { PrettyGCodeApp } from '../app'
+import type { ViewAngle } from '../viewer/navigation'
 
 /** Settings keys of the toggleable windows */
 type WindowKey = 'showState' | 'showFiles' | 'showWebcam' | 'showDashboard'
@@ -22,6 +23,15 @@ export function initToggleButtons (app: PrettyGCodeApp) {
     app.settings.save()
     app.updateWindowStates()
   }
+
+  /* ---- Top left buttons ---- */
+
+  $('.pg-toggle-state').on('click', () => toggleWindow('showState', 'showFiles'))
+  $('.pg-toggle-files').on('click', () => toggleWindow('showFiles', 'showState'))
+
+  /* ---- Top right buttons ---- */
+
+  $('.pg-toggle-settings').on('click', () => $('#pg-view-settings').toggleClass('pg-hidden'))
 
   // Restore the maximized layout from the URL (bookmarked/embedded maximized view)
   if (new URLSearchParams(location.search).get('maximized')) $('.page-container').addClass('pg-maximized')
@@ -50,7 +60,7 @@ export function initToggleButtons (app: PrettyGCodeApp) {
       wasMaximized = $('.page-container').hasClass('pg-maximized')
 
       $('.page-container').addClass('pg-maximized')
-      $('.page-container')[0].requestFullscreen()
+      document.documentElement.requestFullscreen()
 
       app.updateWindowStates()
     }
@@ -63,11 +73,12 @@ export function initToggleButtons (app: PrettyGCodeApp) {
     }
   })
 
-  $('.pg-toggle-state').on('click', () => toggleWindow('showState', 'showFiles'))
-  $('.pg-toggle-files').on('click', () => toggleWindow('showFiles', 'showState'))
-  $('.pg-reset-view').on('click', () => app.resetView())
+  /* ---- Camera buttons ---- */
 
-  $('.pg-toggle-settings').on('click', () => $('#pg-view-settings').toggleClass('pg-hidden'))
+  $('.pg-reset-view').on('click', () => app.resetView())
+  $('.pg-camera-buttons [data-view]').on('click', (event) => app.applyViewAngle(event.currentTarget.dataset.view as ViewAngle))
+
+  /* ---- Bottom buttons ---- */
 
   $('.pg-toggle-dashboard').on('click', () => toggleWindow('showDashboard'))
   $('.pg-toggle-webcam').on('click', () => toggleWindow('showWebcam'))

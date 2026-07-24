@@ -1,17 +1,20 @@
 import { Settings } from './settings'
-import { Viewer } from './viewer'
+import { Viewer } from './viewer/viewer'
 import { parseGcodeFile, GCodeParser } from './gcode/parser'
 import { PrintTimeline } from './gcode/print-timeline'
 import { PrintExclusions } from './gcode/exclusions'
-import { GCodeModel } from './gcode/gcode-model'
+import { GCodeModel, DEFAULT_NOZZLE_DIAMETER } from './gcode/gcode-model'
 import { initSettingsPanel } from './ui/settings-panel'
 import { initOverlayWindows } from './ui/overlay-windows'
 import { updateDashboardOverlay } from './ui/dashboard'
 import { updateWebcamOverlay } from './ui/webcam'
-import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue } from './ui/layer-slider'
+import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue, applyLayerSliderVisibility } from './ui/layer-slider'
+import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue, applySegmentSliderVisibility } from './ui/segment-slider'
 import { initToggleButtons } from './ui/toggle-buttons'
 import { setStatusBarText, applyStatusBarVisibility } from './ui/status-bar'
-import type { BedVolume, PrintViewUpdate } from './viewer'
+import type { BedVolume } from './viewer/bed'
+import type { ViewAngle } from './viewer/navigation'
+import type { PrintViewUpdate } from './viewer/viewer'
 import type { Vector3 } from 'three'
 
 /** Printer state reported by OctoPrint */
@@ -65,6 +68,8 @@ export class PrettyGCodeApp {
   private currentJobPath = ''
   /** Upload date of the currently loaded job */
   private currentJobDate = 0
+  /** Id of the most recent gcode load */
+  private loadSequence = 0
 
   /** Latest printer state reported by OctoPrint */
   private currentPrinterState: PrinterState | null = null
@@ -72,8 +77,10 @@ export class PrettyGCodeApp {
   private currentFilePosition = 0
   /** 1-based current layer */
   private _currentLayerNumber = 0
-  /** Whether the user is browsing layers manually */
-  private manualLayerControl = false
+  /** Revealed segments of the current layer */
+  private _currentSegmentNumber = 0
+  /** Whether the user is sliding the layer or segment manually */
+  private manualSliding = false
 
   /** Prefix of received terminal log lines */
   private readonly recvLogPrefix = parseInt(VERSION, 10) < 2 ? 'Recv: ' : '<<< '
@@ -110,15 +117,16 @@ export class PrettyGCodeApp {
 
         // 3D view and gcode
         this.viewer.init()
-        this.viewer.loadNozzle()
         this.viewer.scene.add(this.gcodeModel.linesGroup)
         this.viewer.scene.add(this.exclusions.regionMarkersGroup)
         this.loadGcode(this.currentJobPath)
         this.fetchExclusions()
+        this.updateExclusionMarkersVisibility()
 
         // UI controls
         initSettingsPanel(this)
         initLayerSlider(this)
+        initSegmentSlider(this)
         initOverlayWindows(this.settings)
         initToggleButtons(this)
         this.updateDarkMode()
@@ -193,11 +201,22 @@ export class PrettyGCodeApp {
   /**
    * Loads a job file and displays it in the 3D view
    * @param jobPath - Server path of the job file
+   * @param preserveView - Whether to keep the current layer and camera instead of framing the whole model
    */
-  private async loadGcode (jobPath: string) {
+  private async loadGcode (jobPath: string, preserveView = false) {
+    const sequence = ++this.loadSequence
+
     // The object marker tag comes from the Cancel Object plugin settings
     const objectTag = this.settingsVM.settings?.plugins?.cancelobject?.reptag?.()
-    this.parsedGcode = await parseGcodeFile(jobPath, objectTag)
+    const colors = { colorRules: this.settings.modelColorRules, defaultColor: this.settings.modelDefaultColor }
+    // Whether G90/G91 affect extrusion follows OctoPrint's firmware setting
+    const g90InfluencesExtruder = this.settingsVM.settings?.feature?.g90InfluencesExtruder?.() ?? false
+    const parsedGcode = await parseGcodeFile(jobPath, objectTag, colors, g90InfluencesExtruder)
+
+    // Stop if a newer load has started
+    if (sequence !== this.loadSequence) return
+
+    this.parsedGcode = parsedGcode
     this.exclusions.setGcodeObjectNames(this.parsedGcode.objectNames)
 
     // Index the timeline and build the model
@@ -205,10 +224,18 @@ export class PrettyGCodeApp {
     this.gcodeModel.build(this.parsedGcode.layers)
     this.updateLineWidth()
 
-    // Show the whole model: slider max and current layer at the top
+    // Apply the gcode bounds
+    this.viewer.applyGcodeBounds(this.parsedGcode.bounds)
+
     updateLayerSliderMax(this)
-    this.setCurrentLayerNumber(this.layerCount)
-    this.resetView()
+    if (preserveView) {
+      // Keep the current layer
+      this.setCurrentLayerNumber(Math.min(this.currentLayerNumber || this.layerCount, this.layerCount))
+    } else {
+      // Show the whole model: current layer at the top and the camera reset to the default view
+      this.setCurrentLayerNumber(this.layerCount)
+      this.resetView()
+    }
     this.viewer.requestRender()
   }
 
@@ -240,11 +267,11 @@ export class PrettyGCodeApp {
   /**
    * Advances the displayed print progress for a new frame
    * @param deltaSeconds - Seconds elapsed since the previous call
-   * @returns Whether the scene changed and the nozzle position to show, if any
+   * @returns Whether the scene changed, the nozzle position to show, if any, and the nozzle diameter
    */
   private updatePrintView (deltaSeconds: number): PrintViewUpdate {
     const state = this.currentPrinterState
-    const tracking = state && !this.manualLayerControl && (state.flags.printing || state.flags.paused)
+    const tracking = state && !this.manualSliding && (state.flags.printing || state.flags.paused)
 
     let needRender = false
     let nozzlePosition: Vector3 | null = null
@@ -255,21 +282,23 @@ export class PrettyGCodeApp {
       const spot = this.printTimeline.advance(this.currentFilePosition, deltaSeconds)
       if (spot) {
         this.gcodeModel.revealTo(spot)
-        revealedLayer = this.printTimeline.layerNumberAt(spot.segmentIndex)
-        this.setCurrentLayerNumber(revealedLayer)
+        const { layerNumber, segmentNumber } = this.printTimeline.revealPosition(spot.segmentIndex)
+        this.setReveal(layerNumber, segmentNumber)
+        revealedLayer = layerNumber
       }
       needRender = true
       nozzlePosition = this.printTimeline.getNozzlePosition()
     } else {
-      // Reveal gcode up to the selected layer
-      needRender = this.gcodeModel.syncToLayer(this.currentLayerNumber)
+      // Reveal gcode up to the selected within-layer position
+      needRender = this.gcodeModel.syncToLayerSegment(this.currentLayerNumber, this.currentSegmentNumber)
       if (needRender) revealedLayer = this.currentLayerNumber
     }
 
     // Highlight the revealed layer
     if (revealedLayer != null) this.gcodeModel.highlightLayer(revealedLayer)
 
-    return { needRender, nozzlePosition }
+    const nozzleDiameter = this.parsedGcode?.slicerNozzleDiameter ?? this.nozzleDiameter ?? DEFAULT_NOZZLE_DIAMETER
+    return { needRender, nozzlePosition, nozzleDiameter }
   }
 
   /* ---- UI events ---- */
@@ -279,27 +308,69 @@ export class PrettyGCodeApp {
     return this._currentLayerNumber
   }
 
-  /**
-   * Selects the current layer
-   * @param layerNumber - 1-based layer number
-   */
-  setCurrentLayerNumber (layerNumber: number) {
-    this._currentLayerNumber = layerNumber
-    setLayerSliderValue(this, layerNumber)
+  /** Revealed segments of the current layer, 0 to its total */
+  get currentSegmentNumber () {
+    return this._currentSegmentNumber
+  }
+
+  /** Total segments the current layer is made of */
+  get currentLayerSegmentCount () {
+    return this.printTimeline.layerSegmentCount(this._currentLayerNumber)
+  }
+
+  /** Z height of the current layer */
+  get currentLayerZ () {
+    return this.parsedGcode?.layers[this._currentLayerNumber - 1]?.z ?? 0
   }
 
   /**
-   * Turns manual layer browsing on or off
-   * @param manual - True to enable manual layer browsing
+   * Selects the current layer, revealing it whole
+   * @param layerNumber - 1-based layer number
    */
-  setManualLayerControl (manual: boolean) {
-    this.manualLayerControl = manual
+  setCurrentLayerNumber (layerNumber: number) {
+    this.setReveal(layerNumber, this.printTimeline.layerSegmentCount(layerNumber))
+  }
+
+  /**
+   * Reveals a part of the current layer, up to a within-layer segment
+   * @param segmentNumber - Segments of the current layer to reveal
+   */
+  setCurrentSegmentNumber (segmentNumber: number) {
+    this._currentSegmentNumber = Math.min(Math.max(segmentNumber, 0), this.currentLayerSegmentCount)
+    setSegmentSliderValue(this, this._currentSegmentNumber)
+  }
+
+  /**
+   * Sets the reveal position and syncs both layer and segment sliders
+   * @param layerNumber - 1-based layer number
+   * @param segmentNumber - Revealed segments of that layer
+   */
+  private setReveal (layerNumber: number, segmentNumber: number) {
+    this._currentLayerNumber = layerNumber
+    this._currentSegmentNumber = segmentNumber
+    setLayerSliderValue(this, layerNumber)
+    updateSegmentSliderMax(this)
+  }
+
+  /**
+   * Turns manual sliding on or off
+   * @param manual - True to enable manual sliding
+   */
+  setManualSliding (manual: boolean) {
+    this.manualSliding = manual
   }
 
   /** Resets the camera to the default view */
   resetView () {
-    if (this.parsedGcode?.layers.length) this.viewer.frameBounds(this.parsedGcode.bounds)
-    else this.viewer.applyDefaultView(true)
+    this.viewer.applyDefaultView(true)
+  }
+
+  /**
+   * Rotates the camera to a named view angle
+   * @param view - View angle to rotate to
+   */
+  applyViewAngle (view: ViewAngle) {
+    this.viewer.applyViewAngle(view, true)
   }
 
   /** (Re)applies the navigation mode setting to the 3D view */
@@ -307,9 +378,14 @@ export class PrettyGCodeApp {
     this.viewer.applyNavigationMode(this.settings.navigationMode)
   }
 
+  /** (Re)applies the projection mode setting to the 3D view */
+  updateProjectionMode () {
+    this.viewer.applyProjectionMode(this.settings.projectionMode)
+  }
+
   /** (Re)applies the dark mode setting */
   updateDarkMode () {
-    $('.page-container').toggleClass('pg-dark', this.settings.darkMode)
+    $('html').toggleClass('pg-dark', this.settings.darkMode)
     this.viewer.applyBackground(this.settings.darkMode)
     this.viewer.updateBedMesh()
   }
@@ -331,9 +407,31 @@ export class PrettyGCodeApp {
     this.viewer.requestRender()
   }
 
+  /** (Re)applies the model color settings */
+  updateModelColors () {
+    this.settings.save()
+    this.loadGcode(this.currentJobPath, true)
+  }
+
+  /** (Re)applies the show bed setting to the 3D view */
+  updateBedVisibility () {
+    this.viewer.applyBedVisibility(this.settings.showBed)
+  }
+
+  /** (Re)applies the show exclusion markers setting to the 3D view */
+  updateExclusionMarkersVisibility () {
+    this.exclusions.regionMarkersGroup.visible = this.settings.showExclusionMarker
+    this.viewer.requestRender()
+  }
+
   /** Shows or hides the overlay windows to match the current settings */
   updateWindowStates () {
     applyStatusBarVisibility(this.settings.showStatusBar)
+
+    applyLayerSliderVisibility(this.settings.showLayerSlider)
+    applySegmentSliderVisibility(this.settings.showSegmentSlider)
+    if (!this.settings.showLayerSlider) this.setCurrentLayerNumber(this.layerCount)
+    else if (!this.settings.showSegmentSlider) this.setCurrentSegmentNumber(this.currentLayerSegmentCount)
 
     $('#state_wrapper').toggleClass('pg-hidden', !this.settings.showState)
     $('#files_wrapper').toggleClass('pg-hidden', !this.settings.showFiles)
