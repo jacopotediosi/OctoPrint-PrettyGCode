@@ -166,7 +166,7 @@ export class PrintExclusions {
    * @param offset - Offset of the segment's first endpoint in the vertices
    * @returns True if the segment is in the excluded region
    */
-  private inExcludedRegion (vertices: number[], offset: number) {
+  private inExcludedRegion (vertices: Float32Array, offset: number) {
     for (const excludedRegion of this.excludedRegions) {
       if (
         regionContains(excludedRegion, vertices[offset], vertices[offset + 1]) ||

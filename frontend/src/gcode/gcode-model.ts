@@ -104,6 +104,36 @@ const makeThickMaterial = (clippingPlanes: THREE.Plane[] | null = null) => {
   return material
 }
 
+/** A subset of a layer's segments */
+class LayerPart {
+  readonly vertices: Float32Array
+  readonly colors: Float32Array
+  readonly segmentIndices: Uint32Array
+  private segmentCount = 0
+
+  constructor (segments: number) {
+    this.vertices = new Float32Array(segments * 6)
+    this.colors = new Float32Array(segments * 6)
+    this.segmentIndices = new Uint32Array(segments)
+  }
+
+  /**
+   * Adds a layer's segment to the part
+   * @param layer - Layer holding the segment
+   * @param segment - Segment index within the layer
+   */
+  add (layer: Layer, segment: number) {
+    const from = segment * 6
+    const to = this.segmentCount * 6
+    for (let i = 0; i < 6; i++) {
+      this.vertices[to + i] = layer.vertices[from + i]
+      this.colors[to + i] = layer.colors[from + i]
+    }
+    this.segmentIndices[this.segmentCount] = segment
+    this.segmentCount++
+  }
+}
+
 /** The rendered gcode model, made of per-layer line objects */
 export class GCodeModel {
   /** Group holding the gcode model lines */
@@ -185,7 +215,7 @@ export class GCodeModel {
    * @param material - Material to render with
    * @returns The new line object
    */
-  private makeLine (vertices: number[], colors: number[], material: THREE.LineMaterial | THREE.LineBasicMaterial): LayerLine {
+  private makeLine (vertices: Float32Array, colors: Float32Array, material: THREE.LineMaterial | THREE.LineBasicMaterial): LayerLine {
     if (this.settings.thickLines) {
       // Thick lines
       const geometry = new THREE.LineSegmentsGeometry()
@@ -195,8 +225,8 @@ export class GCodeModel {
     } else {
       // Thin lines
       const geometry = new THREE.BufferGeometry()
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3))
-      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+      geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3))
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
       return new THREE.LineSegments(geometry, material)
     }
   }
@@ -218,25 +248,22 @@ export class GCodeModel {
     }
 
     // Split the layer between printed and excluded segments
-    const printedPart = { vertices: [] as number[], colors: [] as number[], segmentIndices: [] as number[] }
-    const excludedPart = { vertices: [] as number[], colors: [] as number[], segmentIndices: [] as number[] }
+    let excludedSegments = 0
+    for (let i = 0; i < excludedFlags.length; i++) excludedSegments += excludedFlags[i]
+    const printedPart = new LayerPart(excludedFlags.length - excludedSegments)
+    const excludedPart = new LayerPart(excludedSegments)
     for (let segment = 0; segment < excludedFlags.length; segment++) {
       const part = excludedFlags[segment] ? excludedPart : printedPart
-      const offset = segment * 6
-      for (let i = 0; i < 6; i++) {
-        part.vertices.push(layer.vertices[offset + i])
-        part.colors.push(layer.colors[offset + i])
-      }
-      part.segmentIndices.push(segment)
+      part.add(layer, segment)
     }
 
     // Add the printed part
-    this.addLayerPart(layer, layerNumber, printedPart.vertices, printedPart.colors, new Uint32Array(printedPart.segmentIndices))
+    this.addLayerPart(layer, layerNumber, printedPart.vertices, printedPart.colors, printedPart.segmentIndices)
 
     // Add the excluded part, greyed out
     if (this.settings.showExcluded) {
       this.greyOutColors(excludedPart.colors)
-      this.addLayerPart(layer, layerNumber, excludedPart.vertices, excludedPart.colors, new Uint32Array(excludedPart.segmentIndices))
+      this.addLayerPart(layer, layerNumber, excludedPart.vertices, excludedPart.colors, excludedPart.segmentIndices)
     }
   }
 
@@ -248,7 +275,7 @@ export class GCodeModel {
    * @param colors - Vertex colors as flat RGB triplets
    * @param segmentIndices - Indices of the part's segments in the layer, or null for the whole layer
    */
-  private addLayerPart (layer: Layer, layerNumber: number, vertices: number[], colors: number[], segmentIndices: Uint32Array | null) {
+  private addLayerPart (layer: Layer, layerNumber: number, vertices: Float32Array, colors: Float32Array, segmentIndices: Uint32Array | null) {
     // Skip empty parts
     if (vertices.length <= 2) return
 
@@ -284,7 +311,7 @@ export class GCodeModel {
    * @param layerColors - Vertex colors as flat RGB triplets
    * @returns The mirror's vertices and colors
    */
-  private makeMirrorData (layerVertices: number[], layerColors: number[]) {
+  private makeMirrorData (layerVertices: Float32Array, layerColors: Float32Array) {
     // Mirror through the bed: flip the Z of every vertex
     const vertices = layerVertices.slice()
     for (let i = 2; i < vertices.length; i += 3) vertices[i] = -vertices[i]
@@ -309,7 +336,7 @@ export class GCodeModel {
    * Turns colors into their greyed-out version
    * @param colors - Vertex colors as flat RGB triplets, modified in place
    */
-  private greyOutColors (colors: number[]) {
+  private greyOutColors (colors: Float32Array) {
     const color = new THREE.Color()
     const hsl = { h: 0, s: 0, l: 0 }
     for (let i = 0; i < colors.length; i += 3) {

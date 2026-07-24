@@ -13,12 +13,12 @@ export interface MachineState {
 
 /** One parsed layer and its properties */
 export interface Layer {
-  vertices: number[]
+  vertices: Float32Array
   z: number
-  colors: number[]
-  filePositions: number[]
-  durations: number[]
-  objectIds: number[]
+  colors: Float32Array
+  filePositions: Uint32Array
+  durations: Float32Array
+  objectIds: Int32Array
 }
 
 /** Initial machine state */
@@ -60,6 +60,98 @@ const scratchColor = new THREE.Color()
 /** Scratch HSL values reused across segments to avoid allocations */
 const scratchHsl = { h: 0, s: 0, l: 0 }
 
+/** A layer being filled with segments */
+class OpenLayer {
+  /** Initial size of segment buffers */
+  private static readonly INITIAL_BUFFERS_CAPACITY = 1024
+
+  private vertices = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 6)
+  private colors = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 6)
+  private filePositions = new Uint32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY)
+  private durations = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 2)
+  private objectIds = new Int32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY)
+  private capacity = OpenLayer.INITIAL_BUFFERS_CAPACITY
+  private segments = 0
+
+  constructor (readonly z: number) {}
+
+  /**
+   * Appends a segment
+   * @param start - Segment start point
+   * @param end - Segment end point
+   * @param color - Segment color
+   * @param filePosition - Byte offset of the segment's line in the file
+   * @param travelSeconds - Estimated travel time leading to the segment
+   * @param extrusionSeconds - Estimated time extruding the segment
+   * @param objectId - Id of the object the segment belongs to, -1 for none
+   */
+  add (start: MachineState, end: MachineState, color: THREE.Color, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number) {
+    if (this.segments === this.capacity) this.grow()
+
+    const vertex = this.segments * 6
+    this.vertices[vertex] = start.x
+    this.vertices[vertex + 1] = start.y
+    this.vertices[vertex + 2] = start.z
+    this.vertices[vertex + 3] = end.x
+    this.vertices[vertex + 4] = end.y
+    this.vertices[vertex + 5] = end.z
+
+    this.colors[vertex] = color.r
+    this.colors[vertex + 1] = color.g
+    this.colors[vertex + 2] = color.b
+    this.colors[vertex + 3] = color.r
+    this.colors[vertex + 4] = color.g
+    this.colors[vertex + 5] = color.b
+
+    this.filePositions[this.segments] = filePosition
+    this.durations[this.segments * 2] = travelSeconds
+    this.durations[this.segments * 2 + 1] = extrusionSeconds
+    this.objectIds[this.segments] = objectId
+
+    this.segments++
+  }
+
+  /** Doubles the capacity of the segment buffers */
+  private grow () {
+    this.capacity *= 2
+
+    const vertices = new Float32Array(this.capacity * 6)
+    vertices.set(this.vertices)
+    this.vertices = vertices
+
+    const colors = new Float32Array(this.capacity * 6)
+    colors.set(this.colors)
+    this.colors = colors
+
+    const filePositions = new Uint32Array(this.capacity)
+    filePositions.set(this.filePositions)
+    this.filePositions = filePositions
+
+    const durations = new Float32Array(this.capacity * 2)
+    durations.set(this.durations)
+    this.durations = durations
+
+    const objectIds = new Int32Array(this.capacity)
+    objectIds.set(this.objectIds)
+    this.objectIds = objectIds
+  }
+
+  /**
+   * Finishes the layer
+   * @returns The finished layer
+   */
+  finish (): Layer {
+    return {
+      z: this.z,
+      vertices: this.vertices.slice(0, this.segments * 6),
+      colors: this.colors.slice(0, this.segments * 6),
+      filePositions: this.filePositions.slice(0, this.segments),
+      durations: this.durations.slice(0, this.segments * 2),
+      objectIds: this.objectIds.slice(0, this.segments)
+    }
+  }
+}
+
 /** Streaming gcode parser: feed it text chunks to get colored layers of segments with file positions and time estimates */
 export class GCodeParser {
   /** Parsed layers: segment endpoints, colors, file positions and estimated durations */
@@ -83,7 +175,9 @@ export class GCodeParser {
   /** Current machine state */
   private machineState: MachineState = INITIAL_MACHINE_STATE
   /** Layer being filled, if any */
-  private currentLayer: Layer | null = null
+  private currentLayer: OpenLayer | null = null
+  /** Layers opened so far */
+  private layersOpened = 0
   /** Color rules, in priority order */
   private readonly colorRules: { keywords: string[], color: THREE.Color }[]
   /** Color of segments matching no color rule */
@@ -193,7 +287,7 @@ export class GCodeParser {
 
           // New layer when extrusion moves to a different Z
           if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
-            this.newLayer(move)
+            this.changeLayer(move)
           }
 
           // Extrude a segment when E is present, otherwise track the travel time
@@ -215,7 +309,7 @@ export class GCodeParser {
 
           // New layer when extrusion moves to a different Z
           if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
-            this.newLayer(move)
+            this.changeLayer(move)
           }
 
           // Center offset from the I/J words, or computed from the radius of an R-form arc
@@ -330,10 +424,18 @@ export class GCodeParser {
    * @param move - Machine state starting the layer
    * @returns The new layer
    */
-  private newLayer (move: MachineState) {
-    this.currentLayer = { vertices: [], z: move.z, colors: [], filePositions: [], durations: [], objectIds: [] }
-    this.layers.push(this.currentLayer)
+  private changeLayer (move: MachineState) {
+    this.finish()
+    this.layersOpened++
+    this.currentLayer = new OpenLayer(move.z)
     return this.currentLayer
+  }
+
+  /** Finishes parsing */
+  finish () {
+    if (!this.currentLayer) return
+    this.layers.push(this.currentLayer.finish())
+    this.currentLayer = null
   }
 
   /**
@@ -359,16 +461,12 @@ export class GCodeParser {
     }
 
     // Open a layer if none is active yet
-    const layer = this.currentLayer ?? this.newLayer(start)
-
-    // Store the segment endpoints, its position in the file and the object it belongs to
-    layer.vertices.push(start.x, start.y, start.z, end.x, end.y, end.z)
-    layer.filePositions.push(this.filePosition)
-    layer.objectIds.push(this.currentObjectId)
+    const layer = this.currentLayer ?? this.changeLayer(start)
 
     // Estimated seconds of the travel leading here and of the segment itself
     const length = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z) || Math.abs(end.e - start.e) || 0
-    layer.durations.push(this.pendingTravelSeconds, length / feedrateMmPerSecond(end.f))
+    const travelSeconds = this.pendingTravelSeconds
+    const extrusionSeconds = length / feedrateMmPerSecond(end.f)
     this.pendingTravelSeconds = 0
 
     // Grow the model bounds only on moves that change position
@@ -382,11 +480,11 @@ export class GCodeParser {
     const angleShade = ((direction.x / 2) + 0.5) / 5.0
     const drawColor = scratchColor.copy(this.currentColor)
     drawColor.getHSL(scratchHsl)
-    scratchHsl.l = angleShade + (this.layers.length % 2 === 0 ? 0.25 : 0.30)
+    scratchHsl.l = angleShade + (this.layersOpened % 2 === 0 ? 0.25 : 0.30)
     drawColor.setHSL(scratchHsl.h, scratchHsl.s, scratchHsl.l)
 
-    // Same color on both endpoints of the segment
-    layer.colors.push(drawColor.r, drawColor.g, drawColor.b, drawColor.r, drawColor.g, drawColor.b)
+    // Add the segment to the layer
+    layer.add(start, end, drawColor, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId)
   }
 }
 
@@ -413,6 +511,7 @@ export async function parseGcodeFile (jobPath: string, objectTag?: string, color
     if (done) break
     parser.parse(decoder.decode(value, { stream: true }))
   }
+  parser.finish()
 
   return parser
 }

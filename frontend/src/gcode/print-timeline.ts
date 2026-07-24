@@ -7,10 +7,10 @@ interface DrawnLayer {
   layerNumber: number
   globalBase: number
   numSegments: number
-  vertices: number[]
-  colors: number[]
-  filePositions: number[]
-  durations: number[]
+  vertices: Float32Array
+  colors: Float32Array
+  filePositions: Uint32Array
+  durations: Float32Array
 }
 
 /** A point along the timeline: a segment (or the travel gap before it) and the fraction into it */
