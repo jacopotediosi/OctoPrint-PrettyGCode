@@ -220,6 +220,7 @@ export class GCodeModel {
    * @returns The new line object
    */
   private makeLine (vertices: Float32Array, colors: Uint8ClampedArray, material: THREE.LineMaterial | THREE.LineBasicMaterial): LayerLine {
+    let line: LayerLine
     if (this.settings.thickLines) {
       // Thick lines
       const geometry = new THREE.LineSegmentsGeometry()
@@ -227,14 +228,19 @@ export class GCodeModel {
       const colorBuffer = new THREE.InstancedInterleavedBuffer(colors, 6, 1)
       geometry.setAttribute('instanceColorStart', new THREE.InterleavedBufferAttribute(colorBuffer, 3, 0, true))
       geometry.setAttribute('instanceColorEnd', new THREE.InterleavedBufferAttribute(colorBuffer, 3, 3, true))
-      return new THREE.LineSegments2(geometry, material as THREE.LineMaterial)
+      line = new THREE.LineSegments2(geometry, material as THREE.LineMaterial)
     } else {
       // Thin lines
       const geometry = new THREE.BufferGeometry()
       geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3))
       geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3, true))
-      return new THREE.LineSegments(geometry, material)
+      line = new THREE.LineSegments(geometry, material)
     }
+
+    // Speeds up rendering, the lines never move
+    line.matrixAutoUpdate = false
+
+    return line
   }
 
   /**
