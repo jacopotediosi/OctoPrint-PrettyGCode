@@ -273,12 +273,28 @@ export class GCodeParser {
       }
 
       // Parse gcode cmd and args
-      const tokens = (commentStart < 0 ? rawLine : rawLine.slice(0, commentStart)).trim().split(' ')
+      // Temporary workaround for https://github.com/OctoPrint/OctoPrint/issues/5438: the babel-polyfill
+      // library OctoPrint ships replaces the browser's own trim with a far slower one, so the line
+      // bounds are found here without using it
+      const lineEnd = commentStart < 0 ? rawLine.length : commentStart
+      let lineStart = 0
+      while (lineStart < lineEnd && rawLine[lineStart] <= ' ') lineStart++
+      let lineStop = lineEnd
+      while (lineStop > lineStart && rawLine[lineStop - 1] <= ' ') lineStop--
+
+      const tokens = rawLine.slice(lineStart, lineStop).split(' ')
       const cmd = tokens[0].toUpperCase()
       const args: Record<string, number> = {}
       for (let token = 1; token < tokens.length; token++) {
         const word = tokens[token]
-        if (word) args[word[0].toLowerCase()] = parseFloat(word.substring(1))
+        if (!word) continue
+
+        // Temporary workaround for https://github.com/OctoPrint/OctoPrint/issues/5438: the babel-polyfill
+        // library OctoPrint ships replaces the browser's own parseFloat with a far slower one, so the
+        // unary plus reads the number instead, and only what it cannot read goes through parseFloat
+        const text = word.substring(1)
+        const number = text === '' ? NaN : +text
+        args[word[0].toLowerCase()] = Number.isNaN(number) ? parseFloat(text) : number
       }
 
       // Axis value from args (absolute/relative aware), or the current one if omitted
