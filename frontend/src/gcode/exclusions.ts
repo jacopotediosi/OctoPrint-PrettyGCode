@@ -149,11 +149,12 @@ export class PrintExclusions {
     if (!this.excludedRegions.length && !this.cancelledIds.size) return null
 
     const { vertices, objectIds } = layer
+    const segments = vertices.length / 6
     let flags: Uint8Array | null = null
-    for (let segment = 0; segment < objectIds.length; segment++) {
-      const excluded = this.cancelledIds.has(objectIds[segment]) || this.inExcludedRegion(vertices, segment * 6)
+    for (let segment = 0; segment < segments; segment++) {
+      const excluded = (objectIds !== null && this.cancelledIds.has(objectIds[segment])) || this.inExcludedRegion(vertices, segment * 6)
       if (excluded) {
-        flags ??= new Uint8Array(objectIds.length)
+        flags ??= new Uint8Array(segments)
         flags[segment] = 1
       }
     }

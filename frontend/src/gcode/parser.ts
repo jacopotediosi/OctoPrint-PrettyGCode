@@ -18,7 +18,7 @@ export interface Layer {
   colors: Float32Array
   filePositions: Uint32Array
   durations: Float32Array
-  objectIds: Int32Array
+  objectIds: Int32Array | null
 }
 
 /** Initial machine state */
@@ -69,7 +69,7 @@ class OpenLayer {
   private colors = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 6)
   private filePositions = new Uint32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY)
   private durations = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 2)
-  private objectIds = new Int32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY)
+  private objectIds: Int32Array | null = null
   private capacity = OpenLayer.INITIAL_BUFFERS_CAPACITY
   private segments = 0
 
@@ -106,7 +106,10 @@ class OpenLayer {
     this.filePositions[this.segments] = filePosition
     this.durations[this.segments * 2] = travelSeconds
     this.durations[this.segments * 2 + 1] = extrusionSeconds
-    this.objectIds[this.segments] = objectId
+
+    // Start storing object ids at the first segment that belongs to one
+    if (objectId >= 0 && !this.objectIds) this.objectIds = new Int32Array(this.capacity).fill(-1)
+    if (this.objectIds) this.objectIds[this.segments] = objectId
 
     this.segments++
   }
@@ -131,9 +134,11 @@ class OpenLayer {
     durations.set(this.durations)
     this.durations = durations
 
-    const objectIds = new Int32Array(this.capacity)
-    objectIds.set(this.objectIds)
-    this.objectIds = objectIds
+    if (this.objectIds) {
+      const objectIds = new Int32Array(this.capacity).fill(-1)
+      objectIds.set(this.objectIds)
+      this.objectIds = objectIds
+    }
   }
 
   /**
@@ -147,7 +152,7 @@ class OpenLayer {
       colors: this.colors.slice(0, this.segments * 6),
       filePositions: this.filePositions.slice(0, this.segments),
       durations: this.durations.slice(0, this.segments * 2),
-      objectIds: this.objectIds.slice(0, this.segments)
+      objectIds: this.objectIds ? this.objectIds.slice(0, this.segments) : null
     }
   }
 }
