@@ -142,6 +142,9 @@ export class GCodeModel {
   /** Layers the model was last built from */
   private layers: Layer[] = []
 
+  /** Global segment index of the reveal position the model is showing */
+  private revealedIndex = -1
+
   /** The growing tip drawn along the segment the nozzle is currently laying down */
   private tipLine: LayerLine | null = null
 
@@ -192,6 +195,7 @@ export class GCodeModel {
   build (layers: Layer[]) {
     this.layers = layers
     this.linesGroup.clear()
+    this.revealedIndex = -1
     layers.forEach((layer, i) => this.addLayerLines(layer, i + 1))
 
     // Stamp each layer's segment offset onto its render objects, so the reveal reads it per child
@@ -425,6 +429,9 @@ export class GCodeModel {
    * @returns True if anything changed
    */
   private revealUpTo (index: number) {
+    if (index === this.revealedIndex) return false
+    this.revealedIndex = index
+
     let needUpdate = false
 
     this.linesGroup.traverse((child) => {
