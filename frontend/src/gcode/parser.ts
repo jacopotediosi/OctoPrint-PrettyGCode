@@ -239,7 +239,8 @@ export class GCodeParser {
       }
 
       // Parse comments
-      if (rawLine.includes(';')) {
+      const commentStart = rawLine.indexOf(';')
+      if (commentStart >= 0) {
         const commentLower = rawLine.toLowerCase()
 
         // Pick the color from feature-type comments only
@@ -264,12 +265,13 @@ export class GCodeParser {
       }
 
       // Parse gcode cmd and args
-      const tokens = rawLine.replace(/;.*/, '').trim().split(/\s+/)
+      const tokens = (commentStart < 0 ? rawLine : rawLine.slice(0, commentStart)).trim().split(' ')
       const cmd = tokens[0].toUpperCase()
       const args: Record<string, number> = {}
-      tokens.slice(1).forEach((token) => {
-        if (token) args[token[0].toLowerCase()] = parseFloat(token.substring(1))
-      })
+      for (let token = 1; token < tokens.length; token++) {
+        const word = tokens[token]
+        if (word) args[word[0].toLowerCase()] = parseFloat(word.substring(1))
+      }
 
       // Axis value from args (absolute/relative aware), or the current one if omitted
       const coord = (key: keyof MachineState) => {
