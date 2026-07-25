@@ -107,13 +107,13 @@ const makeThickMaterial = (clippingPlanes: THREE.Plane[] | null = null) => {
 /** A subset of a layer's segments */
 class LayerPart {
   readonly vertices: Float32Array
-  readonly colors: Float32Array
+  readonly colors: Uint8ClampedArray
   readonly segmentIndices: Uint32Array
   private segmentCount = 0
 
   constructor (segments: number) {
     this.vertices = new Float32Array(segments * 6)
-    this.colors = new Float32Array(segments * 6)
+    this.colors = new Uint8ClampedArray(segments * 6)
     this.segmentIndices = new Uint32Array(segments)
   }
 
@@ -219,18 +219,20 @@ export class GCodeModel {
    * @param material - Material to render with
    * @returns The new line object
    */
-  private makeLine (vertices: Float32Array, colors: Float32Array, material: THREE.LineMaterial | THREE.LineBasicMaterial): LayerLine {
+  private makeLine (vertices: Float32Array, colors: Uint8ClampedArray, material: THREE.LineMaterial | THREE.LineBasicMaterial): LayerLine {
     if (this.settings.thickLines) {
       // Thick lines
       const geometry = new THREE.LineSegmentsGeometry()
       geometry.setPositions(vertices)
-      geometry.setColors(colors)
+      const colorBuffer = new THREE.InstancedInterleavedBuffer(colors, 6, 1)
+      geometry.setAttribute('instanceColorStart', new THREE.InterleavedBufferAttribute(colorBuffer, 3, 0, true))
+      geometry.setAttribute('instanceColorEnd', new THREE.InterleavedBufferAttribute(colorBuffer, 3, 3, true))
       return new THREE.LineSegments2(geometry, material as THREE.LineMaterial)
     } else {
       // Thin lines
       const geometry = new THREE.BufferGeometry()
       geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3))
-      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3, true))
       return new THREE.LineSegments(geometry, material)
     }
   }
@@ -279,7 +281,7 @@ export class GCodeModel {
    * @param colors - Vertex colors as flat RGB triplets
    * @param segmentIndices - Indices of the part's segments in the layer, or null for the whole layer
    */
-  private addLayerPart (layer: Layer, layerNumber: number, vertices: Float32Array, colors: Float32Array, segmentIndices: Uint32Array | null) {
+  private addLayerPart (layer: Layer, layerNumber: number, vertices: Float32Array, colors: Uint8ClampedArray, segmentIndices: Uint32Array | null) {
     // Skip empty parts
     if (vertices.length <= 2) return
 
@@ -315,7 +317,7 @@ export class GCodeModel {
    * @param layerColors - Vertex colors as flat RGB triplets
    * @returns The mirror's vertices and colors
    */
-  private makeMirrorData (layerVertices: Float32Array, layerColors: Float32Array) {
+  private makeMirrorData (layerVertices: Float32Array, layerColors: Uint8ClampedArray) {
     // Mirror through the bed: flip the Z of every vertex
     const vertices = layerVertices.slice()
     for (let i = 2; i < vertices.length; i += 3) vertices[i] = -vertices[i]
@@ -325,12 +327,12 @@ export class GCodeModel {
     const color = new THREE.Color()
     const hsl = { h: 0, s: 0, l: 0 }
     for (let i = 0; i < colors.length; i += 3) {
-      color.setRGB(colors[i], colors[i + 1], colors[i + 2])
+      color.setRGB(colors[i] / 255, colors[i + 1] / 255, colors[i + 2] / 255)
       color.getHSL(hsl)
       color.setHSL(hsl.h, hsl.s, hsl.l / 2)
-      colors[i] = color.r
-      colors[i + 1] = color.g
-      colors[i + 2] = color.b
+      colors[i] = color.r * 255
+      colors[i + 1] = color.g * 255
+      colors[i + 2] = color.b * 255
     }
 
     return { vertices, colors }
@@ -340,16 +342,16 @@ export class GCodeModel {
    * Turns colors into their greyed-out version
    * @param colors - Vertex colors as flat RGB triplets, modified in place
    */
-  private greyOutColors (colors: Float32Array) {
+  private greyOutColors (colors: Uint8ClampedArray) {
     const color = new THREE.Color()
     const hsl = { h: 0, s: 0, l: 0 }
     for (let i = 0; i < colors.length; i += 3) {
-      color.setRGB(colors[i], colors[i + 1], colors[i + 2])
+      color.setRGB(colors[i] / 255, colors[i + 1] / 255, colors[i + 2] / 255)
       color.getHSL(hsl)
       color.setHSL(hsl.h, 0, hsl.l * 0.6)
-      colors[i] = color.r
-      colors[i + 1] = color.g
-      colors[i + 2] = color.b
+      colors[i] = color.r * 255
+      colors[i + 1] = color.g * 255
+      colors[i + 2] = color.b * 255
     }
   }
 
@@ -548,7 +550,7 @@ export class GCodeModel {
     const colors = segment.layer.colors
     this.setTipLineGeometry(startX, startY, startZ,
       startX + (vertices[offset + 3] - startX) * progress, startY + (vertices[offset + 4] - startY) * progress, startZ + (vertices[offset + 5] - startZ) * progress,
-      colors[offset], colors[offset + 1], colors[offset + 2])
+      colors[offset] / 255, colors[offset + 1] / 255, colors[offset + 2] / 255)
     tipLine.visible = true
   }
 

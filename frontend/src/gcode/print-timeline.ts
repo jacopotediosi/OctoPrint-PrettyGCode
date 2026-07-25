@@ -8,7 +8,7 @@ interface DrawnLayer {
   globalBase: number
   numSegments: number
   vertices: Float32Array
-  colors: Float32Array
+  colors: Uint8ClampedArray
   filePositions: Uint32Array
   durations: Float32Array
 }

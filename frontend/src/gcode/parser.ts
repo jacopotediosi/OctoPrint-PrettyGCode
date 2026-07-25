@@ -15,7 +15,7 @@ export interface MachineState {
 export interface Layer {
   vertices: Float32Array
   z: number
-  colors: Float32Array
+  colors: Uint8ClampedArray
   filePositions: Uint32Array
   durations: Float32Array
   objectIds: Int32Array | null
@@ -66,7 +66,7 @@ class OpenLayer {
   private static readonly INITIAL_BUFFERS_CAPACITY = 1024
 
   private vertices = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 6)
-  private colors = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 6)
+  private colors = new Uint8ClampedArray(OpenLayer.INITIAL_BUFFERS_CAPACITY * 6)
   private filePositions = new Uint32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY)
   private durations = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 2)
   private objectIds: Int32Array | null = null
@@ -96,12 +96,15 @@ class OpenLayer {
     this.vertices[vertex + 4] = end.y
     this.vertices[vertex + 5] = end.z
 
-    this.colors[vertex] = color.r
-    this.colors[vertex + 1] = color.g
-    this.colors[vertex + 2] = color.b
-    this.colors[vertex + 3] = color.r
-    this.colors[vertex + 4] = color.g
-    this.colors[vertex + 5] = color.b
+    const red = color.r * 255
+    const green = color.g * 255
+    const blue = color.b * 255
+    this.colors[vertex] = red
+    this.colors[vertex + 1] = green
+    this.colors[vertex + 2] = blue
+    this.colors[vertex + 3] = red
+    this.colors[vertex + 4] = green
+    this.colors[vertex + 5] = blue
 
     this.filePositions[this.segments] = filePosition
     this.durations[this.segments * 2] = travelSeconds
@@ -122,7 +125,7 @@ class OpenLayer {
     vertices.set(this.vertices)
     this.vertices = vertices
 
-    const colors = new Float32Array(this.capacity * 6)
+    const colors = new Uint8ClampedArray(this.capacity * 6)
     colors.set(this.colors)
     this.colors = colors
 
