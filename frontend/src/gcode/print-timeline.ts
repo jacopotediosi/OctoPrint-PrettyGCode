@@ -141,13 +141,17 @@ export class PrintTimeline {
    * @param segmentIndex - Global index of the reveal position
    * @returns The 1-based layer number, or 0 before the first segment
    */
-  private layerNumberAt (segmentIndex: number) {
-    let layerNumber = 0
-    for (const layer of this.drawnLayers) {
-      if (segmentIndex <= layer.globalBase) break
-      layerNumber = layer.layerNumber
+  private layerNumberAt (segmentIndex: number): number {
+    // First layer starting at or past the index (binary search)
+    const layers = this.drawnLayers
+    let lo = 0; let hi = layers.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (layers[mid].globalBase < segmentIndex) lo = mid + 1
+      else hi = mid
     }
-    return layerNumber
+
+    return lo > 0 ? layers[lo - 1].layerNumber : 0
   }
 
   /**
@@ -155,11 +159,25 @@ export class PrintTimeline {
    * @param layerNumber - 1-based layer number
    * @returns The drawn segment count, or 0 for an empty layer
    */
-  layerSegmentCount (layerNumber: number) {
-    for (const layer of this.drawnLayers) {
-      if (layer.layerNumber === layerNumber) return layer.numSegments
+  layerSegmentCount (layerNumber: number): number {
+    const layer = this.drawnLayers[this.drawnLayerIndex(layerNumber)]
+    return layer?.layerNumber === layerNumber ? layer.numSegments : 0
+  }
+
+  /**
+   * Finds where a layer sits among the drawn ones
+   * @param layerNumber - 1-based layer number
+   * @returns Index of the first drawn layer reaching that number
+   */
+  private drawnLayerIndex (layerNumber: number): number {
+    const layers = this.drawnLayers
+    let lo = 0; let hi = layers.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (layers[mid].layerNumber < layerNumber) lo = mid + 1
+      else hi = mid
     }
-    return 0
+    return lo
   }
 
   /**
@@ -168,14 +186,16 @@ export class PrintTimeline {
    * @param segmentsShown - Segments of that layer to include
    * @returns The global segment index to reveal up to
    */
-  revealIndex (layerNumber: number, segmentsShown: number) {
-    let index = 0
-    for (const layer of this.drawnLayers) {
-      if (layer.layerNumber > layerNumber) break
-      if (layer.layerNumber === layerNumber) return layer.globalBase + Math.min(segmentsShown, layer.numSegments)
-      index = layer.globalBase + layer.numSegments
-    }
-    return index
+  revealIndex (layerNumber: number, segmentsShown: number): number {
+    const layer = this.drawnLayers[this.drawnLayerIndex(layerNumber)]
+
+    // Past the last drawn layer
+    if (!layer) return this.totalSegments
+
+    // Layers with nothing drawn reveal up to where the next drawn one starts
+    if (layer.layerNumber !== layerNumber) return layer.globalBase
+
+    return layer.globalBase + Math.min(segmentsShown, layer.numSegments)
   }
 
   /**
@@ -183,28 +203,34 @@ export class PrintTimeline {
    * @param filePosition - Bytes of the file sent to the printer
    * @returns The number of drawn segments passed
    */
-  private segmentsReadAt (filePosition: number) {
-    let count = 0
+  private segmentsReadAt (filePosition: number): number {
+    const layers = this.drawnLayers
 
-    for (const layer of this.drawnLayers) {
-      const filePositions = layer.filePositions
-      if (filePositions[0] > filePosition) break
-      if (filePositions[filePositions.length - 1] < filePosition) {
-        count = layer.globalBase + layer.numSegments
-      } else {
-        // Segments in this layer already read (binary search over the sorted file positions)
-        let lo = 0; let hi = filePositions.length
-        while (lo < hi) {
-          const mid = (lo + hi) >> 1
-          if (filePositions[mid] < filePosition) lo = mid + 1
-          else hi = mid
-        }
-        count = layer.globalBase + lo
-        break
-      }
+    // First layer the read position has not passed whole (binary search)
+    let loLayer = 0; let hiLayer = layers.length
+    while (loLayer < hiLayer) {
+      const mid = (loLayer + hiLayer) >> 1
+      const positions = layers[mid].filePositions
+      if (positions[positions.length - 1] < filePosition) loLayer = mid + 1
+      else hiLayer = mid
     }
 
-    return count
+    // Past the last drawn layer
+    const layer = layers[loLayer]
+    if (!layer) return this.totalSegments
+
+    // The read position has not reached this layer
+    const filePositions = layer.filePositions
+    if (filePositions[0] > filePosition) return layer.globalBase
+
+    // Segments in this layer already read (binary search over the sorted file positions)
+    let lo = 0; let hi = filePositions.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (filePositions[mid] < filePosition) lo = mid + 1
+      else hi = mid
+    }
+    return layer.globalBase + lo
   }
 
   /**
