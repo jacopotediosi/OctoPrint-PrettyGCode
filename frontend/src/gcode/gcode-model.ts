@@ -168,6 +168,9 @@ export class GCodeModel {
   /** Global segment index of the reveal position the model is showing */
   private revealedIndex = -1
 
+  /** Layer the highlight is on, or 0 when no layer is highlighted */
+  private highlightedLayer = -1
+
   /** The growing tip drawn along the segment the nozzle is currently laying down */
   private tipLine: LayerLine | null = null
 
@@ -222,6 +225,7 @@ export class GCodeModel {
     }
     this.linesGroup.clear()
     this.revealedIndex = -1
+    this.highlightedLayer = -1
 
     for (const { layerNumber, globalBase } of this.timeline.drawnLayers) {
       this.addLayerLines(layers[layerNumber - 1], layerNumber, globalBase)
@@ -410,6 +414,11 @@ export class GCodeModel {
     this.highlightThinMaterial.color.setRGB(brightness, brightness, brightness)
     this.highlightThickMaterial.color.setRGB(brightness, brightness, brightness)
 
+    // A zeroed intensity leaves no layer highlighted
+    const highlighted = this.settings.highlightIntensity > 0 ? layerNumber : 0
+    if (highlighted === this.highlightedLayer) return
+    this.highlightedLayer = highlighted
+
     const thickLines = this.settings.thickLines
     const highlightMaterial = thickLines ? this.highlightThickMaterial : this.highlightThinMaterial
     const defaultMaterial = thickLines ? this.thickMaterial : this.thinMaterial
@@ -422,7 +431,7 @@ export class GCodeModel {
       if (metadata.mirror) return
 
       // Highlight the target layer, default on the others
-      child.material = this.settings.highlightIntensity > 0 && metadata.layerNumber === layerNumber ? highlightMaterial : defaultMaterial
+      child.material = metadata.layerNumber === highlighted ? highlightMaterial : defaultMaterial
     })
   }
 
