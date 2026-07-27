@@ -32,6 +32,17 @@ export class Viewer {
   /** Timer measuring frame deltas */
   private timer!: THREE.Timer
 
+  /** Width the canvas is displayed at, in px */
+  private canvasWidth = 0
+  /** Height the canvas is displayed at, in px */
+  private canvasHeight = 0
+  /** Watcher of the canvas display size */
+  private readonly canvasSizeObserver = new ResizeObserver(([{ target }]) => {
+    this.canvasWidth = target.clientWidth
+    this.canvasHeight = target.clientHeight
+    this.requestRender()
+  })
+
   /** The 3D scene */
   readonly scene = new THREE.Scene()
 
@@ -119,6 +130,9 @@ export class Viewer {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias, logarithmicDepthBuffer: true })
     this.renderer.setPixelRatio(window.devicePixelRatio)
     this.renderer.localClippingEnabled = true // Needed for the gcode reflection on the bed surface
+
+    this.canvasSizeObserver.disconnect()
+    this.canvasSizeObserver.observe(canvas)
   }
 
   /* ---- Render loop ---- */
@@ -132,8 +146,7 @@ export class Viewer {
     this.forceRender = false
 
     // Skip animation if canvas size is 0 (e.g. plugin tab is not shown)
-    const canvas = this.renderer.domElement
-    if (canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+    if (this.canvasWidth === 0 || this.canvasHeight === 0) {
       // Schedule the next frame and return
       requestAnimationFrame(() => this.animate())
       return
@@ -179,9 +192,8 @@ export class Viewer {
    */
   private resizeCanvasToDisplaySize () {
     // Get new canvas size
-    const canvas = this.renderer.domElement
-    const width = canvas.clientWidth
-    const height = canvas.clientHeight
+    const width = this.canvasWidth
+    const height = this.canvasHeight
 
     // Skip if already at the display size
     const current = this.renderer.getSize(new Vector2())
