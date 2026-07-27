@@ -79,6 +79,7 @@ export class Viewer {
     const canvas = document.getElementById('pg-canvas') as HTMLCanvasElement
 
     // Renderer
+    this.scene.matrixWorldAutoUpdate = false
     this.createRenderer(canvas, settings.antialias)
 
     // Camera
@@ -158,7 +159,10 @@ export class Viewer {
     if (needRender) this.bed.update(this.camera.active, this.renderer, this.getBedVolume())
 
     // Render only when something changed this frame
-    if (needRender) this.renderer.render(this.scene, this.camera.active)
+    if (needRender) {
+      this.scene.updateMatrixWorld()
+      this.renderer.render(this.scene, this.camera.active)
+    }
 
     // Schedule the next frame
     requestAnimationFrame(() => this.animate())

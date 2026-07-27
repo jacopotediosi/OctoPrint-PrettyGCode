@@ -46,7 +46,6 @@ export class Nozzle {
     this.settings = settings
     this.scene = scene
     this.requestRender = requestRender
-    scene.add(this.reflectionCamera)
     this.dot.visible = false
     scene.add(this.dot)
   }
