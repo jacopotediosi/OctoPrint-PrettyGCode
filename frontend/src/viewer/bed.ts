@@ -24,7 +24,7 @@ export interface BedVolume {
  * @param bedVolume - Print bed geometry
  * @returns Center X and Y
  */
-export const bedCenter = (bedVolume: BedVolume) => {
+export const bedCenter = (bedVolume: BedVolume): { x: number, y: number } => {
   const lowerleft = bedVolume.origin === 'lowerleft'
   return { x: lowerleft ? bedVolume.width / 2 : 0, y: lowerleft ? bedVolume.depth / 2 : 0 }
 }
@@ -63,7 +63,7 @@ export class Bed {
    * (Re)builds the bed
    * @param bedVolume - Print bed geometry
    */
-  rebuild (bedVolume: BedVolume) {
+  rebuild (bedVolume: BedVolume): void {
     const center = bedCenter(bedVolume)
 
     // Drop the previous bed
@@ -101,7 +101,7 @@ export class Bed {
    * Shows or hides the print bed
    * @param visible - True to show the bed
    */
-  applyVisibility (visible: boolean) {
+  applyVisibility (visible: boolean): void {
     for (const object of [this.plane, this.grid]) {
       if (object) object.visible = visible
     }
@@ -114,7 +114,7 @@ export class Bed {
    * @param renderer - The WebGL renderer
    * @param bedVolume - Print bed geometry
    */
-  update (camera: THREE.PerspectiveCamera | THREE.OrthographicCamera, renderer: THREE.WebGLRenderer, bedVolume: BedVolume) {
+  update (camera: THREE.PerspectiveCamera | THREE.OrthographicCamera, renderer: THREE.WebGLRenderer, bedVolume: BedVolume): void {
     const mirrorShown = this.settings.showBed && this.settings.showMirror
 
     // Cull the bed mirror when viewing from below the bed

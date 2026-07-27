@@ -12,19 +12,19 @@ const DEFAULTS = new Settings()
  * @param app - Application instance
  * @returns The created panel
  */
-export function initSettingsPanel (app: PrettyGCodeApp) {
+export function initSettingsPanel (app: PrettyGCodeApp): GUI {
   const settings = app.settings
   const gui = new GUI({ autoPlace: false })
   $('#pg-view-settings').append(gui.domElement)
 
   const refreshers: Array<() => void> = []
-  const refreshResets = () => refreshers.forEach((refresh) => refresh())
+  const refreshResets = (): void => refreshers.forEach((refresh) => refresh())
   gui.onChange(() => {
     settings.save()
     refreshResets()
   })
 
-  const option = (folder: GUI, prop: keyof Settings, name: string, help: string) => {
+  const option = (folder: GUI, prop: keyof Settings, name: string, help: string): Controller => {
     const controller = folder.add(settings, prop).name(name)
     controller.domElement.title = help
     return controller
@@ -138,7 +138,7 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
     'Reflect the surrounding scene on the nozzle 3D model.'
   )
 
-  const updateNozzleControls = () => {
+  const updateNozzleControls = (): void => {
     nozzleSize.show(settings.nozzleStyle !== 'none')
     nozzleColor.show(settings.nozzleStyle !== 'none')
     nozzleTransparency.show(settings.nozzleStyle !== 'none')
@@ -181,13 +181,13 @@ export function initSettingsPanel (app: PrettyGCodeApp) {
 
   /* ---- Reset buttons ---- */
 
-  const defaultOf = (controller: Controller) => (DEFAULTS as any)[controller.property]
-  const isDefault = (controller: Controller) => controller.getValue() === defaultOf(controller)
-  const reset = (controller: Controller) => controller.load(defaultOf(controller))
-  const colorsAtDefault = () =>
+  const defaultOf = (controller: Controller): Settings[keyof Settings] => DEFAULTS[controller.property as keyof Settings]
+  const isDefault = (controller: Controller): boolean => controller.getValue() === defaultOf(controller)
+  const reset = (controller: Controller): void => { controller.load(defaultOf(controller)) }
+  const colorsAtDefault = (): boolean =>
     settings.modelDefaultColor === DEFAULTS.modelDefaultColor &&
     JSON.stringify(settings.modelColorRules) === JSON.stringify(DEFAULTS.modelColorRules)
-  const makeResetButton = (title: string) => {
+  const makeResetButton = (title: string): HTMLButtonElement => {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'pg-reset'

@@ -10,15 +10,15 @@ let maxSegment = -1
  * Creates the segment slider
  * @param app - Application instance
  */
-export function initSegmentSlider (app: PrettyGCodeApp) {
-  const onStart = () => app.setManualSliding(true)
-  const onStop = () => app.setManualSliding(false)
+export function initSegmentSlider (app: PrettyGCodeApp): void {
+  const onStart = (): void => app.setManualSliding(true)
+  const onStop = (): void => app.setManualSliding(false)
 
   /**
    * Moves the displayed segment by a delta
    * @param delta - Segments to move by, negative to go back
    */
-  const stepSegment = (delta: number) => {
+  const stepSegment = (delta: number): void => {
     const segment = Math.min(Math.max(app.currentSegmentNumber + delta, 0), app.currentLayerSegmentCount)
     app.setCurrentSegmentNumber(segment)
   }
@@ -70,7 +70,7 @@ export function initSegmentSlider (app: PrettyGCodeApp) {
  * Shows or hides the segment slider
  * @param show - True to show the segment slider
  */
-export function applySegmentSliderVisibility (show: boolean) {
+export function applySegmentSliderVisibility (show: boolean): void {
   $('#pg-segment-slider-ui, .pg-segment-step-button').toggleClass('pg-hidden', !show)
 }
 
@@ -78,7 +78,7 @@ export function applySegmentSliderVisibility (show: boolean) {
  * (Re)adapts the slider to the current layer's segment count
  * @param app - Application instance
  */
-export function updateSegmentSliderMax (app: PrettyGCodeApp) {
+export function updateSegmentSliderMax (app: PrettyGCodeApp): void {
   if (!$('#pg-segment-slider').length) return
 
   const segmentCount = app.currentLayerSegmentCount
@@ -95,7 +95,7 @@ export function updateSegmentSliderMax (app: PrettyGCodeApp) {
  * @param app - Application instance
  * @param segment - Segments of the current layer to show
  */
-export function setSegmentSliderValue (app: PrettyGCodeApp, segment: number) {
+export function setSegmentSliderValue (app: PrettyGCodeApp, segment: number): void {
   if (!$('#pg-segment-slider').length) return
 
   const segmentCount = app.currentLayerSegmentCount

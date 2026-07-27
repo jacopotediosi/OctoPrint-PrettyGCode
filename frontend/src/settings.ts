@@ -84,7 +84,7 @@ export class Settings {
   webcamHeight = 0
 
   /** Restores the saved settings */
-  load () {
+  load (): void {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')
       for (const key in saved) {
@@ -96,7 +96,7 @@ export class Settings {
   }
 
   /** Persists the current settings */
-  save () {
+  save (): void {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...this }))
     } catch {}

@@ -89,26 +89,27 @@ export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void)
   /* ---- Preset & reset controls ---- */
 
   /**
-   * Whether the current colors equal the given ones
+   * Tells whether the current colors equal the given ones
    * @param defaultColor - Default color to compare
    * @param rules - Color rules to compare
+   * @returns True when both the default color and the rules match
    */
-  const colorsMatch = (defaultColor: string, rules: ColorRule[]) =>
+  const colorsMatch = (defaultColor: string, rules: ColorRule[]): boolean =>
     settings.modelDefaultColor === defaultColor &&
     JSON.stringify(settings.modelColorRules) === JSON.stringify(rules)
 
   /** Index of the preset matching the current colors, or -1 when they match none */
-  const currentPresetIndex = () =>
+  const currentPresetIndex = (): number =>
     COLOR_PRESETS.findIndex((preset) => colorsMatch(preset.defaultColor, presetColorRules(preset)))
 
   /** Enables preset Load button only when the selected option is not the current preset */
-  const refreshPresetLoadButton = () => {
+  const refreshPresetLoadButton = (): void => {
     const selected = Number(presetSelect.value)
     presetLoadButton.disabled = selected < 0 || selected === currentPresetIndex()
   }
 
   /** Refreshes controls to reflect the current colors */
-  const refreshControls = () => {
+  const refreshControls = (): void => {
     // Reset button
     resetButton.disabled = colorsMatch(DEFAULT_COLOR, DEFAULT_COLOR_RULES)
 
@@ -124,14 +125,14 @@ export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void)
   /* ---- Committing ---- */
 
   /** Applies the current colors */
-  const applyChange = () => {
+  const applyChange = (): void => {
     app.updateModelColors()
     onChange()
     refreshControls()
   }
 
   /** Saves the input values to the settings and applies them */
-  const commit = () => {
+  const commit = (): void => {
     settings.modelDefaultColor = defaultColorInput.value
     settings.modelColorRules = [...colorRulesContainer.querySelectorAll<HTMLElement>('.pg-modal-color-rule')].map((row) => ({
       keywords: row.querySelector<HTMLInputElement>('.pg-modal-color-keywords')!.value.split(',').map((keyword) => keyword.trim()).filter(Boolean),
@@ -147,7 +148,7 @@ export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void)
    * @param rule - Color rule to show
    * @returns The row element
    */
-  const createRow = (rule: ColorRule) => {
+  const createRow = (rule: ColorRule): HTMLElement => {
     const row = htmlStringToElement(ROW_MARKUP)
 
     const keywords = row.querySelector<HTMLInputElement>('.pg-modal-color-keywords')!
@@ -164,7 +165,7 @@ export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void)
   }
 
   /** Fills the inputs with the current colors */
-  const fillInputs = () => {
+  const fillInputs = (): void => {
     defaultColorInput.value = settings.modelDefaultColor
     colorRulesContainer.replaceChildren(...settings.modelColorRules.map(createRow))
   }
@@ -174,7 +175,7 @@ export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void)
    * @param y - Mouse vertical position on the screen
    * @returns That row, or null if the mouse is past the last row
    */
-  const firstRowBelow = (y: number) =>
+  const firstRowBelow = (y: number): HTMLElement | null =>
     [...colorRulesContainer.querySelectorAll<HTMLElement>('.pg-modal-color-rule:not(.pg-modal-color-dragging)')]
       .find((row) => y < row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2) ?? null
 
@@ -213,7 +214,7 @@ export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void)
    * @param defaultColor - New default color
    * @param rules - New color rules
    */
-  const replaceColors = (defaultColor: string, rules: ColorRule[]) => {
+  const replaceColors = (defaultColor: string, rules: ColorRule[]): void => {
     settings.modelDefaultColor = defaultColor
     settings.modelColorRules = rules
     fillInputs()
@@ -221,10 +222,10 @@ export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void)
   }
 
   /** Opens the modal */
-  const open = () => { fillInputs(); refreshControls(); $(modal).modal('show') }
+  const open = (): void => { fillInputs(); refreshControls(); $(modal).modal('show') }
 
   /** Reset to the default colors */
-  const resetToDefault = () => replaceColors(DEFAULT_COLOR, cloneColorRules(DEFAULT_COLOR_RULES))
+  const resetToDefault = (): void => replaceColors(DEFAULT_COLOR, cloneColorRules(DEFAULT_COLOR_RULES))
 
   // Control listeners
   presetSelect.addEventListener('change', refreshPresetLoadButton)

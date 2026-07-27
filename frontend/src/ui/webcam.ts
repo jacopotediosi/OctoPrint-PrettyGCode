@@ -9,7 +9,7 @@ let restorePlaceholder: Comment | null = null
  * Finds OctoPrint's webcam containers
  * @returns The webcam plugins container (on OctoPrint 1.9+) or the legacy control tab containers
  */
-function getWebcamContainers () {
+function getWebcamContainers (): JQuery<HTMLElement> {
   const plugins = $('#webcam_plugins_container')
   return plugins.length ? plugins : $('#webcam_video_container, #webcam_container')
 }
@@ -18,7 +18,7 @@ function getWebcamContainers () {
  * Resizes the webcam overlay
  * @param height - Height in px
  */
-function applyWebcamHeight (height: number) {
+function applyWebcamHeight (height: number): void {
   const overlay = $('#pg-webcam')
   if (!overlay.length) return
 
@@ -35,7 +35,7 @@ function applyWebcamHeight (height: number) {
  * Starts the stream on OctoPrint <= 1.8, whose control view model refuses to stream while its tab is not the selected one
  * @param controlVM - OctoPrint control view model
  */
-function legacyEnableWebcam (controlVM: any) {
+function legacyEnableWebcam (controlVM: any): void {
   clearTimeout(controlVM.webcamDisableTimeout)
   controlVM.webcamDisableTimeout = undefined
 
@@ -49,7 +49,7 @@ function legacyEnableWebcam (controlVM: any) {
 }
 
 /** Moves the webcam containers into the overlay window */
-function dockWebcam () {
+function dockWebcam (): void {
   const containers = getWebcamContainers()
   if (!containers.length || containers.parent().is('#pg-webcam')) return
 
@@ -78,7 +78,7 @@ function dockWebcam () {
 }
 
 /** Puts the webcam containers back in their original position */
-function undockWebcam () {
+function undockWebcam (): void {
   if (!restorePlaceholder) return
 
   const placeholder = restorePlaceholder
@@ -101,7 +101,7 @@ function undockWebcam () {
  * Shows or hides the webcam overlay to match the current settings, docking or undocking the webcam containers
  * @param settings - Plugin frontend settings
  */
-export function updateWebcamOverlay (settings: Settings) {
+export function updateWebcamOverlay (settings: Settings): void {
   const webcamContainersAvailable = getWebcamContainers().length > 0
 
   $('.pg-view #pg-webcam').toggleClass('pg-hidden', !settings.showWebcam || !webcamContainersAvailable)
@@ -118,7 +118,7 @@ export function updateWebcamOverlay (settings: Settings) {
  * Creates the webcam overlay
  * @param settings - Plugin frontend settings
  */
-export function initWebcamOverlay (settings: Settings) {
+export function initWebcamOverlay (settings: Settings): void {
   const webcamOverlay: Overlay = {
     measure () {
       const rect = $('#pg-webcam')[0].getBoundingClientRect()

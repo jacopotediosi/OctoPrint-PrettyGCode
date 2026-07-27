@@ -60,7 +60,7 @@ const INITIAL_MACHINE_STATE: MachineState = Object.freeze({ x: 0, y: 0, z: 0, e:
  * @param feedrate - Feedrate in mm/min
  * @returns Speed in mm/s
  */
-const feedrateMmPerSecond = (feedrate: number) => (feedrate > 0 ? feedrate : 1500) / 60
+const feedrateMmPerSecond = (feedrate: number): number => (feedrate > 0 ? feedrate : 1500) / 60
 
 /* ---- Gcode text ---- */
 
@@ -105,7 +105,7 @@ const ODD_LAYER_BRIGHTNESS_GAIN = 0.1
  * @param component - The sRGB component (from 0 to 1)
  * @returns The linear component
  */
-const srgbToLinear = (component: number) => component < 0.04045 ? component * 0.0773993808 : Math.pow(component * 0.9478672986 + 0.0521327014, 2.4)
+const srgbToLinear = (component: number): number => component < 0.04045 ? component * 0.0773993808 : Math.pow(component * 0.9478672986 + 0.0521327014, 2.4)
 
 /**
  * Converts a color to its most vivid form
@@ -161,7 +161,7 @@ class OpenLayer {
    * @param extrusionSeconds - Estimated time extruding the segment
    * @param objectId - Id of the object the segment belongs to, -1 for none
    */
-  add (start: MachineState, end: MachineState, color: RgbColor, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number) {
+  add (start: MachineState, end: MachineState, color: RgbColor, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number): void {
     if (this.segments === this.capacity) this.grow()
 
     const vertex = this.segments * 6
@@ -194,7 +194,7 @@ class OpenLayer {
   }
 
   /** Doubles the capacity of the segment buffers */
-  private grow () {
+  private grow (): void {
     this.capacity *= 2
 
     const vertices = new Float32Array(this.capacity * 6)
@@ -307,7 +307,7 @@ export class GCodeParser {
    * Parses the next chunk of gcode text; chunks may split lines anywhere
    * @param chunk - Raw gcode text
    */
-  parse (chunk: string) {
+  parse (chunk: string): void {
     // Chunks may split a line in two: prepend last call's leftover, hold the new trailing partial for next time
     const lines = chunk.split('\n')
     lines[0] = this.pendingLine + lines[0]
@@ -376,7 +376,7 @@ export class GCodeParser {
       }
 
       // Axis value from args (absolute/relative aware), or the current one if omitted
-      const coord = (key: keyof MachineState) => {
+      const coord = (key: keyof MachineState): number => {
         if (args[key] === undefined) return this.machineState[key]
         if (key === 'f') return args.f
         const relative = key === 'e' ? this.extrusionRelative : this.axesRelative
@@ -499,7 +499,7 @@ export class GCodeParser {
    * @param move - Machine state after the command
    * @returns The extruded length in mm
    */
-  private extrusionDelta (args: Record<string, number>, move: MachineState) {
+  private extrusionDelta (args: Record<string, number>, move: MachineState): number {
     if (args.e === undefined) return 0
     return this.extrusionRelative ? args.e : move.e - this.machineState.e
   }
@@ -508,7 +508,7 @@ export class GCodeParser {
    * Parse the object marker, updating the current object id
    * @param rawLine - Object marker line, starting with "@"
    */
-  private parseObjectMarker (rawLine: string) {
+  private parseObjectMarker (rawLine: string): void {
     const space = rawLine.indexOf(' ')
     const command = (space < 0 ? rawLine : rawLine.slice(0, space)).slice(1).toLowerCase()
 
@@ -528,7 +528,7 @@ export class GCodeParser {
    * @param move - Machine state starting the layer
    * @returns The new layer
    */
-  private changeLayer (move: MachineState) {
+  private changeLayer (move: MachineState): OpenLayer {
     this.finish()
     this.layersOpened++
     this.currentLayer = new OpenLayer(move.z)
@@ -536,7 +536,7 @@ export class GCodeParser {
   }
 
   /** Finishes parsing */
-  finish () {
+  finish (): void {
     if (!this.currentLayer) return
     this.layers.push(this.currentLayer.finish())
     this.currentLayer = null
@@ -547,7 +547,7 @@ export class GCodeParser {
    * @param start - Machine state at the move start
    * @param end - Machine state at the move end
    */
-  private addTravel (start: MachineState, end: MachineState) {
+  private addTravel (start: MachineState, end: MachineState): void {
     const length = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z)
     this.pendingTravelSeconds += (length || 0) / feedrateMmPerSecond(end.f)
   }
@@ -556,7 +556,7 @@ export class GCodeParser {
    * Grows the model bounds to contain a point
    * @param point - Point to contain
    */
-  private expandBounds (point: MachineState) {
+  private expandBounds (point: MachineState): void {
     const bounds = this.bounds
     bounds.minX = Math.min(bounds.minX, point.x)
     bounds.minY = Math.min(bounds.minY, point.y)
@@ -571,7 +571,7 @@ export class GCodeParser {
    * @param start - Machine state at the segment start
    * @param end - Machine state at the segment end
    */
-  private addSegment (start: MachineState, end: MachineState) {
+  private addSegment (start: MachineState, end: MachineState): void {
     // Check coordinates
     if (Number.isNaN(start.x) || Number.isNaN(start.y) || Number.isNaN(start.z) || Number.isNaN(end.x) || Number.isNaN(end.y) || Number.isNaN(end.z)) {
       console.warn('PrettyGCode: bad line segment', start, end)

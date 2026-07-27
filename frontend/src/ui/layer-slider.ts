@@ -10,15 +10,15 @@ let maxLayer = -1
  * Creates the layer slider
  * @param app - Application instance
  */
-export function initLayerSlider (app: PrettyGCodeApp) {
-  const onStart = () => app.setManualSliding(true)
-  const onStop = () => app.setManualSliding(false)
+export function initLayerSlider (app: PrettyGCodeApp): void {
+  const onStart = (): void => app.setManualSliding(true)
+  const onStop = (): void => app.setManualSliding(false)
 
   /**
    * Moves the displayed layer by a delta
    * @param delta - Layers to move by, negative to go down
    */
-  const stepLayer = (delta: number) => {
+  const stepLayer = (delta: number): void => {
     const layer = Math.min(Math.max(app.currentLayerNumber + delta, 0), app.layerCount)
     app.setCurrentLayerNumber(layer)
   }
@@ -71,7 +71,7 @@ export function initLayerSlider (app: PrettyGCodeApp) {
  * Shows or hides the layer slider
  * @param show - True to show the layer slider
  */
-export function applyLayerSliderVisibility (show: boolean) {
+export function applyLayerSliderVisibility (show: boolean): void {
   $('#pg-layer-slider-ui, .pg-layer-step-button').toggleClass('pg-hidden', !show)
 }
 
@@ -79,7 +79,7 @@ export function applyLayerSliderVisibility (show: boolean) {
  * (Re)adapts the slider to the loaded gcode's layer count
  * @param app - Application instance
  */
-export function updateLayerSliderMax (app: PrettyGCodeApp) {
+export function updateLayerSliderMax (app: PrettyGCodeApp): void {
   if (!$('#pg-layer-slider').length) return
 
   if (app.layerCount !== maxLayer) {
@@ -95,7 +95,7 @@ export function updateLayerSliderMax (app: PrettyGCodeApp) {
  * @param app - Application instance
  * @param layer - 1-based layer number
  */
-export function setLayerSliderValue (app: PrettyGCodeApp, layer: number) {
+export function setLayerSliderValue (app: PrettyGCodeApp, layer: number): void {
   if (!$('#pg-layer-slider').length) return
   if (layer === shownLayer && app.layerCount === maxLayer) return
   shownLayer = layer

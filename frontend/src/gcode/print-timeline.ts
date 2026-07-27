@@ -60,7 +60,7 @@ export class PrintTimeline {
    * Indexes parsed layers into a new timeline
    * @param layers - Parsed gcode layers
    */
-  index (layers: Layer[]) {
+  index (layers: Layer[]): void {
     // Flatten the drawn layers into print order, tracking each one's running segment offset
     this.drawnLayers = []
     let base = 0
@@ -105,7 +105,7 @@ export class PrintTimeline {
    * @param deltaSeconds - Seconds elapsed since the previous call
    * @returns Where the nozzle now sits, or null when no gcode is indexed
    */
-  advance (filePosition: number, deltaSeconds: number) {
+  advance (filePosition: number, deltaSeconds: number): TimelineSpot | null {
     if (!this.drawnLayers.length) return null
 
     // How much of the print has been sent to the printer so far
@@ -131,7 +131,7 @@ export class PrintTimeline {
    * @param index - Global index of the reveal position
    * @returns The 1-based layer and its shown segment count
    */
-  revealPosition (index: number) {
+  revealPosition (index: number): { layerNumber: number, segmentNumber: number } {
     const layerNumber = this.layerNumberAt(index)
     return { layerNumber, segmentNumber: Math.max(0, index - this.revealIndex(layerNumber, 0)) }
   }
@@ -271,7 +271,7 @@ export class PrintTimeline {
    * @param globalIndex - Global segment index
    * @returns The coordinate in seconds
    */
-  private endTimeAt (globalIndex: number) {
+  private endTimeAt (globalIndex: number): number {
     const { layer, localIndex } = this.segmentAt(globalIndex)!
 
     // Excluded segments take no time
@@ -284,7 +284,7 @@ export class PrintTimeline {
    * Moves the nozzle position to a timeline spot
    * @param spot - Timeline position
    */
-  private updateNozzlePosition (spot: TimelineSpot) {
+  private updateNozzlePosition (spot: TimelineSpot): void {
     const position = this.nozzlePosition
 
     // Past the end: park on the last segment's endpoint
@@ -325,7 +325,7 @@ export class PrintTimeline {
    * Gets the current nozzle position
    * @returns The position, or null until the print reaches the first segment
    */
-  getNozzlePosition () {
+  getNozzlePosition (): THREE.Vector3 | null {
     return this.targetTime > 0 ? this.nozzlePosition : null
   }
 
@@ -334,7 +334,7 @@ export class PrintTimeline {
    * @param globalIndex - Global segment index
    * @returns The layer and local index, or null when out of range
    */
-  segmentAt (globalIndex: number) {
+  segmentAt (globalIndex: number): { layer: DrawnLayer, localIndex: number } | null {
     // First layer reaching past the index (binary search)
     const layers = this.drawnLayers
     let lo = 0; let hi = layers.length

@@ -11,13 +11,13 @@ let wasMaximized = false
  * Wires the view's toggle buttons
  * @param app - Application instance
  */
-export function initToggleButtons (app: PrettyGCodeApp) {
+export function initToggleButtons (app: PrettyGCodeApp): void {
   /**
    * Toggles a window open or closed
    * @param key - Settings key of the window to toggle
    * @param closes - Settings key of the window to close when the toggled one opens
    */
-  const toggleWindow = (key: WindowKey, closes?: WindowKey) => {
+  const toggleWindow = (key: WindowKey, closes?: WindowKey): void => {
     app.settings[key] = !app.settings[key]
     if (app.settings[key] && closes) app.settings[closes] = false
     app.settings.save()

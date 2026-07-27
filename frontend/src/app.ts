@@ -104,7 +104,7 @@ export class PrettyGCodeApp {
    * @param current - Selector of the now selected tab
    * @param previous - Selector of the previously selected tab
    */
-  onTabChange (current: string, previous: string) {
+  onTabChange (current: string, previous: string): void {
     if (current === PG_TAB) {
       if (!this.viewInitialized) {
         // Bed geometry and nozzle size, kept in sync with the active printer profile
@@ -147,7 +147,7 @@ export class PrettyGCodeApp {
    * Feeds the app OctoPrint's live printer data
    * @param data - OctoPrint current data payload
    */
-  fromCurrentData (data: PrinterDataPayload) {
+  fromCurrentData (data: PrinterDataPayload): void {
     this.updatePrinterData(data)
     if (!this.viewInitialized) return
 
@@ -163,7 +163,7 @@ export class PrettyGCodeApp {
    * Feeds the app the printer data OctoPrint sends on connect
    * @param data - OctoPrint history data payload
    */
-  fromHistoryData (data: PrinterDataPayload) {
+  fromHistoryData (data: PrinterDataPayload): void {
     this.updatePrinterData(data)
   }
 
@@ -172,7 +172,7 @@ export class PrettyGCodeApp {
    * @param plugin - Identifier of the sending plugin
    * @param data - Message payload
    */
-  onDataUpdaterPluginMessage (plugin: string, data: any) {
+  onDataUpdaterPluginMessage (plugin: string, data: any): void {
     if (this.exclusions.applyPluginMessage(plugin, data)) this.updateExclusions()
   }
 
@@ -180,7 +180,7 @@ export class PrettyGCodeApp {
    * Syncs the app with a printer data payload, loading the newly selected job if it changed
    * @param data - OctoPrint data payload
    */
-  private updatePrinterData (data: PrinterDataPayload) {
+  private updatePrinterData (data: PrinterDataPayload): void {
     // On a newly selected file, reload the gcode
     const job = data.job
     if (this.currentJobPath !== job.file.path || this.currentJobDate !== job.file.date) {
@@ -197,7 +197,7 @@ export class PrettyGCodeApp {
   /* ---- Gcode loading ---- */
 
   /** Layer count of the loaded gcode */
-  get layerCount () {
+  get layerCount (): number {
     return this.parsedGcode?.layers.length ?? 0
   }
 
@@ -206,7 +206,7 @@ export class PrettyGCodeApp {
    * @param jobPath - Server path of the job file
    * @param preserveView - Whether to keep the current layer and camera instead of framing the whole model
    */
-  private async loadGcode (jobPath: string, preserveView = false) {
+  private async loadGcode (jobPath: string, preserveView = false): Promise<void> {
     const sequence = ++this.loadSequence
     showLoadingScreen()
     this.unloadGcode()
@@ -251,7 +251,7 @@ export class PrettyGCodeApp {
   }
 
   /** Empties the 3D view of the loaded gcode */
-  private unloadGcode () {
+  private unloadGcode (): void {
     this.parsedGcode = null
     this.printTimeline.index([])
     this.gcodeModel.build([])
@@ -261,7 +261,7 @@ export class PrettyGCodeApp {
   }
 
   /** Updates the drawn line thickness to the current nozzle diameter */
-  private updateLineWidth () {
+  private updateLineWidth (): void {
     // The slicer's nozzle diameter wins over the printer profile
     this.gcodeModel.applyLineWidth(this.parsedGcode?.slicerNozzleDiameter ?? this.nozzleDiameter)
     this.viewer.requestRender()
@@ -270,12 +270,12 @@ export class PrettyGCodeApp {
   /* ---- Exclusions ---- */
 
   /** Fetches the current exclusions and applies them to the view */
-  private async fetchExclusions () {
+  private async fetchExclusions (): Promise<void> {
     if (await this.exclusions.fetch()) this.updateExclusions()
   }
 
   /** (Re)applies the current exclusions to the timeline and the model */
-  private updateExclusions () {
+  private updateExclusions (): void {
     if (!this.viewInitialized || !this.parsedGcode) return
 
     this.printTimeline.index(this.parsedGcode.layers)
@@ -325,22 +325,22 @@ export class PrettyGCodeApp {
   /* ---- UI events ---- */
 
   /** 1-based current layer */
-  get currentLayerNumber () {
+  get currentLayerNumber (): number {
     return this._currentLayerNumber
   }
 
   /** Revealed segments of the current layer, 0 to its total */
-  get currentSegmentNumber () {
+  get currentSegmentNumber (): number {
     return this._currentSegmentNumber
   }
 
   /** Total segments the current layer is made of */
-  get currentLayerSegmentCount () {
+  get currentLayerSegmentCount (): number {
     return this.printTimeline.layerSegmentCount(this._currentLayerNumber)
   }
 
   /** Z height of the current layer */
-  get currentLayerZ () {
+  get currentLayerZ (): number {
     return this.parsedGcode?.layers[this._currentLayerNumber - 1]?.z ?? 0
   }
 
@@ -348,7 +348,7 @@ export class PrettyGCodeApp {
    * Selects the current layer, revealing it whole
    * @param layerNumber - 1-based layer number
    */
-  setCurrentLayerNumber (layerNumber: number) {
+  setCurrentLayerNumber (layerNumber: number): void {
     this.setReveal(layerNumber, this.printTimeline.layerSegmentCount(layerNumber))
   }
 
@@ -356,7 +356,7 @@ export class PrettyGCodeApp {
    * Reveals a part of the current layer, up to a within-layer segment
    * @param segmentNumber - Segments of the current layer to reveal
    */
-  setCurrentSegmentNumber (segmentNumber: number) {
+  setCurrentSegmentNumber (segmentNumber: number): void {
     this._currentSegmentNumber = Math.min(Math.max(segmentNumber, 0), this.currentLayerSegmentCount)
     setSegmentSliderValue(this, this._currentSegmentNumber)
   }
@@ -366,7 +366,7 @@ export class PrettyGCodeApp {
    * @param layerNumber - 1-based layer number
    * @param segmentNumber - Revealed segments of that layer
    */
-  private setReveal (layerNumber: number, segmentNumber: number) {
+  private setReveal (layerNumber: number, segmentNumber: number): void {
     this._currentLayerNumber = layerNumber
     this._currentSegmentNumber = segmentNumber
     setLayerSliderValue(this, layerNumber)
@@ -377,12 +377,12 @@ export class PrettyGCodeApp {
    * Turns manual sliding on or off
    * @param manual - True to enable manual sliding
    */
-  setManualSliding (manual: boolean) {
+  setManualSliding (manual: boolean): void {
     this.manualSliding = manual
   }
 
   /** Resets the camera to the default view */
-  resetView () {
+  resetView (): void {
     this.viewer.applyDefaultView(true)
   }
 
@@ -390,63 +390,63 @@ export class PrettyGCodeApp {
    * Rotates the camera to a named view angle
    * @param view - View angle to rotate to
    */
-  applyViewAngle (view: ViewAngle) {
+  applyViewAngle (view: ViewAngle): void {
     this.viewer.applyViewAngle(view, true)
   }
 
   /** (Re)applies the navigation mode setting to the 3D view */
-  updateNavigationMode () {
+  updateNavigationMode (): void {
     this.viewer.applyNavigationMode(this.settings.navigationMode)
   }
 
   /** (Re)applies the projection mode setting to the 3D view */
-  updateProjectionMode () {
+  updateProjectionMode (): void {
     this.viewer.applyProjectionMode(this.settings.projectionMode)
   }
 
   /** (Re)applies the dark mode setting */
-  updateDarkMode () {
+  updateDarkMode (): void {
     $('html').toggleClass('pg-dark', this.settings.darkMode)
     this.viewer.applyBackground(this.settings.darkMode)
     this.viewer.updateBedMesh()
   }
 
   /** (Re)applies the antialias setting to the 3D view */
-  updateAntialias () {
+  updateAntialias (): void {
     this.viewer.applyAntialias(this.settings.antialias)
   }
 
   /** (Re)applies the layer highlight setting to the displayed layer */
-  updateLayerHighlight () {
+  updateLayerHighlight (): void {
     this.gcodeModel.highlightLayer(this.currentLayerNumber)
     this.viewer.requestRender()
   }
 
   /** Rebuilds the displayed gcode model to reflect the current settings */
-  rebuildGcodeModel () {
+  rebuildGcodeModel (): void {
     this.gcodeModel.rebuild()
     this.viewer.requestRender()
   }
 
   /** (Re)applies the model color settings */
-  updateModelColors () {
+  updateModelColors (): void {
     this.settings.save()
     this.loadGcode(this.currentJobPath, true)
   }
 
   /** (Re)applies the show bed setting to the 3D view */
-  updateBedVisibility () {
+  updateBedVisibility (): void {
     this.viewer.applyBedVisibility(this.settings.showBed)
   }
 
   /** (Re)applies the show exclusion markers setting to the 3D view */
-  updateExclusionMarkersVisibility () {
+  updateExclusionMarkersVisibility (): void {
     this.exclusions.regionMarkersGroup.visible = this.settings.showExclusionMarker
     this.viewer.requestRender()
   }
 
   /** Shows or hides the overlay windows to match the current settings */
-  updateWindowStates () {
+  updateWindowStates (): void {
     applyStatusBarVisibility(this.settings.showStatusBar)
 
     applyLayerSliderVisibility(this.settings.showLayerSlider)
@@ -464,14 +464,14 @@ export class PrettyGCodeApp {
   /* ---- Printer profile ---- */
 
   /** Refreshes the nozzle diameter from the active printer profile */
-  private updateNozzleDiameter () {
+  private updateNozzleDiameter (): void {
     const currentProfileData = this.printerProfilesVM.currentProfileData()
     const extruder = currentProfileData && currentProfileData.extruder
     this.nozzleDiameter = extruder && typeof extruder.nozzleDiameter === 'function' ? extruder.nozzleDiameter() : null
   }
 
   /** Refreshes the print bed geometry from the active printer profile */
-  private updateBedVolume () {
+  private updateBedVolume (): void {
     const currentProfileData = this.printerProfilesVM.currentProfileData()
     if (!currentProfileData || !currentProfileData.volume) return
 

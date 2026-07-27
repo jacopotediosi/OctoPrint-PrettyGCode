@@ -38,7 +38,7 @@ const isLayerObject = (child: THREE.Object3D): child is LayerLine => child.name.
  * @param line - Layer line object
  * @returns Its metadata
  */
-const layerPartMetadata = (line: LayerLine) => line.userData as LayerPartMetadata
+const layerPartMetadata = (line: LayerLine): LayerPartMetadata => line.userData as LayerPartMetadata
 
 /** Nozzle diameter in mm assumed when none is known */
 export const DEFAULT_NOZZLE_DIAMETER = 0.4
@@ -49,14 +49,14 @@ const LINE_THICKNESS_FACTOR = 1.1
  * @param clippingPlanes - Clipping planes to apply, if any
  * @returns The new material
  */
-const makeThinMaterial = (clippingPlanes: THREE.Plane[] | null = null) => new THREE.LineBasicMaterial({ vertexColors: true, clippingPlanes })
+const makeThinMaterial = (clippingPlanes: THREE.Plane[] | null = null): THREE.LineBasicMaterial => new THREE.LineBasicMaterial({ vertexColors: true, clippingPlanes })
 
 /**
  * Fixes the thick-line shaders: in orthographic view and
  * very close up the lines under the top layers show through them
  * @param parameters - WebGL program parameters holding the shader sources
  */
-const patchThickMaterialShaders = (parameters: THREE.WebGLProgramParametersWithUniforms) => {
+const patchThickMaterialShaders = (parameters: THREE.WebGLProgramParametersWithUniforms): void => {
   const fixes: Array<{ shader: 'vertexShader' | 'fragmentShader', from: string, to: string }> = [
     // Likely a three.js bug: it builds the flat quads that render each line facing the camera
     // position, assuming a perspective camera. An orthographic camera looks along a fixed axis
@@ -121,7 +121,7 @@ const patchThickMaterialShaders = (parameters: THREE.WebGLProgramParametersWithU
  * @param clippingPlanes - Clipping planes to apply, if any
  * @returns The new material
  */
-const makeThickMaterial = (clippingPlanes: THREE.Plane[] | null = null) => {
+const makeThickMaterial = (clippingPlanes: THREE.Plane[] | null = null): THREE.LineMaterial => {
   const material = new THREE.LineMaterial({ worldUnits: true, linewidth: DEFAULT_NOZZLE_DIAMETER * LINE_THICKNESS_FACTOR, vertexColors: true, clippingPlanes })
   material.onBeforeCompile = patchThickMaterialShaders
   return material
@@ -145,7 +145,7 @@ class LayerPart {
    * @param layer - Layer holding the segment
    * @param segment - Segment index within the layer
    */
-  add (layer: Layer, segment: number) {
+  add (layer: Layer, segment: number): void {
     const from = segment * 6
     const to = this.segmentCount * 6
     for (let i = 0; i < 6; i++) {
@@ -215,7 +215,7 @@ export class GCodeModel {
    * Builds the model's line objects from parsed layers
    * @param layers - Parsed gcode layers
    */
-  build (layers: Layer[]) {
+  build (layers: Layer[]): void {
     this.layers = layers
     for (const child of this.linesGroup.children) {
       if (isLayerObject(child)) child.geometry.dispose()
@@ -231,7 +231,7 @@ export class GCodeModel {
   }
 
   /** Rebuilds the model from the last given layers, e.g. after a settings change */
-  rebuild () {
+  rebuild (): void {
     this.build(this.layers)
   }
 
@@ -272,7 +272,7 @@ export class GCodeModel {
    * @param layerNumber - 1-based layer number
    * @param globalBase - Global segment index the layer starts at
    */
-  private addLayerLines (layer: Layer, layerNumber: number, globalBase: number) {
+  private addLayerLines (layer: Layer, layerNumber: number, globalBase: number): void {
     // Skip empty layers
     if (layer.vertices.length <= 2) return
 
@@ -312,7 +312,7 @@ export class GCodeModel {
    * @param colors - Vertex colors as flat RGB triplets
    * @param segmentIndices - Indices of the part's segments in the layer, or null for the whole layer
    */
-  private addLayerPart (layer: Layer, layerNumber: number, globalBase: number, vertices: Float32Array, colors: Uint8ClampedArray, segmentIndices: Uint32Array | null) {
+  private addLayerPart (layer: Layer, layerNumber: number, globalBase: number, vertices: Float32Array, colors: Uint8ClampedArray, segmentIndices: Uint32Array | null): void {
     // Skip empty parts
     if (vertices.length <= 2) return
 
@@ -348,7 +348,7 @@ export class GCodeModel {
    * @param layerColors - Vertex colors as flat RGB triplets
    * @returns The mirror's vertices and colors
    */
-  private makeMirrorData (layerVertices: Float32Array, layerColors: Uint8ClampedArray) {
+  private makeMirrorData (layerVertices: Float32Array, layerColors: Uint8ClampedArray): { vertices: Float32Array, colors: Uint8ClampedArray } {
     // Mirror through the bed: flip the Z of every vertex
     const vertices = layerVertices.slice()
     for (let i = 2; i < vertices.length; i += 3) vertices[i] = -vertices[i]
@@ -373,7 +373,7 @@ export class GCodeModel {
    * Turns colors into their greyed-out version
    * @param colors - Vertex colors as flat RGB triplets, modified in place
    */
-  private greyOutColors (colors: Uint8ClampedArray) {
+  private greyOutColors (colors: Uint8ClampedArray): void {
     const color = new THREE.Color()
     const hsl = { h: 0, s: 0, l: 0 }
     for (let i = 0; i < colors.length; i += 3) {
@@ -390,7 +390,7 @@ export class GCodeModel {
    * Sets the drawn line thickness from the nozzle size
    * @param nozzleDiameter - Nozzle diameter in mm, or null for the default
    */
-  applyLineWidth (nozzleDiameter: number | null) {
+  applyLineWidth (nozzleDiameter: number | null): void {
     const lineWidth = (nozzleDiameter ?? DEFAULT_NOZZLE_DIAMETER) * LINE_THICKNESS_FACTOR
 
     this.thickMaterial.linewidth = lineWidth
@@ -404,7 +404,7 @@ export class GCodeModel {
    * Highlights a layer, unhighlighting the others
    * @param layerNumber - 1-based layer number to highlight
    */
-  highlightLayer (layerNumber: number) {
+  highlightLayer (layerNumber: number): void {
     // Shade the highlight materials by the set intensity
     const brightness = 1 - this.settings.highlightIntensity / 100
     this.highlightThinMaterial.color.setRGB(brightness, brightness, brightness)
@@ -432,7 +432,7 @@ export class GCodeModel {
    * @param segmentsShown - Segments of that layer to reveal
    * @returns True if anything changed
    */
-  syncToLayerSegment (layerNumber: number, segmentsShown: number) {
+  syncToLayerSegment (layerNumber: number, segmentsShown: number): boolean {
     let needUpdate = false
 
     // Hide the growing tip while sliding layer/segments manually
@@ -450,7 +450,7 @@ export class GCodeModel {
    * Reveals the model up to a print timeline position
    * @param spot - Timeline position to reveal up to
    */
-  revealTo (spot: TimelineSpot) {
+  revealTo (spot: TimelineSpot): void {
     this.revealUpTo(spot.segmentIndex)
 
     // Grow the segment the nozzle is mid-way through
@@ -462,7 +462,7 @@ export class GCodeModel {
    * @param index - Global index of the reveal position
    * @returns True if anything changed
    */
-  private revealUpTo (index: number) {
+  private revealUpTo (index: number): boolean {
     if (index === this.revealedIndex) return false
     this.revealedIndex = index
 
@@ -488,7 +488,7 @@ export class GCodeModel {
    * @param revealed - Global index of the reveal position
    * @returns The number of segments passed
    */
-  private partRevealCount (child: LayerLine, revealed: number) {
+  private partRevealCount (child: LayerLine, revealed: number): number {
     const { globalBase, numSegments, segmentIndices } = layerPartMetadata(child)
 
     // How many of the layer's segments the reveal has passed
@@ -513,7 +513,7 @@ export class GCodeModel {
    * @param count - Segments to draw
    * @returns True if the count changed
    */
-  private setRevealCount (child: LayerLine, count: number) {
+  private setRevealCount (child: LayerLine, count: number): boolean {
     // Thick lines are instanced; thin ones aren't, so limit their drawn vertex range (2 per segment)
     if (this.settings.thickLines) {
       const geometry = child.geometry as THREE.LineSegmentsGeometry
@@ -530,7 +530,7 @@ export class GCodeModel {
   /* ---- Growing tip line ---- */
 
   /** (Re)creates the line used to draw the partially printed segment */
-  private buildTipLine () {
+  private buildTipLine (): void {
     if (this.tipLine) {
       this.linesGroup.remove(this.tipLine)
       this.tipLine.geometry.dispose()
@@ -562,7 +562,7 @@ export class GCodeModel {
    * Grows the partially printed segment's line up to a timeline position
    * @param spot - Timeline position
    */
-  private updateTipLine (spot: TimelineSpot) {
+  private updateTipLine (spot: TimelineSpot): void {
     const tipLine = this.tipLine
     if (!tipLine) return
 
@@ -598,7 +598,7 @@ export class GCodeModel {
    * @param g - Green component (0-1)
    * @param b - Blue component (0-1)
    */
-  private setTipLineGeometry (startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, r: number, g: number, b: number) {
+  private setTipLineGeometry (startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, r: number, g: number, b: number): void {
     if (!this.tipLine) return
 
     const geometry = this.tipLine.geometry

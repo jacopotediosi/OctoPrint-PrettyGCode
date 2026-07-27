@@ -84,7 +84,7 @@ export class Viewer {
   }
 
   /** Sets up the 3D view and starts its render loop */
-  init () {
+  init (): void {
     const settings = this.settings
     const bedVolume = this.getBedVolume()
     const canvas = document.getElementById('pg-canvas') as HTMLCanvasElement
@@ -126,7 +126,7 @@ export class Viewer {
    * @param canvas - Canvas to render into
    * @param antialias - True to enable antialiasing
    */
-  private createRenderer (canvas: HTMLCanvasElement, antialias: boolean) {
+  private createRenderer (canvas: HTMLCanvasElement, antialias: boolean): void {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias, logarithmicDepthBuffer: true })
     this.renderer.setPixelRatio(window.devicePixelRatio)
     this.renderer.localClippingEnabled = true // Needed for the gcode reflection on the bed surface
@@ -138,7 +138,7 @@ export class Viewer {
   /* ---- Render loop ---- */
 
   /** Renders a frame when needed and schedules the next one */
-  private animate () {
+  private animate (): void {
     this.timer.update()
     const deltaSeconds = this.timer.getDelta()
 
@@ -182,7 +182,7 @@ export class Viewer {
   }
 
   /** Forces a render on the next animation frame */
-  requestRender () {
+  requestRender (): void {
     this.forceRender = true
   }
 
@@ -190,7 +190,7 @@ export class Viewer {
    * Matches the rendering size to the canvas display size
    * @returns True if the size changed
    */
-  private resizeCanvasToDisplaySize () {
+  private resizeCanvasToDisplaySize (): boolean {
     // Get new canvas size
     const width = this.canvasWidth
     const height = this.canvasHeight
@@ -211,7 +211,7 @@ export class Viewer {
   /* ---- Scene and camera ---- */
 
   /** (Re)builds the bed and adapts the camera to the current bed geometry */
-  updateBedMesh () {
+  updateBedMesh (): void {
     if (!this.camera) return
 
     const bedVolume = this.getBedVolume()
@@ -223,7 +223,7 @@ export class Viewer {
    * Shows or hides the print bed
    * @param visible - True to show the bed
    */
-  applyBedVisibility (visible: boolean) {
+  applyBedVisibility (visible: boolean): void {
     this.bed.applyVisibility(visible)
   }
 
@@ -231,7 +231,7 @@ export class Viewer {
    * Points the camera back at the bed center
    * @param enableTransition - True to animate the move
    */
-  resetCameraTarget (enableTransition = false) {
+  resetCameraTarget (enableTransition = false): void {
     if (!this.camera) return
     this.camera.resetTarget(this.getBedVolume(), enableTransition)
   }
@@ -240,7 +240,7 @@ export class Viewer {
    * Moves the camera to the default view
    * @param enableTransition - True to animate the move
    */
-  applyDefaultView (enableTransition = false) {
+  applyDefaultView (enableTransition = false): void {
     this.camera.applyDefaultView(this.getBedVolume(), enableTransition)
   }
 
@@ -249,7 +249,7 @@ export class Viewer {
    * @param view - View angle to rotate to
    * @param enableTransition - True to animate the move
    */
-  applyViewAngle (view: ViewAngle, enableTransition = false) {
+  applyViewAngle (view: ViewAngle, enableTransition = false): void {
     this.camera.applyViewAngle(view, enableTransition)
   }
 
@@ -257,7 +257,7 @@ export class Viewer {
    * Updates the camera limits to the loaded gcode bounds
    * @param bounds - Gcode bounding box, in scene coordinates
    */
-  applyGcodeBounds (bounds: GcodeBounds) {
+  applyGcodeBounds (bounds: GcodeBounds): void {
     this.camera.applyGcodeBounds(bounds, this.getBedVolume())
   }
 
@@ -267,7 +267,7 @@ export class Viewer {
    * Applies the light or dark background to the scene
    * @param darkMode - True for the dark background
    */
-  applyBackground (darkMode: boolean) {
+  applyBackground (darkMode: boolean): void {
     this.scene.background = new THREE.Color(darkMode ? DARK_BACKGROUND : LIGHT_BACKGROUND)
     this.requestRender()
   }
@@ -276,7 +276,7 @@ export class Viewer {
    * Switches the mouse mappings to the given navigation mode
    * @param mode - NAVIGATION_MODES key
    */
-  applyNavigationMode (mode: NavigationModeKey) {
+  applyNavigationMode (mode: NavigationModeKey): void {
     this.camera.applyNavigationMode(mode)
   }
 
@@ -284,7 +284,7 @@ export class Viewer {
    * Switches the 3D view to the given camera projection
    * @param mode - Camera projection to use
    */
-  applyProjectionMode (mode: ProjectionMode) {
+  applyProjectionMode (mode: ProjectionMode): void {
     this.camera.applyProjectionMode(mode)
   }
 
@@ -292,7 +292,7 @@ export class Viewer {
    * Turns renderer antialiasing on or off
    * @param antialias - True to enable antialiasing
    */
-  applyAntialias (antialias: boolean) {
+  applyAntialias (antialias: boolean): void {
     // Antialias is a fixed WebGL context attribute, so toggling it means recreating the
     // context. A context stays bound to its canvas, so swap in a fresh canvas too.
     const oldCanvas = this.renderer.domElement

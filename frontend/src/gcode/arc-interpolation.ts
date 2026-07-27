@@ -112,7 +112,7 @@ export function interpolateArc (state: MachineState, arc: MachineState & { i: nu
  * @param clockwise - True for a clockwise (G2) arc
  * @returns The I/J offsets from the start point to the arc center
  */
-export function arcOffsetFromRadius (current_position: MachineState, destination: MachineState, r: number, clockwise: boolean) {
+export function arcOffsetFromRadius (current_position: MachineState, destination: MachineState, r: number, clockwise: boolean): { i: number, j: number } {
   const arc_offset = { i: 0, j: 0 }
   if (r && (current_position.x !== destination.x || current_position.y !== destination.y)) {
     const d2 = { x: (destination.x - current_position.x) * 0.5, y: (destination.y - current_position.y) * 0.5 } // XY vector to midpoint of move from current
