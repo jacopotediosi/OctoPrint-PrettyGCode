@@ -3,6 +3,7 @@ import CameraControls from 'camera-controls'
 import { Vector2, Vector3, Vector4, Quaternion, Matrix4, Spherical, Box3, Sphere, Raycaster } from 'three'
 import { bedCenter } from './bed'
 import { NAVIGATION_MODES, VIEW_ANGLES } from './navigation'
+import type { GcodeBounds } from '../gcode/parser'
 import type { BedVolume } from './bed'
 import type { MouseBinding, MouseButton, NavigationMode, NavigationModeKey, ProjectionMode, ViewAngle } from './navigation'
 import type { Settings } from '../settings'
@@ -251,8 +252,9 @@ export class Camera {
    * @param bounds - Gcode bounding box, in scene coordinates
    * @param bedVolume - Print bed geometry
    */
-  applyGcodeBounds (bounds: THREE.Box3, bedVolume: BedVolume) {
-    this.gcodeBounds.copy(bounds)
+  applyGcodeBounds (bounds: GcodeBounds, bedVolume: BedVolume) {
+    this.gcodeBounds.min.set(bounds.minX, bounds.minY, bounds.minZ)
+    this.gcodeBounds.max.set(bounds.maxX, bounds.maxY, bounds.maxZ)
     this.applyBedVolume(bedVolume)
   }
 

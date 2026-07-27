@@ -15,7 +15,7 @@ repos:
         args: [--fix]
         types: [file]
         files: \.(m?js|ts)$
-        exclude: ^octoprint_prettygcode/static/js/pg-main\.bundle\.js$
+        exclude: ^octoprint_prettygcode/static/js/.*\.bundle\.js$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -51,5 +51,5 @@ repos:
         name: build frontend
         entry: npm run build
         language: system
-        files: ^(frontend/|package(-lock)?\.json|octoprint_prettygcode/static/js/pg-main\.bundle\.js)
+        files: ^(frontend/|package(-lock)?\.json|octoprint_prettygcode/static/js/.*\.bundle\.js)
         pass_filenames: false

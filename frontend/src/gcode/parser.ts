@@ -1,14 +1,18 @@
-import * as THREE from '../three-exports'
 import { arcOffsetFromRadius, interpolateArc } from './arc-interpolation'
 import { type ParserColors, DEFAULT_COLOR_RULES, DEFAULT_COLOR } from './model-colors'
 
-/** Machine state the parser tracks */
-export interface MachineState {
-  x: number
-  y: number
-  z: number
-  e: number
-  f: number
+/* ---- Parse result ---- */
+
+/** A parsed gcode */
+export interface ParsedGcode {
+  /** Parsed layers (segment endpoints, colors...) */
+  layers: Layer[]
+  /** Bounding box of the extruded gcode */
+  bounds: GcodeBounds
+  /** Nozzle diameter the slicer states, if any */
+  slicerNozzleDiameter: number | null
+  /** Names of the objects marked in the gcode, by object id */
+  objectNames: string[]
 }
 
 /** One parsed layer and its properties */
@@ -21,6 +25,33 @@ export interface Layer {
   objectIds: Int32Array | null
 }
 
+/** Box the parsed gcode fits in */
+export interface GcodeBounds {
+  minX: number
+  minY: number
+  minZ: number
+  maxX: number
+  maxY: number
+  maxZ: number
+}
+
+/**
+ * Builds empty bounds
+ * @returns The empty bounds
+ */
+export const emptyBounds = (): GcodeBounds => ({ minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity })
+
+/* ---- Machine state ---- */
+
+/** Machine state the parser tracks */
+export interface MachineState {
+  x: number
+  y: number
+  z: number
+  e: number
+  f: number
+}
+
 /** Initial machine state */
 const INITIAL_MACHINE_STATE: MachineState = Object.freeze({ x: 0, y: 0, z: 0, e: 0, f: 0 })
 
@@ -31,14 +62,13 @@ const INITIAL_MACHINE_STATE: MachineState = Object.freeze({ x: 0, y: 0, z: 0, e:
  */
 const feedrateMmPerSecond = (feedrate: number) => (feedrate > 0 ? feedrate : 1500) / 60
 
+/* ---- Gcode text ---- */
+
 /** Matches non-ASCII characters, whose lines need real encoding since OctoPrint's filepos counts bytes */
 const NON_ASCII = /[\u0080-\uffff]/
 
 /** Encoder measuring lines in bytes */
 const textEncoder = new TextEncoder()
-
-/** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
-const LAYER_EPSILON_MM = 0.04
 
 /** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */
 const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
@@ -51,14 +81,60 @@ const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
  */
 const FEATURE_TYPE_COMMENT = /;\s*(type:|feature[ :])/i
 
-/** Scratch vector reused across segments to avoid allocations */
-const scratchPoint = new THREE.Vector3()
-/** Scratch vector reused across segments to avoid allocations */
-const scratchDirection = new THREE.Vector3()
+/* ---- Segment colors ---- */
+
+/** An RGB color, with components from 0 to 1 */
+interface RgbColor {
+  r: number
+  g: number
+  b: number
+}
+
 /** Scratch color reused across segments to avoid allocations */
-const scratchColor = new THREE.Color()
-/** Scratch HSL values reused across segments to avoid allocations */
-const scratchHsl = { h: 0, s: 0, l: 0 }
+const scratchColor: RgbColor = { r: 0, g: 0, b: 0 }
+
+/** Brightness the darkest segments are drawn at, as a share of their own color */
+const MIN_BRIGHTNESS = 0.5
+/** Brightness range the segments span as their angle turns, so the passes inside a layer can be told apart */
+const ANGLE_BRIGHTNESS_RANGE = 0.4
+/** Brightness the odd layers gain, so stacked layers can be told apart */
+const ODD_LAYER_BRIGHTNESS_GAIN = 0.1
+
+/**
+ * Converts an sRGB component to linear space
+ * @param component - The sRGB component (from 0 to 1)
+ * @returns The linear component
+ */
+const srgbToLinear = (component: number) => component < 0.04045 ? component * 0.0773993808 : Math.pow(component * 0.9478672986 + 0.0521327014, 2.4)
+
+/**
+ * Converts a color to its most vivid form
+ * @param hexString - Color as "#rrggbb"
+ * @returns The vivid color, in linear space
+ */
+function hexStringToVividColor (hexString: string): RgbColor {
+  const hex = parseInt(hexString.slice(1), 16)
+  const red = srgbToLinear(((hex >> 16) & 255) / 255)
+  const green = srgbToLinear(((hex >> 8) & 255) / 255)
+  const blue = srgbToLinear((hex & 255) / 255)
+
+  const max = Math.max(red, green, blue)
+  const min = Math.min(red, green, blue)
+  if (max === min) return { r: 0.5, g: 0.5, b: 0.5 }
+
+  const lightness = (max + min) / 2
+  const saturation = lightness <= 0.5 ? (max - min) / (max + min) : (max - min) / (2 - max - min)
+
+  // Spread the components around half lightness
+  const scale = saturation / (max - min)
+  const offset = (1 - saturation) / 2 - min * scale
+  return { r: red * scale + offset, g: green * scale + offset, b: blue * scale + offset }
+}
+
+/* ---- Layers ---- */
+
+/** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
+const LAYER_EPSILON_MM = 0.04
 
 /** A layer being filled with segments */
 class OpenLayer {
@@ -85,7 +161,7 @@ class OpenLayer {
    * @param extrusionSeconds - Estimated time extruding the segment
    * @param objectId - Id of the object the segment belongs to, -1 for none
    */
-  add (start: MachineState, end: MachineState, color: THREE.Color, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number) {
+  add (start: MachineState, end: MachineState, color: RgbColor, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number) {
     if (this.segments === this.capacity) this.grow()
 
     const vertex = this.segments * 6
@@ -160,13 +236,15 @@ class OpenLayer {
   }
 }
 
+/* ---- Parser ---- */
+
 /** Streaming gcode parser: feed it text chunks to get colored layers of segments with file positions and time estimates */
 export class GCodeParser {
   /** Parsed layers: segment endpoints, colors, file positions and estimated durations */
   readonly layers: Layer[] = []
 
   /** Bounding box of the extruded gcode */
-  readonly bounds = new THREE.Box3()
+  bounds = emptyBounds()
 
   /** Nozzle diameter the slicer states, if any */
   slicerNozzleDiameter: number | null = null
@@ -187,11 +265,11 @@ export class GCodeParser {
   /** Layers opened so far */
   private layersOpened = 0
   /** Color rules, in priority order */
-  private readonly colorRules: { keywords: string[], color: THREE.Color }[]
+  private readonly colorRules: { keywords: string[], color: RgbColor }[]
   /** Color of segments matching no color rule */
-  private readonly defaultColor: THREE.Color
+  private readonly defaultColor: RgbColor
   /** Color of the current feature type */
-  private currentColor: THREE.Color
+  private currentColor: RgbColor
   /** Whether a slicer feature type comment has been seen yet */
   private featureTypeCommentSeen = false
   /** Id of the object the parsed segments belong to, -1 for none */
@@ -217,11 +295,11 @@ export class GCodeParser {
     this.g90InfluencesExtruder = g90InfluencesExtruder
 
     // Precompute the colors and lowercase the keywords, dropping the empty ones
-    this.defaultColor = new THREE.Color(colors.defaultColor)
+    this.defaultColor = hexStringToVividColor(colors.defaultColor)
     this.currentColor = this.defaultColor
     this.colorRules = colors.colorRules.map((rule) => ({
       keywords: rule.keywords.map((keyword) => keyword.toLowerCase()).filter(Boolean),
-      color: new THREE.Color(rule.color)
+      color: hexStringToVividColor(rule.color)
     }))
   }
 
@@ -260,7 +338,7 @@ export class GCodeParser {
             if (!this.featureTypeCommentSeen) {
               this.featureTypeCommentSeen = true
               // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
-              this.bounds.makeEmpty()
+              this.bounds = emptyBounds()
             }
           }
         }
@@ -309,7 +387,7 @@ export class GCodeParser {
         // Linear move
         case 'G0':
         case 'G1': {
-          const move = { x: coord('x'), y: coord('y'), z: coord('z'), e: coord('e'), f: coord('f') }
+          const move: MachineState = { x: coord('x'), y: coord('y'), z: coord('z'), e: coord('e'), f: coord('f') }
 
           // New layer when extrusion moves to a different Z
           if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
@@ -325,7 +403,7 @@ export class GCodeParser {
         // Arc move (G2 clockwise, G3 counter-clockwise)
         case 'G2':
         case 'G3': {
-          const move = {
+          const move: MachineState = {
             x: coord('x'),
             y: coord('y'),
             z: coord('z'),
@@ -475,6 +553,20 @@ export class GCodeParser {
   }
 
   /**
+   * Grows the model bounds to contain a point
+   * @param point - Point to contain
+   */
+  private expandBounds (point: MachineState) {
+    const bounds = this.bounds
+    bounds.minX = Math.min(bounds.minX, point.x)
+    bounds.minY = Math.min(bounds.minY, point.y)
+    bounds.minZ = Math.min(bounds.minZ, point.z)
+    bounds.maxX = Math.max(bounds.maxX, point.x)
+    bounds.maxY = Math.max(bounds.maxY, point.y)
+    bounds.maxZ = Math.max(bounds.maxZ, point.z)
+  }
+
+  /**
    * Appends an extruded segment to the current layer
    * @param start - Machine state at the segment start
    * @param end - Machine state at the segment end
@@ -490,54 +582,27 @@ export class GCodeParser {
     const layer = this.currentLayer ?? this.changeLayer(start)
 
     // Estimated seconds of the travel leading here and of the segment itself
-    const length = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z) || Math.abs(end.e - start.e) || 0
+    const distance = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z)
+    const length = distance || Math.abs(end.e - start.e) || 0
     const travelSeconds = this.pendingTravelSeconds
     const extrusionSeconds = length / feedrateMmPerSecond(end.f)
     this.pendingTravelSeconds = 0
 
     // Grow the model bounds only on moves that change position
     if (start.x !== end.x || start.y !== end.y || start.z !== end.z) {
-      this.bounds.expandByPoint(scratchPoint.set(start.x, start.y, start.z))
-      this.bounds.expandByPoint(scratchPoint.set(end.x, end.y, end.z))
+      this.expandBounds(start)
+      this.expandBounds(end)
     }
 
     // Fake shading: tint by the segment's angle, alternating per layer for readability
-    const direction = scratchDirection.set(end.x - start.x, end.y - start.y, end.z - start.z).normalize()
-    const angleShade = ((direction.x / 2) + 0.5) / 5.0
-    const drawColor = scratchColor.copy(this.currentColor)
-    drawColor.getHSL(scratchHsl)
-    scratchHsl.l = angleShade + (this.layersOpened % 2 === 0 ? 0.25 : 0.30)
-    drawColor.setHSL(scratchHsl.h, scratchHsl.s, scratchHsl.l)
+    const directionX = distance ? (end.x - start.x) / distance : 0
+    const brightness = MIN_BRIGHTNESS + ANGLE_BRIGHTNESS_RANGE * (directionX + 1) / 2 +
+      (this.layersOpened % 2 === 0 ? 0 : ODD_LAYER_BRIGHTNESS_GAIN)
+    scratchColor.r = this.currentColor.r * brightness
+    scratchColor.g = this.currentColor.g * brightness
+    scratchColor.b = this.currentColor.b * brightness
 
     // Add the segment to the layer
-    layer.add(start, end, drawColor, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId)
+    layer.add(start, end, scratchColor, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId)
   }
-}
-
-/**
- * Downloads and parses a job's gcode; an empty path yields an empty result
- * @param jobPath - Server path of the job file
- * @param objectTag - Tag of the "@<tag> <name>" object markers
- * @param colors - Colors the parser paints segments with
- * @param g90InfluencesExtruder - Whether G90/G91 also switch the extrusion mode
- * @returns The parser holding the parsed gcode
- */
-export async function parseGcodeFile (jobPath: string, objectTag?: string, colors?: ParserColors, g90InfluencesExtruder?: boolean) {
-  const parser = new GCodeParser(objectTag, colors, g90InfluencesExtruder)
-  if (!jobPath) return parser
-
-  const fileUrl = OctoPrint.files.downloadPath('local', jobPath)
-  const response = await fetch(fileUrl)
-  if (!response.body) return parser
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    parser.parse(decoder.decode(value, { stream: true }))
-  }
-  parser.finish()
-
-  return parser
 }

@@ -26,8 +26,8 @@ jobs:
           key: pre-commit-${{ env.pythonLocation }}-${{ hashFiles('.pre-commit-config.yaml') }}
       - run: pre-commit run --all-files --show-diff-on-failure
 
-  check-frontend-bundle:
-    name: Check frontend bundle is up to date
+  check-frontend-bundles:
+    name: Check frontend bundles are up to date
     needs: pre-commit
     runs-on: ubuntu-latest
     steps:
@@ -39,5 +39,5 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
-      - name: Verify committed frontend bundle matches sources
-        run: git diff --exit-code -- octoprint_prettygcode/static/js/pg-main.bundle.js
+      - name: Verify committed frontend bundles match sources
+        run: git diff --exit-code -- 'octoprint_prettygcode/static/js/*.bundle.js'

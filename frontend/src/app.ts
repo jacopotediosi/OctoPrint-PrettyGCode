@@ -1,6 +1,6 @@
 import { Settings } from './settings'
 import { Viewer } from './viewer/viewer'
-import { parseGcodeFile, GCodeParser } from './gcode/parser'
+import { loadGcodeFile } from './gcode/loader'
 import { PrintTimeline } from './gcode/print-timeline'
 import { PrintExclusions } from './gcode/exclusions'
 import { GCodeModel, DEFAULT_NOZZLE_DIAMETER } from './gcode/gcode-model'
@@ -12,6 +12,9 @@ import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue, applyLayerS
 import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue, applySegmentSliderVisibility } from './ui/segment-slider'
 import { initToggleButtons } from './ui/toggle-buttons'
 import { setStatusBarText, applyStatusBarVisibility } from './ui/status-bar'
+import { showLoadingScreen, hideLoadingScreen } from './ui/loading-screen'
+import type { ParsedGcode } from './gcode/parser'
+import type { ParserColors } from './gcode/model-colors'
 import type { BedVolume } from './viewer/bed'
 import type { ViewAngle } from './viewer/navigation'
 import type { PrintViewUpdate } from './viewer/viewer'
@@ -56,7 +59,7 @@ export class PrettyGCodeApp {
   private readonly gcodeModel = new GCodeModel(this.settings, this.printTimeline, this.exclusions, this.viewer.mirrorBoundsPlanes)
 
   /** Parsed gcode of the currently loaded job */
-  private parsedGcode: GCodeParser | null = null
+  private parsedGcode: ParsedGcode | null = null
 
   /** Print bed geometry */
   private bedVolume: BedVolume = { depth: 0, height: 0, origin: '', width: 0 }
@@ -205,37 +208,55 @@ export class PrettyGCodeApp {
    */
   private async loadGcode (jobPath: string, preserveView = false) {
     const sequence = ++this.loadSequence
+    showLoadingScreen()
+    this.unloadGcode()
 
-    // The object marker tag comes from the Cancel Object plugin settings
-    const objectTag = this.settingsVM.settings?.plugins?.cancelobject?.reptag?.()
-    const colors = { colorRules: this.settings.modelColorRules, defaultColor: this.settings.modelDefaultColor }
-    // Whether G90/G91 affect extrusion follows OctoPrint's firmware setting
-    const g90InfluencesExtruder = this.settingsVM.settings?.feature?.g90InfluencesExtruder?.() ?? false
-    const parsedGcode = await parseGcodeFile(jobPath, objectTag, colors, g90InfluencesExtruder)
+    try {
+      // The object marker tag comes from the Cancel Object plugin settings
+      const objectTag = this.settingsVM.settings?.plugins?.cancelobject?.reptag?.()
+      const colors: ParserColors = { colorRules: this.settings.modelColorRules, defaultColor: this.settings.modelDefaultColor }
+      // Whether G90/G91 affect extrusion follows OctoPrint's firmware setting
+      const g90InfluencesExtruder = this.settingsVM.settings?.feature?.g90InfluencesExtruder?.() ?? false
+      const parsedGcode = await loadGcodeFile(jobPath, objectTag, colors, g90InfluencesExtruder)
 
-    // Stop if a newer load has started
-    if (sequence !== this.loadSequence) return
+      // Stop if a newer load has started
+      if (sequence !== this.loadSequence) return
 
-    this.parsedGcode = parsedGcode
-    this.exclusions.setGcodeObjectNames(this.parsedGcode.objectNames)
+      this.parsedGcode = parsedGcode
+      this.exclusions.setGcodeObjectNames(this.parsedGcode.objectNames)
 
-    // Index the timeline and build the model
-    this.printTimeline.index(this.parsedGcode.layers)
-    this.gcodeModel.build(this.parsedGcode.layers)
-    this.updateLineWidth()
+      // Index the timeline and build the model
+      this.printTimeline.index(this.parsedGcode.layers)
+      this.gcodeModel.build(this.parsedGcode.layers)
+      this.updateLineWidth()
 
-    // Apply the gcode bounds
-    this.viewer.applyGcodeBounds(this.parsedGcode.bounds)
+      // Apply the gcode bounds
+      this.viewer.applyGcodeBounds(this.parsedGcode.bounds)
 
-    updateLayerSliderMax(this)
-    if (preserveView) {
-      // Keep the current layer
-      this.setCurrentLayerNumber(Math.min(this.currentLayerNumber || this.layerCount, this.layerCount))
-    } else {
-      // Show the whole model: current layer at the top and the camera reset to the default view
-      this.setCurrentLayerNumber(this.layerCount)
-      this.resetView()
+      updateLayerSliderMax(this)
+      if (preserveView) {
+        // Keep the current layer
+        this.setCurrentLayerNumber(Math.min(this.currentLayerNumber || this.layerCount, this.layerCount))
+      } else {
+        // Show the whole model: current layer at the top and the camera reset to the default view
+        this.setCurrentLayerNumber(this.layerCount)
+        this.resetView()
+      }
+      this.viewer.requestRender()
+    } catch (error) {
+      console.error('PrettyGCode: gcode load failed', error)
+    } finally {
+      hideLoadingScreen()
     }
+  }
+
+  /** Empties the 3D view of the loaded gcode */
+  private unloadGcode () {
+    this.parsedGcode = null
+    this.printTimeline.index([])
+    this.gcodeModel.build([])
+    updateLayerSliderMax(this)
+    updateSegmentSliderMax(this)
     this.viewer.requestRender()
   }
 
@@ -456,7 +477,7 @@ export class PrettyGCodeApp {
 
     const volume = currentProfileData.volume
 
-    const dims = typeof volume.custom_box === 'function'
+    const dims: Omit<BedVolume, 'origin'> = typeof volume.custom_box === 'function'
       ? { width: volume.width(), height: volume.height(), depth: volume.depth() }
       : {
           width: volume.custom_box.x_max() - volume.custom_box.x_min(),

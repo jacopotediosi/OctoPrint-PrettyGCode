@@ -3,6 +3,7 @@ import { Vector2 } from 'three'
 import { Bed } from './bed'
 import { Camera } from './camera'
 import { Nozzle } from './nozzle'
+import type { GcodeBounds } from '../gcode/parser'
 import type { BedVolume } from './bed'
 import type { NavigationModeKey, ProjectionMode, ViewAngle } from './navigation'
 import type { Settings } from '../settings'
@@ -240,7 +241,7 @@ export class Viewer {
    * Updates the camera limits to the loaded gcode bounds
    * @param bounds - Gcode bounding box, in scene coordinates
    */
-  applyGcodeBounds (bounds: THREE.Box3) {
+  applyGcodeBounds (bounds: GcodeBounds) {
     this.camera.applyGcodeBounds(bounds, this.getBedVolume())
   }
 

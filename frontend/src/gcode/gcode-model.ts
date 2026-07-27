@@ -7,6 +7,22 @@ import type { PrintTimeline, TimelineSpot } from './print-timeline'
 /** A layer's rendered line object */
 type LayerLine = THREE.LineSegments2 | THREE.LineSegments
 
+/** Metadata a rendered layer part carries */
+interface LayerPartMetadata {
+  /** Z height of the layer */
+  layerZ: number
+  /** 1-based layer number */
+  layerNumber: number
+  /** Global segment index the layer starts at */
+  globalBase: number
+  /** Segments the part draws */
+  numSegments: number
+  /** Indices of the part's segments in the layer, or null for the whole layer */
+  segmentIndices: Uint32Array | null
+  /** Whether the part draws the layer's mirror */
+  mirror?: boolean
+}
+
 /** Name prefix of the layer line objects */
 const LAYER_PREFIX = 'layer#'
 
@@ -16,6 +32,13 @@ const LAYER_PREFIX = 'layer#'
  * @returns True for layer line objects
  */
 const isLayerObject = (child: THREE.Object3D): child is LayerLine => child.name.startsWith(LAYER_PREFIX)
+
+/**
+ * Reads the metadata a layer line object carries
+ * @param line - Layer line object
+ * @returns Its metadata
+ */
+const layerPartMetadata = (line: LayerLine) => line.userData as LayerPartMetadata
 
 /** Nozzle diameter in mm assumed when none is known */
 export const DEFAULT_NOZZLE_DIAMETER = 0.4
@@ -196,13 +219,10 @@ export class GCodeModel {
     this.layers = layers
     this.linesGroup.clear()
     this.revealedIndex = -1
-    layers.forEach((layer, i) => this.addLayerLines(layer, i + 1))
 
-    // Stamp each layer's segment offset onto its render objects, so the reveal reads it per child
-    const baseByLayer = new Map(this.timeline.drawnLayers.map((entry) => [entry.layerNumber, entry.globalBase]))
-    this.linesGroup.traverse((child) => {
-      if (isLayerObject(child)) child.userData.globalBase = baseByLayer.get(child.userData.layerNumber)
-    })
+    for (const { layerNumber, globalBase } of this.timeline.drawnLayers) {
+      this.addLayerLines(layers[layerNumber - 1], layerNumber, globalBase)
+    }
 
     this.buildTipLine()
   }
@@ -247,15 +267,16 @@ export class GCodeModel {
    * Adds a layer's lines to the model
    * @param layer - Parsed layer
    * @param layerNumber - 1-based layer number
+   * @param globalBase - Global segment index the layer starts at
    */
-  private addLayerLines (layer: Layer, layerNumber: number) {
+  private addLayerLines (layer: Layer, layerNumber: number, globalBase: number) {
     // Skip empty layers
     if (layer.vertices.length <= 2) return
 
     // Layers untouched by exclusions go in whole
     const excludedFlags = this.exclusions.classifyLayer(layer)
     if (!excludedFlags) {
-      this.addLayerPart(layer, layerNumber, layer.vertices, layer.colors, null)
+      this.addLayerPart(layer, layerNumber, globalBase, layer.vertices, layer.colors, null)
       return
     }
 
@@ -270,12 +291,12 @@ export class GCodeModel {
     }
 
     // Add the printed part
-    this.addLayerPart(layer, layerNumber, printedPart.vertices, printedPart.colors, printedPart.segmentIndices)
+    this.addLayerPart(layer, layerNumber, globalBase, printedPart.vertices, printedPart.colors, printedPart.segmentIndices)
 
     // Add the excluded part, greyed out
     if (this.settings.showExcluded) {
       this.greyOutColors(excludedPart.colors)
-      this.addLayerPart(layer, layerNumber, excludedPart.vertices, excludedPart.colors, excludedPart.segmentIndices)
+      this.addLayerPart(layer, layerNumber, globalBase, excludedPart.vertices, excludedPart.colors, excludedPart.segmentIndices)
     }
   }
 
@@ -283,20 +304,21 @@ export class GCodeModel {
    * Adds one part of a layer's segments to the model
    * @param layer - Parsed layer
    * @param layerNumber - 1-based layer number
+   * @param globalBase - Global segment index the layer starts at
    * @param vertices - Segment endpoints as flat XYZ triplets
    * @param colors - Vertex colors as flat RGB triplets
    * @param segmentIndices - Indices of the part's segments in the layer, or null for the whole layer
    */
-  private addLayerPart (layer: Layer, layerNumber: number, vertices: Float32Array, colors: Uint8ClampedArray, segmentIndices: Uint32Array | null) {
+  private addLayerPart (layer: Layer, layerNumber: number, globalBase: number, vertices: Float32Array, colors: Uint8ClampedArray, segmentIndices: Uint32Array | null) {
     // Skip empty parts
     if (vertices.length <= 2) return
 
     const thickLines = this.settings.thickLines
 
-    // Per-part metadata
-    const userData = {
+    const metadata: LayerPartMetadata = {
       layerZ: layer.z,
       layerNumber,
+      globalBase,
       numSegments: vertices.length / 6,
       segmentIndices
     }
@@ -304,7 +326,7 @@ export class GCodeModel {
     // Build the part's line object and add it to the gcode group
     const line = this.makeLine(vertices, colors, thickLines ? this.thickMaterial : this.thinMaterial)
     line.name = LAYER_PREFIX + layerNumber
-    line.userData = userData
+    line.userData = metadata
     this.linesGroup.add(line)
 
     // Build and add the part's line object to the mirror
@@ -312,7 +334,7 @@ export class GCodeModel {
       const mirrorData = this.makeMirrorData(vertices, colors)
       const mirror = this.makeLine(mirrorData.vertices, mirrorData.colors, thickLines ? this.mirrorThickMaterial : this.mirrorThinMaterial)
       mirror.name = LAYER_PREFIX + layerNumber
-      mirror.userData = { ...userData, mirror: true }
+      mirror.userData = { ...metadata, mirror: true } satisfies LayerPartMetadata
       this.linesGroup.add(mirror)
     }
   }
@@ -391,12 +413,13 @@ export class GCodeModel {
 
     this.linesGroup.traverse((child) => {
       if (!isLayerObject(child)) return
+      const metadata = layerPartMetadata(child)
 
       // The mirror keeps its own bed-clipped material
-      if (child.userData.mirror) return
+      if (metadata.mirror) return
 
       // Highlight the target layer, default on the others
-      child.material = this.settings.highlightIntensity > 0 && child.userData.layerNumber === layerNumber ? highlightMaterial : defaultMaterial
+      child.material = this.settings.highlightIntensity > 0 && metadata.layerNumber === layerNumber ? highlightMaterial : defaultMaterial
     })
   }
 
@@ -463,12 +486,12 @@ export class GCodeModel {
    * @returns The number of segments passed
    */
   private partRevealCount (child: LayerLine, revealed: number) {
+    const { globalBase, numSegments, segmentIndices } = layerPartMetadata(child)
+
     // How many of the layer's segments the reveal has passed
-    const revealedInLayer = revealed - child.userData.globalBase
-    const numSegments = child.userData.numSegments
+    const revealedInLayer = revealed - globalBase
 
     // A whole layer is drawn up to the reveal, capped to its own size
-    const segmentIndices: Uint32Array | null = child.userData.segmentIndices
     if (!segmentIndices) return Math.max(0, Math.min(numSegments, revealedInLayer))
 
     // A split part counts its segments the reveal has passed (binary search)
