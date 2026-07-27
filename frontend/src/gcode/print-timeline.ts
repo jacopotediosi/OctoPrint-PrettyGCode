@@ -11,6 +11,7 @@ interface DrawnLayer {
   colors: Uint8ClampedArray
   filePositions: Uint32Array
   durations: Float32Array
+  excluded: Uint8Array | null
 }
 
 /** A point along the timeline: a segment (or the travel gap before it) and the fraction into it */
@@ -37,8 +38,6 @@ export class PrintTimeline {
 
   /** Cumulative estimated time at each segment's start, travel gaps included */
   private segmentStartTimes = new Float64Array(0)
-  /** Cumulative estimated time at each segment's end, travel gaps included */
-  private segmentEndTimes = new Float64Array(0)
 
   /** Timeline coordinate the nozzle has been eased to */
   private nozzleTime = 0
@@ -64,13 +63,11 @@ export class PrintTimeline {
   index (layers: Layer[]) {
     // Flatten the drawn layers into print order, tracking each one's running segment offset
     this.drawnLayers = []
-    const excludedFlags: (Uint8Array | null)[] = []
     let base = 0
     layers.forEach((layer, i) => {
       if (layer.vertices.length <= 2) return // empty layers have no drawn object
       const numSegments = layer.vertices.length / 6
-      this.drawnLayers.push({ layerNumber: i + 1, globalBase: base, numSegments, vertices: layer.vertices, colors: layer.colors, filePositions: layer.filePositions, durations: layer.durations })
-      excludedFlags.push(this.exclusions.classifyLayer(layer))
+      this.drawnLayers.push({ layerNumber: i + 1, globalBase: base, numSegments, vertices: layer.vertices, colors: layer.colors, filePositions: layer.filePositions, durations: layer.durations, excluded: this.exclusions.classifyLayer(layer) })
       base += numSegments
     })
     this.totalSegments = base
@@ -78,12 +75,11 @@ export class PrintTimeline {
     // Timeline coordinate of every segment, counting the travel gaps between them, so the
     // nozzle can be eased along the whole path at each move's own pace
     const starts = new Float64Array(this.totalSegments)
-    const ends = new Float64Array(this.totalSegments)
     let time = 0
     let globalIndex = 0
-    this.drawnLayers.forEach((layer, i) => {
+    this.drawnLayers.forEach((layer) => {
       const durations = layer.durations
-      const excluded = excludedFlags[i]
+      const excluded = layer.excluded
       for (let offset = 0, segment = 0; offset < durations.length; offset += 2, segment++) {
         // Excluded segments take no time
         if (excluded && excluded[segment]) {
@@ -93,12 +89,10 @@ export class PrintTimeline {
           starts[globalIndex] = time
           time += durations[offset + 1]
         }
-        ends[globalIndex] = time
         globalIndex++
       }
     })
     this.segmentStartTimes = starts
-    this.segmentEndTimes = ends
 
     // Start the nozzle from scratch on the new timeline
     this.nozzleTime = 0
@@ -118,7 +112,7 @@ export class PrintTimeline {
     const segmentsRead = this.segmentsReadAt(filePosition)
     this.targetTime = segmentsRead < this.totalSegments
       ? this.segmentStartTimes[segmentsRead]
-      : this.segmentEndTimes[this.totalSegments - 1]
+      : this.endTimeAt(this.totalSegments - 1)
 
     // Follow that point smoothly: the nozzle stops when nothing new arrives and speeds up
     // after a burst of commands; it jumps only when the point is behind it or very far ahead
@@ -220,24 +214,44 @@ export class PrintTimeline {
    */
   private locateTime (time: number): TimelineSpot {
     const starts = this.segmentStartTimes
-    const ends = this.segmentEndTimes
 
-    // First segment whose end lies past the coordinate (binary search)
-    let lo = 0; let hi = ends.length
+    // First segment starting past the coordinate (binary search)
+    let lo = 0; let hi = starts.length
     while (lo < hi) {
       const mid = (lo + hi) >> 1
-      if (ends[mid] <= time) lo = mid + 1
+      if (starts[mid] <= time) lo = mid + 1
       else hi = mid
     }
-    if (lo >= ends.length) return { segmentIndex: ends.length, fraction: 1, onSegment: false }
 
-    if (time >= starts[lo]) {
-      const duration = ends[lo] - starts[lo]
-      return { segmentIndex: lo, fraction: duration > 0 ? (time - starts[lo]) / duration : 1, onSegment: true }
-    }
-    const gapStart = lo > 0 ? ends[lo - 1] : 0
-    const gap = starts[lo] - gapStart
-    return { segmentIndex: lo, fraction: gap > 0 ? (time - gapStart) / gap : 0, onSegment: false }
+    // Before the first segment: sweep the travel gap that opens the print
+    if (lo === 0) return { segmentIndex: 0, fraction: starts[0] > 0 ? time / starts[0] : 0, onSegment: false }
+
+    // The last segment started is the only one the coordinate can still fall in
+    const current = lo - 1
+    const start = starts[current]
+    const end = this.endTimeAt(current)
+    if (time < end) return { segmentIndex: current, fraction: (time - start) / (end - start), onSegment: true }
+
+    // Past the last segment
+    if (lo >= starts.length) return { segmentIndex: starts.length, fraction: 1, onSegment: false }
+
+    // In the travel gap before the next segment
+    const gap = starts[lo] - end
+    return { segmentIndex: lo, fraction: gap > 0 ? (time - end) / gap : 0, onSegment: false }
+  }
+
+  /**
+   * Gets the timeline coordinate a segment ends at
+   * @param globalIndex - Global segment index
+   * @returns The coordinate in seconds
+   */
+  private endTimeAt (globalIndex: number) {
+    const { layer, localIndex } = this.segmentAt(globalIndex)!
+
+    // Excluded segments take no time
+    const extrusion = layer.excluded?.[localIndex] ? 0 : layer.durations[localIndex * 2 + 1]
+
+    return this.segmentStartTimes[globalIndex] + extrusion
   }
 
   /**
@@ -295,9 +309,16 @@ export class PrintTimeline {
    * @returns The layer and local index, or null when out of range
    */
   segmentAt (globalIndex: number) {
-    for (const layer of this.drawnLayers) {
-      if (globalIndex < layer.globalBase + layer.numSegments) return { layer, localIndex: globalIndex - layer.globalBase }
+    // First layer reaching past the index (binary search)
+    const layers = this.drawnLayers
+    let lo = 0; let hi = layers.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (layers[mid].globalBase + layers[mid].numSegments <= globalIndex) lo = mid + 1
+      else hi = mid
     }
-    return null
+
+    const layer = layers[lo]
+    return layer ? { layer, localIndex: globalIndex - layer.globalBase } : null
   }
 }
