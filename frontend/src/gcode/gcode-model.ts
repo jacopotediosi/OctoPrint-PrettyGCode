@@ -217,6 +217,9 @@ export class GCodeModel {
    */
   build (layers: Layer[]) {
     this.layers = layers
+    for (const child of this.linesGroup.children) {
+      if (isLayerObject(child)) child.geometry.dispose()
+    }
     this.linesGroup.clear()
     this.revealedIndex = -1
 

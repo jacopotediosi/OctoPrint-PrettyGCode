@@ -42,7 +42,7 @@ export class Bed {
   private readonly requestRender: () => void
 
   /** Bed surface */
-  private plane: THREE.Mesh | null = null
+  private plane: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null
   /** Bed grid lines */
   private grid: THREE.GridHelper | null = null
 
@@ -67,8 +67,15 @@ export class Bed {
     const center = bedCenter(bedVolume)
 
     // Drop the previous bed
-    if (this.plane) this.scene.remove(this.plane)
-    if (this.grid) this.scene.remove(this.grid)
+    if (this.plane) {
+      this.scene.remove(this.plane)
+      this.plane.geometry.dispose()
+      this.plane.material.dispose()
+    }
+    if (this.grid) {
+      this.scene.remove(this.grid)
+      this.grid.dispose()
+    }
 
     // Translucent bed surface
     const planeMaterial = new THREE.MeshBasicMaterial({ color: 0xc6c6c6, side: THREE.DoubleSide, transparent: true, opacity: 0.2 })
