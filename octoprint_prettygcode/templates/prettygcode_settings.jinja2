@@ -1,0 +1,20 @@
+{# === Settings header === #}
+<h3>
+    PrettyGCode plugin settings
+    <small>Version: {{ plugin_prettygcode_version }}</small>
+</h3>
+<form class="form-horizontal" onsubmit="return false;">
+    {# === Large file threshold === #}
+    <div class="control-group">
+        <label class="control-label" for="settings-prettygcode-largeFileThresholdMb">Large file threshold</label>
+        <div class="controls">
+            <input id="settings-prettygcode-largeFileThresholdMb"
+                   type="number"
+                   min="0"
+                   class="input-mini text-right"
+                   data-bind="value: settings.plugins.prettygcode.largeFileThresholdMb">
+            <span class="help-inline">MB</span>
+            <span class="help-block">Size above which loading a G-code file asks for confirmation. Set to zero to never ask.</span>
+        </div>
+    </div>
+</form>

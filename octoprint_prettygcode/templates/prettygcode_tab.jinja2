@@ -1,3 +1,4 @@
+{# === Tab header === #}
 <div id="pg-header">
     <h3 id="injector_link">PrettyGCode</h3>
     <span id="pg-subtitle" class="muted">A 3D G-code visualizer</span>
@@ -9,14 +10,30 @@
         <i class="fa-brands fa-github"></i>
     </a>
 </div>
+{# === 3D view === #}
 <div id="pg-container">
     <div class="pg-view">
+        {# ---- Canvas ---- #}
         <canvas id="pg-canvas"></canvas>
-        <div id="pg-loading" class="pg-hidden">
+        {# ---- Overlay messages ---- #}
+        <div id="pg-loading" class="pg-overlay-message pg-hidden">
             <i class="fa-solid fa-spinner fa-spin"></i>
             <span>Loading G-code...</span>
         </div>
+        <div id="pg-large-file-confirmation" class="pg-overlay-message pg-hidden">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>
+                This G-code file is <strong id="pg-large-file-confirmation-size"></strong>.
+                <br>
+                Files this large can be slow to load and render on less powerful devices.
+                <br>
+                To change the size above which this confirmation appears, open the <a id="pg-large-file-confirmation-open-settings" href="#">plugin settings</a>.
+            </span>
+            <button id="pg-large-file-confirmation-load" class="btn">Load file</button>
+        </div>
+        {# ---- Status bar ---- #}
         <div class="pg-status">T:0/0 B:0/0</div>
+        {# ---- Camera buttons ---- #}
         <div class="pg-buttons pg-camera-buttons">
             <button class="pg-toggle pg-reset-view" title="Reset camera view">
                 <i class="fa-solid fa-arrows-to-dot"></i>
@@ -40,6 +57,7 @@
                 <i class="fa-solid fa-arrow-right"></i>
             </button>
         </div>
+        {# ---- Bottom buttons ---- #}
         <div class="pg-buttons pg-bottom-left-buttons">
             <button class="pg-toggle pg-maximized-only pg-toggle-dashboard"
                     title="Toggle DashBoard window (if installed)">
@@ -52,7 +70,9 @@
                 <i class="fa-solid fa-video"></i>
             </button>
         </div>
+        {# ---- View settings ---- #}
         <div id="pg-view-settings" class="pg-hidden"></div>
+        {# ---- Top buttons ---- #}
         <div class="pg-buttons pg-top-left-buttons">
             <button class="pg-toggle pg-maximized-only pg-toggle-state"
                     title="Toggle state window">

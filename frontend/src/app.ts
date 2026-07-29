@@ -1,6 +1,6 @@
 import { Settings } from './settings'
 import { Viewer } from './viewer/viewer'
-import { loadGcodeFile } from './gcode/loader'
+import { loadGcodeFile, cancelGcodeLoad } from './gcode/loader'
 import { PrintTimeline } from './gcode/print-timeline'
 import { PrintExclusions } from './gcode/exclusions'
 import { GCodeModel, DEFAULT_NOZZLE_DIAMETER } from './gcode/gcode-model'
@@ -13,6 +13,7 @@ import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue, apply
 import { initToggleButtons } from './ui/toggle-buttons'
 import { setStatusBarText, applyStatusBarVisibility } from './ui/status-bar'
 import { showLoadingScreen, hideLoadingScreen } from './ui/loading-screen'
+import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/large-file-confirmation'
 import type { ParsedGcode } from './gcode/parser'
 import type { ParserColors } from './gcode/model-colors'
 import type { BedVolume } from './viewer/bed'
@@ -28,13 +29,15 @@ interface PrinterState {
 /** OctoPrint current/history data payload */
 interface PrinterDataPayload {
   logs: string[]
-  job: { file: { path: string, date: number } }
+  job: { file: { path: string, date: number, size: number } }
   state: PrinterState
   progress: { filepos: number }
 }
 
 /** Selector of the plugin tab */
 const PG_TAB = '#tab_plugin_prettygcode'
+/** Selector of the plugin settings tab */
+const PG_SETTINGS_TAB = '#settings_plugin_prettygcode'
 
 /** Main plugin container, orchestrating all its components */
 export class PrettyGCodeApp {
@@ -71,6 +74,10 @@ export class PrettyGCodeApp {
   private currentJobPath = ''
   /** Upload date of the currently loaded job */
   private currentJobDate = 0
+  /** Size in bytes of the currently loaded job */
+  private currentJobSize = 0
+  /** Whether the user approved loading the current job despite its size */
+  private largeFileApproved = false
   /** Id of the most recent gcode load */
   private loadSequence = 0
 
@@ -186,6 +193,8 @@ export class PrettyGCodeApp {
     if (this.currentJobPath !== job.file.path || this.currentJobDate !== job.file.date) {
       this.currentJobPath = job.file.path
       this.currentJobDate = job.file.date
+      this.currentJobSize = job.file.size
+      this.largeFileApproved = false
       if (this.viewInitialized) this.loadGcode(this.currentJobPath)
     }
 
@@ -207,9 +216,24 @@ export class PrettyGCodeApp {
    * @param preserveView - Whether to keep the current layer and camera instead of framing the whole model
    */
   private async loadGcode (jobPath: string, preserveView = false): Promise<void> {
+    // Supersede the load in flight and clear the view
     const sequence = ++this.loadSequence
-    showLoadingScreen()
+    hideLargeFileConfirmation()
     this.unloadGcode()
+
+    // Ask before loading a large file, which takes long and can bog the browser down
+    const largeFileThreshold = Number(this.settingsVM.settings?.plugins?.prettygcode?.largeFileThresholdMb?.() ?? 0) * 1024 * 1024
+    if (jobPath && !this.largeFileApproved && largeFileThreshold && this.currentJobSize > largeFileThreshold) {
+      cancelGcodeLoad()
+      showLargeFileConfirmation(this.currentJobSize, () => {
+        this.largeFileApproved = true
+        this.loadGcode(jobPath, preserveView)
+      }, () => this.settingsVM.show(PG_SETTINGS_TAB))
+      return
+    }
+
+    // Cover the view while the file loads
+    showLoadingScreen()
 
     try {
       // The object marker tag comes from the Cancel Object plugin settings

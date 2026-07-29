@@ -9,6 +9,12 @@ const PARSER_WORKER_URL = PLUGIN_BASEURL + 'prettygcode/static/js/pg-gcode-parse
 /** Worker parsing the gcode of the load in flight, if any */
 let activeWorker: Worker | null = null
 
+/** Drops the gcode load in flight, if any */
+export function cancelGcodeLoad (): void {
+  activeWorker?.terminate()
+  activeWorker = null
+}
+
 /**
  * Downloads and parses a job's gcode; an empty path yields an empty result
  * @param jobPath - Server path of the job file
@@ -19,8 +25,7 @@ let activeWorker: Worker | null = null
  */
 export async function loadGcodeFile (jobPath: string, objectTag: string | undefined, colors: ParserColors, g90InfluencesExtruder: boolean): Promise<ParsedGcode> {
   // Drop the load still in flight, superseded by this one
-  activeWorker?.terminate()
-  activeWorker = null
+  cancelGcodeLoad()
 
   // If there is no job path, return an empty result
   if (!jobPath) return { layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, objectNames: [] } satisfies ParsedGcode

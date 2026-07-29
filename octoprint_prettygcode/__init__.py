@@ -22,7 +22,13 @@ class PrettyGCodePlugin(
         return True
 
     def get_template_vars(self):
-        return {"github_url": GITHUB_URL}
+        return {"github_url": GITHUB_URL, "version": self._plugin_version}
+
+    def get_template_configs(self):
+        return [{"type": "settings", "custom_bindings": False}]
+
+    def get_settings_defaults(self):
+        return {"largeFileThresholdMb": 50}
 
     def get_update_information(self):
         return {

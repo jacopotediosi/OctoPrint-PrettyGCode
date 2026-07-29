@@ -29,7 +29,7 @@
 
     /* ---- Z-indexes ---- */
     --pg-z-canvas: 2000;
-    --pg-z-loading: 2001;
+    --pg-z-overlay-message: 2001;
     --pg-z-dashboard: 2002;
     --pg-z-webcam: 2003;
     --pg-z-bottom-buttons: 2004;
@@ -608,8 +608,8 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     --pg-segment-lane: 0px;
 }
 
-/* === Loading screen === */
-#pg-loading {
+/* === Overlay messages === */
+.pg-overlay-message {
     top: 0px;
     left: 0px;
     width: 100%;
@@ -620,14 +620,18 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     align-items: center;
     justify-content: center;
     gap: var(--pg-stack-gap);
+    text-align: center;
     color: var(--pg-window-text);
     background: var(--pg-window-bg);
 }
-.pg-maximized #pg-loading {
-    z-index: var(--pg-z-loading);
+.pg-maximized .pg-overlay-message {
+    z-index: var(--pg-z-overlay-message);
 }
-#pg-loading .fa-spinner {
+.pg-overlay-message > .fa-solid {
     font-size: 32px;
+}
+#pg-large-file-confirmation span {
+    max-width: 400px;
 }
 
 /* === Dark mode === */
@@ -645,7 +649,8 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 }
 .pg-dark .pg-toggle,
 .pg-dark .pg-layer-step-button,
-.pg-dark .pg-segment-step-button {
+.pg-dark .pg-segment-step-button,
+.pg-dark .pg-overlay-message .btn {
     color: #ddd;
     text-shadow: none;
     border: 1px solid #1a1a1a;
@@ -659,7 +664,9 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-dark .pg-layer-step-button[disabled],
 .pg-dark .pg-segment-step-button:hover,
 .pg-dark .pg-segment-step-button:active,
-.pg-dark .pg-segment-step-button[disabled] {
+.pg-dark .pg-segment-step-button[disabled],
+.pg-dark .pg-overlay-message .btn:hover,
+.pg-dark .pg-overlay-message .btn:active {
     color: #ddd;
     background-color: #2b2b2b;
 }
@@ -747,7 +754,8 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-dark .modal .help-block {
     color: #bbb;
 }
-.pg-dark .modal a:not(.btn):not(.close) {
+.pg-dark .modal a:not(.btn):not(.close),
+.pg-dark .pg-overlay-message a {
     color: #4db3ff;
 }
 .pg-dark .modal input:not([type="color"]):not([type="checkbox"]):not([type="radio"]),
