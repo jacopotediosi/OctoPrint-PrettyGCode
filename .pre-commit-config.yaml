@@ -20,14 +20,14 @@ repos:
           - neostandard@0.13.0
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.22
+    rev: v0.16.0
     hooks:
       - id: ruff-check
         args: [--target-version=py37]
       - id: ruff-format
 
   - repo: https://github.com/djlint/djLint
-    rev: v1.42.2
+    rev: v1.43.1
     hooks:
       - id: djlint-reformat-jinja
       - id: djlint-jinja
