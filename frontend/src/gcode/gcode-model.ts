@@ -44,6 +44,10 @@ const layerPartMetadata = (line: LayerLine): LayerPartMetadata => line.userData 
 export const DEFAULT_NOZZLE_DIAMETER = 0.4
 /** Oversize factor of the drawn lines, to avoid gaps */
 const LINE_THICKNESS_FACTOR = 1.1
+
+/** Brightness the mirror multiplies the model colors by */
+const MIRROR_BRIGHTNESS = 0.5
+
 /**
  * Makes the material for thin gcode lines
  * @param clippingPlanes - Clipping planes to apply, if any
@@ -162,6 +166,9 @@ export class GCodeModel {
   /** Group holding the gcode model lines */
   readonly linesGroup = new THREE.Group()
 
+  /** Group holding the mirror lines, reflected through the bed */
+  private readonly mirrorGroup = new THREE.Group()
+
   /** Layers the model was last built from */
   private layers: Layer[] = []
 
@@ -210,6 +217,19 @@ export class GCodeModel {
 
     this.mirrorThickMaterial = makeThickMaterial(mirrorBoundsPlanes)
     this.mirrorThinMaterial = makeThinMaterial(mirrorBoundsPlanes)
+
+    // Dim the mirror colors
+    this.mirrorThickMaterial.color.setRGB(MIRROR_BRIGHTNESS, MIRROR_BRIGHTNESS, MIRROR_BRIGHTNESS)
+    this.mirrorThinMaterial.color.setRGB(MIRROR_BRIGHTNESS, MIRROR_BRIGHTNESS, MIRROR_BRIGHTNESS)
+
+    // Keeps the flipped thick lines from breaking into specks
+    this.mirrorThickMaterial.side = THREE.BackSide
+
+    // Flip the mirror lines through the bed
+    this.mirrorGroup.scale.z = -1
+    this.mirrorGroup.matrixAutoUpdate = false
+    this.mirrorGroup.updateMatrix()
+    this.linesGroup.add(this.mirrorGroup)
   }
 
   /* ---- Object building ---- */
@@ -223,7 +243,9 @@ export class GCodeModel {
     for (const child of this.linesGroup.children) {
       if (isLayerObject(child)) child.geometry.dispose()
     }
+    this.mirrorGroup.clear()
     this.linesGroup.clear()
+    this.linesGroup.add(this.mirrorGroup)
     this.revealedIndex = -1
     this.highlightedLayer = -1
 
@@ -336,41 +358,16 @@ export class GCodeModel {
     line.userData = metadata
     this.linesGroup.add(line)
 
-    // Build and add the part's line object to the mirror
+    // Draw the part's geometry in the mirror too
     if (this.settings.showBed && this.settings.showMirror) {
-      const mirrorData = this.makeMirrorData(vertices, colors)
-      const mirror = this.makeLine(mirrorData.vertices, mirrorData.colors, thickLines ? this.mirrorThickMaterial : this.mirrorThinMaterial)
+      const mirror: LayerLine = thickLines
+        ? new THREE.LineSegments2(line.geometry as THREE.LineSegmentsGeometry, this.mirrorThickMaterial)
+        : new THREE.LineSegments(line.geometry, this.mirrorThinMaterial)
+      mirror.matrixAutoUpdate = false
       mirror.name = LAYER_PREFIX + layerNumber
       mirror.userData = { ...metadata, mirror: true } satisfies LayerPartMetadata
-      this.linesGroup.add(mirror)
+      this.mirrorGroup.add(mirror)
     }
-  }
-
-  /**
-   * Derives geometry mirrored through the bed
-   * @param layerVertices - Segment endpoints as flat XYZ triplets
-   * @param layerColors - Vertex colors as flat RGB triplets
-   * @returns The mirror's vertices and colors
-   */
-  private makeMirrorData (layerVertices: Float32Array, layerColors: Uint8ClampedArray): { vertices: Float32Array, colors: Uint8ClampedArray } {
-    // Mirror through the bed: flip the Z of every vertex
-    const vertices = layerVertices.slice()
-    for (let i = 2; i < vertices.length; i += 3) vertices[i] = -vertices[i]
-
-    // Halve each color's lightness so the reflection reads as dimmer
-    const colors = layerColors.slice()
-    const color = new THREE.Color()
-    const hsl = { h: 0, s: 0, l: 0 }
-    for (let i = 0; i < colors.length; i += 3) {
-      color.setRGB(colors[i] / 255, colors[i + 1] / 255, colors[i + 2] / 255)
-      color.getHSL(hsl)
-      color.setHSL(hsl.h, hsl.s, hsl.l / 2)
-      colors[i] = color.r * 255
-      colors[i + 1] = color.g * 255
-      colors[i + 2] = color.b * 255
-    }
-
-    return { vertices, colors }
   }
 
   /**
