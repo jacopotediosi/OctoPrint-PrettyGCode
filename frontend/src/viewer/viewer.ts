@@ -29,6 +29,8 @@ export class Viewer {
   private renderer!: THREE.WebGLRenderer
   /** Whether to render the next frame regardless of changes */
   private forceRender = true
+  /** Whether the next frame is already scheduled */
+  private frameScheduled = false
   /** Timer measuring frame deltas */
   private timer!: THREE.Timer
 
@@ -38,9 +40,14 @@ export class Viewer {
   private canvasHeight = 0
   /** Watcher of the canvas display size */
   private readonly canvasSizeObserver = new ResizeObserver(([{ target }]) => {
+    // Track the displayed canvas size
     this.canvasWidth = target.clientWidth
     this.canvasHeight = target.clientHeight
+
+    // Redraw at the new size
     this.requestRender()
+    this.timer.reset()
+    this.scheduleFrame()
   })
 
   /** The 3D scene */
@@ -118,7 +125,7 @@ export class Viewer {
     this.scene.add(this.cameraLight)
 
     this.timer = new THREE.Timer()
-    this.animate()
+    this.scheduleFrame()
   }
 
   /**
@@ -137,20 +144,26 @@ export class Viewer {
 
   /* ---- Render loop ---- */
 
+  /** Schedules the next frame */
+  private scheduleFrame (): void {
+    if (this.frameScheduled) return
+
+    this.frameScheduled = true
+    requestAnimationFrame(() => this.animate())
+  }
+
   /** Renders a frame when needed and schedules the next one */
   private animate (): void {
+    this.frameScheduled = false
+
+    // Skip animation if canvas size is 0 (e.g. plugin tab is not shown)
+    if (this.canvasWidth === 0 || this.canvasHeight === 0) return
+
     this.timer.update()
     const deltaSeconds = this.timer.getDelta()
 
     let needRender = this.forceRender
     this.forceRender = false
-
-    // Skip animation if canvas size is 0 (e.g. plugin tab is not shown)
-    if (this.canvasWidth === 0 || this.canvasHeight === 0) {
-      // Schedule the next frame and return
-      requestAnimationFrame(() => this.animate())
-      return
-    }
 
     // Update and get the print view
     const printView = this.onFrame(deltaSeconds)
@@ -178,7 +191,7 @@ export class Viewer {
     }
 
     // Schedule the next frame
-    requestAnimationFrame(() => this.animate())
+    this.scheduleFrame()
   }
 
   /** Forces a render on the next animation frame */
