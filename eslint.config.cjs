@@ -1,6 +1,6 @@
-import neostandard from 'neostandard'
+const neostandard = require('neostandard')
 
-export default [
+module.exports = [
   ...neostandard({
     ts: true,
     env: ['browser'],

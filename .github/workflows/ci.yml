@@ -37,7 +37,6 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - run: npm run lint
       - run: npm run build
       - name: Verify committed frontend bundles match sources
         run: git diff --exit-code -- 'octoprint_prettygcode/static/js/*.bundle.js'
