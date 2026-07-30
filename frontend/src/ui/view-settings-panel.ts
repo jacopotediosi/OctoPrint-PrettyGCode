@@ -38,6 +38,7 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     onChange?.()
     refreshResets()
   })
+  gui.onFinishChange((event) => app?.applySettings([event.property as SettingKey]))
 
   const option = (folder: GUI, prop: SettingKey, name: string, help: string): Controller => {
     const controller = folder.add(settings, prop).name(name)
@@ -54,35 +55,35 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     'darkMode',
     'Dark mode',
     'Use a dark theme.'
-  ).onFinishChange(() => app?.updateDarkMode())
+  )
 
   option(
     interfaceFolder,
     'showStatusBar',
     'Status bar',
     'Show the temperature status bar across the top of the view.'
-  ).onFinishChange(() => app?.updateWindowStates())
+  )
 
   option(
     interfaceFolder,
     'showLayerSlider',
     'Layer slider',
     'Show the layer slider along the right edge of the view.'
-  ).onFinishChange(() => app?.updateWindowStates())
+  )
 
   option(
     interfaceFolder,
     'showSegmentSlider',
     'Segment slider',
     'Show the segment slider along the bottom edge of the view.'
-  ).onFinishChange(() => app?.updateWindowStates())
+  )
 
   option(
     interfaceFolder,
     'antialias',
     'Antialiasing',
     'Smooth jagged edges in the 3D view.'
-  ).onFinishChange(() => app?.updateAntialias())
+  )
 
   /* ---- Camera ---- */
 
@@ -91,11 +92,9 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
   const navigationOptions = Object.fromEntries(Object.entries(NAVIGATION_MODES).map(([key, mode]) => [mode.name, key]))
   const navigation = cameraFolder.add(settings, 'navigationMode', navigationOptions).name('Navigation mode')
   navigation.domElement.title = 'Set which mouse buttons rotate, pan and zoom the 3D view.'
-  navigation.onFinishChange(() => app?.updateNavigationMode())
 
   const projection = cameraFolder.add(settings, 'projectionMode', { Perspective: 'perspective', Orthographic: 'orthographic' }).name('Projection mode')
   projection.domElement.title = 'Set whether the 3D view is drawn with a perspective or an orthographic projection.'
-  projection.onFinishChange(() => app?.updateProjectionMode())
 
   option(
     cameraFolder,
@@ -113,23 +112,22 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     'thickLines',
     'Thick lines',
     'Display lines with thickness, based on nozzle size.'
-  ).onFinishChange(() => app?.rebuildGcodeModel())
+  )
 
   const highlightIntensity = gcodeModelFolder.add(settings, 'highlightIntensity', 0, 100, 1).name('Highlight layer')
   highlightIntensity.domElement.title = 'Set how strongly the topmost displayed layer is shaded.'
-  highlightIntensity.onChange(() => app?.updateLayerHighlight())
 
   option(
     gcodeModelFolder,
     'showExcluded',
     'Excluded gcode',
     'Show gcode excluded by the Exclude Region and Cancel Object plugins, greyed out.'
-  ).onFinishChange(() => app?.rebuildGcodeModel())
+  )
 
   const colorPresets: ColorPreset[] = JSON.parse(container.dataset.modelColorPresets ?? '[]')
   const modelColorsModal = initModelColorsModal(settings, colorPresets, () => {
     onChange?.()
-    app?.updateModelColors()
+    app?.applySettings(['modelColorRules', 'modelDefaultColor'])
     refreshResets()
   })
   const customizeColors = gcodeModelFolder.add({ customize: () => modelColorsModal.open() }, 'customize').name('Customize colors…')
@@ -183,20 +181,16 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     'showMirror',
     'Mirror',
     'Show a reflection of the print on the bed.'
-  ).onFinishChange(() => app?.rebuildGcodeModel())
+  )
 
   option(
     bedFolder,
     'showExclusionMarker',
     'Exclusion marker',
     'Show the markers of the excluded regions.'
-  ).onFinishChange(() => app?.updateExclusionMarkersVisibility())
+  )
 
-  bed.onFinishChange(() => {
-    app?.updateBedVisibility()
-    app?.rebuildGcodeModel()
-    mirror.show(settings.showBed)
-  })
+  bed.onFinishChange(() => mirror.show(settings.showBed))
   mirror.show(settings.showBed)
 
   /* ---- Reset buttons ---- */

@@ -67,6 +67,8 @@ export class PrettyGCodeApp {
 
   /** Parsed gcode of the currently loaded job */
   private parsedGcode: ParsedGcode | null = null
+  /** Model colors the loaded gcode was parsed with */
+  private parsedColors: ParserColors | null = null
 
   /** Print bed geometry */
   private bedVolume: BedVolume = { depth: 0, height: 0, origin: '', width: 0 }
@@ -137,7 +139,6 @@ export class PrettyGCodeApp {
         this.viewer.scene.add(this.exclusions.regionMarkersGroup)
         this.loadGcode(this.currentJobPath)
         this.fetchExclusions()
-        this.updateExclusionMarkersVisibility()
 
         // UI controls
         this.viewSettingsPanel = initViewSettingsPanel(this)
@@ -145,12 +146,15 @@ export class PrettyGCodeApp {
         initSegmentSlider(this)
         initOverlayWindows(this.settings)
         initToggleButtons(this)
-        this.updateDarkMode()
+
+        // Apply the loaded settings
+        this.applySettings(this.settings.keys())
 
         // Set view as initialized
         this.viewInitialized = true
+      } else {
+        this.updateWindowStates()
       }
-      this.updateWindowStates()
     } else if (previous === PG_TAB) {
       this.updateWindowStates()
     }
@@ -165,45 +169,9 @@ export class PrettyGCodeApp {
   onSettingsHidden (): void {
     if (!this.viewInitialized) return
 
-    const changed = new Set(this.settings.load(this.defaultViewSettings()))
-
+    const changed = this.settings.load(this.defaultViewSettings())
     this.viewSettingsPanel.refresh()
-
-    /**
-     * Tells whether any of the given settings changed
-     * @param keys - Names of the settings to look for
-     * @returns True when at least one of them changed
-     */
-    const anyChanged = (...keys: SettingKey[]): boolean => keys.some((key) => changed.has(key))
-
-    // Updating model colors rebuilds the model as well
-    if (anyChanged('modelColorRules', 'modelDefaultColor')) this.updateModelColors()
-    else if (anyChanged('thickLines', 'showExcluded', 'showBed', 'showMirror')) this.rebuildGcodeModel()
-
-    if (anyChanged('darkMode')) this.updateDarkMode()
-    if (anyChanged('antialias')) this.updateAntialias()
-
-    if (anyChanged('navigationMode')) this.updateNavigationMode()
-    if (anyChanged('projectionMode')) this.updateProjectionMode()
-
-    if (anyChanged('showBed')) this.updateBedVisibility()
-    if (anyChanged('showExclusionMarker')) this.updateExclusionMarkersVisibility()
-
-    if (anyChanged('highlightIntensity')) this.updateLayerHighlight()
-
-    if (
-      anyChanged(
-        'showStatusBar',
-        'showLayerSlider',
-        'showSegmentSlider',
-        'showState',
-        'showFiles',
-        'showDashboard',
-        'dashboardHeight',
-        'showWebcam',
-        'webcamHeight'
-      )
-    ) this.updateWindowStates()
+    this.applySettings(changed)
   }
 
   /** Reacts to the OctoPrint settings dialog opening, bringing the plugin settings tab up to date */
@@ -289,6 +257,7 @@ export class PrettyGCodeApp {
     const sequence = ++this.loadSequence
     hideLargeFileConfirmation()
     this.unloadGcode()
+    this.parsedColors = { colorRules: this.settings.modelColorRules, defaultColor: this.settings.modelDefaultColor }
 
     // Ask before loading a large file, which takes long and can bog the browser down
     const largeFileThreshold = Number(this.settingsVM.settings?.plugins?.prettygcode?.largeFileThresholdMb?.() ?? 0) * 1024 * 1024
@@ -307,10 +276,9 @@ export class PrettyGCodeApp {
     try {
       // The object marker tag comes from the Cancel Object plugin settings
       const objectTag = this.settingsVM.settings?.plugins?.cancelobject?.reptag?.()
-      const colors: ParserColors = { colorRules: this.settings.modelColorRules, defaultColor: this.settings.modelDefaultColor }
       // Whether G90/G91 affect extrusion follows OctoPrint's firmware setting
       const g90InfluencesExtruder = this.settingsVM.settings?.feature?.g90InfluencesExtruder?.() ?? false
-      const parsedGcode = await loadGcodeFile(jobPath, objectTag, colors, g90InfluencesExtruder)
+      const parsedGcode = await loadGcodeFile(jobPath, objectTag, this.parsedColors, g90InfluencesExtruder)
 
       // Stop if a newer load has started
       if (sequence !== this.loadSequence) return
@@ -492,6 +460,49 @@ export class PrettyGCodeApp {
     this.viewer.applyViewAngle(view, true)
   }
 
+  /**
+   * (Re)applies the given settings to the view
+   * @param keys - Names of the settings to apply
+   */
+  applySettings (keys: SettingKey[]): void {
+    const toApply = new Set(keys)
+
+    /**
+     * Tells whether any of the given settings is among the ones to apply
+     * @param names - Names of the settings to look for
+     * @returns True when at least one of them is to apply
+     */
+    const anyOf = (...names: SettingKey[]): boolean => names.some((name) => toApply.has(name))
+
+    const rebuilding = anyOf('modelColorRules', 'modelDefaultColor') && this.updateModelColors()
+    if (!rebuilding && anyOf('thickLines', 'showExcluded', 'showBed', 'showMirror')) this.rebuildGcodeModel()
+
+    if (anyOf('darkMode')) this.updateDarkMode()
+    if (anyOf('antialias')) this.updateAntialias()
+
+    if (anyOf('navigationMode')) this.updateNavigationMode()
+    if (anyOf('projectionMode')) this.updateProjectionMode()
+
+    if (anyOf('showBed')) this.updateBedVisibility()
+    if (anyOf('showExclusionMarker')) this.updateExclusionMarkersVisibility()
+
+    if (anyOf('highlightIntensity')) this.updateLayerHighlight()
+
+    if (
+      anyOf(
+        'showStatusBar',
+        'showLayerSlider',
+        'showSegmentSlider',
+        'showState',
+        'showFiles',
+        'showDashboard',
+        'dashboardHeight',
+        'showWebcam',
+        'webcamHeight'
+      )
+    ) this.updateWindowStates()
+  }
+
   /** (Re)applies the navigation mode setting to the 3D view */
   updateNavigationMode (): void {
     this.viewer.applyNavigationMode(this.settings.navigationMode)
@@ -526,9 +537,16 @@ export class PrettyGCodeApp {
     this.viewer.requestRender()
   }
 
-  /** (Re)applies the model color settings */
-  updateModelColors (): void {
+  /**
+   * (Re)applies the model color settings
+   * @returns True when the model is being rebuilt
+   */
+  updateModelColors (): boolean {
+    const parsed = this.parsedColors
+    if (parsed && this.settings.matches('modelColorRules', parsed.colorRules) && this.settings.matches('modelDefaultColor', parsed.defaultColor)) return false
+
     this.loadGcode(this.currentJobPath, true)
+    return true
   }
 
   /** (Re)applies the show bed setting to the 3D view */

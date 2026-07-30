@@ -175,4 +175,12 @@ export class Settings {
   defaultOf<K extends SettingKey> (key: K): SettingValues[K] {
     return this.defaults[key]
   }
+
+  /**
+   * Gets the name of every setting
+   * @returns The setting names
+   */
+  keys (): SettingKey[] {
+    return Object.keys(this.defaults) as SettingKey[]
+  }
 }

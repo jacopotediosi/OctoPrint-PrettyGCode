@@ -21,7 +21,7 @@ export function initToggleButtons (app: PrettyGCodeApp): void {
     app.settings[key] = !app.settings[key]
     if (app.settings[key] && closes) app.settings[closes] = false
     app.settings.save()
-    app.updateWindowStates()
+    app.applySettings(closes ? [key, closes] : [key])
   }
 
   /* ---- Top left buttons ---- */

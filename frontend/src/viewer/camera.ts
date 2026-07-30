@@ -81,7 +81,6 @@ export class Camera {
     this.controls.dollyToCursor = true
     this.controls.infinityDolly = true
     this.controls.minDistance = 10
-    this.applyNavigationMode(settings.navigationMode)
     this.applyDefaultView(bedVolume)
 
     // Watch navigation modifiers

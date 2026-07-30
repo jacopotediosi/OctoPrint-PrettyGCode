@@ -27,6 +27,8 @@ export class Viewer {
 
   /** WebGL renderer */
   private renderer!: THREE.WebGLRenderer
+  /** Whether the renderer draws with antialiasing */
+  private antialias!: boolean
   /** Whether to render the next frame regardless of changes */
   private forceRender = true
   /** Whether the next frame is already scheduled */
@@ -103,9 +105,6 @@ export class Viewer {
     // Camera
     this.camera = new Camera(settings, canvas, bedVolume, () => this.requestRender())
 
-    // Background
-    this.applyBackground(settings.darkMode)
-
     // Bed (grid)
     this.updateBedMesh()
 
@@ -135,6 +134,7 @@ export class Viewer {
    */
   private createRenderer (canvas: HTMLCanvasElement, antialias: boolean): void {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias, logarithmicDepthBuffer: true })
+    this.antialias = antialias
     this.renderer.setPixelRatio(window.devicePixelRatio)
     this.renderer.localClippingEnabled = true // Needed for the gcode reflection on the bed surface
 
@@ -306,6 +306,8 @@ export class Viewer {
    * @param antialias - True to enable antialiasing
    */
   applyAntialias (antialias: boolean): void {
+    if (antialias === this.antialias) return
+
     // Antialias is a fixed WebGL context attribute, so toggling it means recreating the
     // context. A context stays bound to its canvas, so swap in a fresh canvas too.
     const oldCanvas = this.renderer.domElement
