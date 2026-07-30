@@ -26,8 +26,10 @@
                 This G-code file is <strong id="pg-large-file-confirmation-size"></strong>.
                 <br>
                 Files this large can be slow to load and render on less powerful devices.
-                <br>
-                To change the size above which this confirmation appears, open the <a id="pg-large-file-confirmation-open-settings" href="#">plugin settings</a>.
+                <span data-bind="visible: loginState.hasPermissionKo(access.permissions.SETTINGS)">
+                    <br>
+                    To change the size above which this confirmation appears, open the <a href="#" data-bind="click: showPluginSettings">plugin settings</a>.
+                </span>
             </span>
             <button id="pg-large-file-confirmation-load" class="btn">Load file</button>
         </div>
@@ -71,7 +73,17 @@
             </button>
         </div>
         {# ---- View settings ---- #}
-        <div id="pg-view-settings" class="pg-hidden"></div>
+        <div id="pg-view-settings"
+             class="pg-view-settings-panel pg-hidden"
+             data-model-color-presets='{{ plugin_prettygcode_model_color_presets|tojson }}'>
+            <div class="pg-view-settings-header">View settings</div>
+            <p class="pg-view-settings-notice">
+                The settings below are saved in this browser only.
+                <a class="pg-view-settings-defaults-link"
+                   href="#"
+                   data-bind="visible: loginState.hasPermissionKo(access.permissions.SETTINGS), click: showPluginSettings">Change the defaults for every browser</a>
+            </p>
+        </div>
         {# ---- Top buttons ---- #}
         <div class="pg-buttons pg-top-left-buttons">
             <button class="pg-toggle pg-maximized-only pg-toggle-state"
@@ -84,7 +96,8 @@
             </button>
         </div>
         <div class="pg-buttons pg-top-right-buttons">
-            <button class="pg-toggle pg-toggle-settings" title="Toggle settings window">
+            <button class="pg-toggle pg-toggle-view-settings"
+                    title="Toggle view settings window">
                 <i class="fa-solid fa-gear"></i>
             </button>
             <button class="pg-toggle pg-toggle-maximized" title="Toggle maximized view">

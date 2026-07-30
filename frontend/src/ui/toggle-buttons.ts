@@ -31,7 +31,7 @@ export function initToggleButtons (app: PrettyGCodeApp): void {
 
   /* ---- Top right buttons ---- */
 
-  $('.pg-toggle-settings').on('click', () => $('#pg-view-settings').toggleClass('pg-hidden'))
+  $('.pg-toggle-view-settings').on('click', () => $('#pg-view-settings').toggleClass('pg-hidden'))
 
   // Restore the maximized layout from the URL (bookmarked/embedded maximized view)
   if (new URLSearchParams(location.search).get('maximized')) $('.page-container').addClass('pg-maximized')

@@ -1,10 +1,11 @@
-import { Settings } from './settings'
+import { Settings, type SettingKey, type SettingValues } from './settings'
 import { Viewer } from './viewer/viewer'
 import { loadGcodeFile, cancelGcodeLoad } from './gcode/loader'
 import { PrintTimeline } from './gcode/print-timeline'
 import { PrintExclusions } from './gcode/exclusions'
 import { GCodeModel, DEFAULT_NOZZLE_DIAMETER } from './gcode/gcode-model'
-import { initSettingsPanel } from './ui/settings-panel'
+import { initViewSettingsPanel, type ViewSettingsPanel } from './ui/view-settings-panel'
+import { saveDefaultViewSettings, updateDefaultViewSettingsPanel } from './ui/default-view-settings-panel'
 import { initOverlayWindows } from './ui/overlay-windows'
 import { updateDashboardOverlay } from './ui/dashboard'
 import { updateWebcamOverlay } from './ui/webcam'
@@ -51,6 +52,9 @@ export class PrettyGCodeApp {
 
   /** Whether the plugin view has been initialized */
   private viewInitialized = false
+
+  /** The panel editing the view settings of this browser */
+  private viewSettingsPanel!: ViewSettingsPanel
 
   /** The 3D view */
   private readonly viewer = new Viewer(this.settings, () => this.bedVolume, (deltaSeconds) => this.updatePrintView(deltaSeconds))
@@ -101,7 +105,6 @@ export class PrettyGCodeApp {
   constructor ({ printerProfilesVM, settingsVM }: { printerProfilesVM: any, settingsVM: any }) {
     this.printerProfilesVM = printerProfilesVM
     this.settingsVM = settingsVM
-    this.settings.load()
   }
 
   /* ---- OctoPrint events ---- */
@@ -114,6 +117,9 @@ export class PrettyGCodeApp {
   onTabChange (current: string, previous: string): void {
     if (current === PG_TAB) {
       if (!this.viewInitialized) {
+        // Load settings, layered over the defaults configured on the server
+        this.settings.load(this.defaultViewSettings())
+
         // Bed geometry and nozzle size, kept in sync with the active printer profile
         this.updateBedVolume()
         this.updateNozzleDiameter()
@@ -134,7 +140,7 @@ export class PrettyGCodeApp {
         this.updateExclusionMarkersVisibility()
 
         // UI controls
-        initSettingsPanel(this)
+        this.viewSettingsPanel = initViewSettingsPanel(this)
         initLayerSlider(this)
         initSegmentSlider(this)
         initOverlayWindows(this.settings)
@@ -148,6 +154,69 @@ export class PrettyGCodeApp {
     } else if (previous === PG_TAB) {
       this.updateWindowStates()
     }
+  }
+
+  /** Reacts to the OctoPrint settings dialog saving, handing it the edited default view settings */
+  onSettingsBeforeSave (): void {
+    saveDefaultViewSettings()
+  }
+
+  /** Reacts to the OctoPrint settings dialog closing, re-applying the view settings */
+  onSettingsHidden (): void {
+    if (!this.viewInitialized) return
+
+    const changed = new Set(this.settings.load(this.defaultViewSettings()))
+
+    this.viewSettingsPanel.refresh()
+
+    /**
+     * Tells whether any of the given settings changed
+     * @param keys - Names of the settings to look for
+     * @returns True when at least one of them changed
+     */
+    const anyChanged = (...keys: SettingKey[]): boolean => keys.some((key) => changed.has(key))
+
+    // Updating model colors rebuilds the model as well
+    if (anyChanged('modelColorRules', 'modelDefaultColor')) this.updateModelColors()
+    else if (anyChanged('thickLines', 'showExcluded', 'showBed', 'showMirror')) this.rebuildGcodeModel()
+
+    if (anyChanged('darkMode')) this.updateDarkMode()
+    if (anyChanged('antialias')) this.updateAntialias()
+
+    if (anyChanged('navigationMode')) this.updateNavigationMode()
+    if (anyChanged('projectionMode')) this.updateProjectionMode()
+
+    if (anyChanged('showBed')) this.updateBedVisibility()
+    if (anyChanged('showExclusionMarker')) this.updateExclusionMarkersVisibility()
+
+    if (anyChanged('highlightIntensity')) this.updateLayerHighlight()
+
+    if (
+      anyChanged(
+        'showStatusBar',
+        'showLayerSlider',
+        'showSegmentSlider',
+        'showState',
+        'showFiles',
+        'showDashboard',
+        'dashboardHeight',
+        'showWebcam',
+        'webcamHeight'
+      )
+    ) this.updateWindowStates()
+  }
+
+  /** Reacts to the OctoPrint settings dialog opening, bringing the plugin settings tab up to date */
+  onSettingsShown (): void {
+    updateDefaultViewSettingsPanel(this.settingsVM)
+  }
+
+  /**
+   * Gets the default view settings configured on the server
+   * @returns Their values by name
+   */
+  private defaultViewSettings (): Partial<SettingValues> {
+    return ko.mapping.toJS(this.settingsVM.settings?.plugins?.prettygcode?.defaultViewSettings ?? {})
   }
 
   /**
@@ -228,7 +297,7 @@ export class PrettyGCodeApp {
       showLargeFileConfirmation(this.currentJobSize, () => {
         this.largeFileApproved = true
         this.loadGcode(jobPath, preserveView)
-      }, () => this.settingsVM.show(PG_SETTINGS_TAB))
+      })
       return
     }
 
@@ -405,6 +474,11 @@ export class PrettyGCodeApp {
     this.manualSliding = manual
   }
 
+  /** Opens the plugin settings tab */
+  showPluginSettings (): void {
+    this.settingsVM.show(PG_SETTINGS_TAB)
+  }
+
   /** Resets the camera to the default view */
   resetView (): void {
     this.viewer.applyDefaultView(true)
@@ -454,7 +528,6 @@ export class PrettyGCodeApp {
 
   /** (Re)applies the model color settings */
   updateModelColors (): void {
-    this.settings.save()
     this.loadGcode(this.currentJobPath, true)
   }
 

@@ -1,30 +1,45 @@
 import GUI, { type Controller } from 'lil-gui'
 import { NAVIGATION_MODES } from '../viewer/navigation'
-import { Settings } from '../settings'
 import { initModelColorsModal } from './model-colors-modal'
+import type { ColorPreset } from '../gcode/model-colors'
+import type { Settings, SettingKey } from '../settings'
 import type { PrettyGCodeApp } from '../app'
 
-/** Default value of every setting */
-const DEFAULTS = new Settings()
+/** Handles of a view settings panel */
+export interface ViewSettingsPanel {
+  /** Brings the panel back in sync with the settings */
+  refresh: () => void
+}
 
 /**
- * Builds the plugin settings panel
+ * Builds the panel editing the view settings of this browser
  * @param app - Application instance
  * @returns The created panel
  */
-export function initSettingsPanel (app: PrettyGCodeApp): GUI {
-  const settings = app.settings
+export function initViewSettingsPanel (app: PrettyGCodeApp): ViewSettingsPanel {
+  const container = document.getElementById('pg-view-settings')!
+  return buildViewSettingsPanel(container, app.settings, () => app.settings.save(), app)
+}
+
+/**
+ * Builds a view settings panel
+ * @param container - Element holding the panel header and receiving the controls
+ * @param settings - Settings the panel edits
+ * @param onChange - Callback called after a setting change, null for none
+ * @param app - Application to update live, null to only edit the values
+ * @returns The created panel
+ */
+export function buildViewSettingsPanel (container: HTMLElement, settings: Settings, onChange: (() => void) | null, app: PrettyGCodeApp | null): ViewSettingsPanel {
   const gui = new GUI({ autoPlace: false })
-  $('#pg-view-settings').append(gui.domElement)
 
   const refreshers: Array<() => void> = []
   const refreshResets = (): void => refreshers.forEach((refresh) => refresh())
   gui.onChange(() => {
-    settings.save()
+    onChange?.()
     refreshResets()
   })
 
-  const option = (folder: GUI, prop: keyof Settings, name: string, help: string): Controller => {
+  const option = (folder: GUI, prop: SettingKey, name: string, help: string): Controller => {
     const controller = folder.add(settings, prop).name(name)
     controller.domElement.title = help
     return controller
@@ -39,35 +54,35 @@ export function initSettingsPanel (app: PrettyGCodeApp): GUI {
     'darkMode',
     'Dark mode',
     'Use a dark theme.'
-  ).onFinishChange(() => app.updateDarkMode())
+  ).onFinishChange(() => app?.updateDarkMode())
 
   option(
     interfaceFolder,
     'showStatusBar',
     'Status bar',
     'Show the temperature status bar across the top of the view.'
-  ).onFinishChange(() => app.updateWindowStates())
+  ).onFinishChange(() => app?.updateWindowStates())
 
   option(
     interfaceFolder,
     'showLayerSlider',
     'Layer slider',
     'Show the layer slider along the right edge of the view.'
-  ).onFinishChange(() => app.updateWindowStates())
+  ).onFinishChange(() => app?.updateWindowStates())
 
   option(
     interfaceFolder,
     'showSegmentSlider',
     'Segment slider',
     'Show the segment slider along the bottom edge of the view.'
-  ).onFinishChange(() => app.updateWindowStates())
+  ).onFinishChange(() => app?.updateWindowStates())
 
   option(
     interfaceFolder,
     'antialias',
     'Antialiasing',
     'Smooth jagged edges in the 3D view.'
-  ).onFinishChange(() => app.updateAntialias())
+  ).onFinishChange(() => app?.updateAntialias())
 
   /* ---- Camera ---- */
 
@@ -76,11 +91,11 @@ export function initSettingsPanel (app: PrettyGCodeApp): GUI {
   const navigationOptions = Object.fromEntries(Object.entries(NAVIGATION_MODES).map(([key, mode]) => [mode.name, key]))
   const navigation = cameraFolder.add(settings, 'navigationMode', navigationOptions).name('Navigation mode')
   navigation.domElement.title = 'Set which mouse buttons rotate, pan and zoom the 3D view.'
-  navigation.onFinishChange(() => app.updateNavigationMode())
+  navigation.onFinishChange(() => app?.updateNavigationMode())
 
   const projection = cameraFolder.add(settings, 'projectionMode', { Perspective: 'perspective', Orthographic: 'orthographic' }).name('Projection mode')
   projection.domElement.title = 'Set whether the 3D view is drawn with a perspective or an orthographic projection.'
-  projection.onFinishChange(() => app.updateProjectionMode())
+  projection.onFinishChange(() => app?.updateProjectionMode())
 
   option(
     cameraFolder,
@@ -98,20 +113,25 @@ export function initSettingsPanel (app: PrettyGCodeApp): GUI {
     'thickLines',
     'Thick lines',
     'Display lines with thickness, based on nozzle size.'
-  ).onFinishChange(() => app.rebuildGcodeModel())
+  ).onFinishChange(() => app?.rebuildGcodeModel())
 
   const highlightIntensity = gcodeModelFolder.add(settings, 'highlightIntensity', 0, 100, 1).name('Highlight layer')
   highlightIntensity.domElement.title = 'Set how strongly the topmost displayed layer is shaded.'
-  highlightIntensity.onChange(() => app.updateLayerHighlight())
+  highlightIntensity.onChange(() => app?.updateLayerHighlight())
 
   option(
     gcodeModelFolder,
     'showExcluded',
     'Excluded gcode',
     'Show gcode excluded by the Exclude Region and Cancel Object plugins, greyed out.'
-  ).onFinishChange(() => app.rebuildGcodeModel())
+  ).onFinishChange(() => app?.rebuildGcodeModel())
 
-  const modelColorsModal = initModelColorsModal(app, refreshResets)
+  const colorPresets: ColorPreset[] = JSON.parse(container.dataset.modelColorPresets ?? '[]')
+  const modelColorsModal = initModelColorsModal(settings, colorPresets, () => {
+    onChange?.()
+    app?.updateModelColors()
+    refreshResets()
+  })
   const customizeColors = gcodeModelFolder.add({ customize: () => modelColorsModal.open() }, 'customize').name('Customize colors…')
   customizeColors.domElement.title = 'Customize the colors used for the gcode model.'
 
@@ -163,30 +183,42 @@ export function initSettingsPanel (app: PrettyGCodeApp): GUI {
     'showMirror',
     'Mirror',
     'Show a reflection of the print on the bed.'
-  ).onFinishChange(() => app.rebuildGcodeModel())
+  ).onFinishChange(() => app?.rebuildGcodeModel())
 
   option(
     bedFolder,
     'showExclusionMarker',
     'Exclusion marker',
     'Show the markers of the excluded regions.'
-  ).onFinishChange(() => app.updateExclusionMarkersVisibility())
+  ).onFinishChange(() => app?.updateExclusionMarkersVisibility())
 
   bed.onFinishChange(() => {
-    app.updateBedVisibility()
-    app.rebuildGcodeModel()
+    app?.updateBedVisibility()
+    app?.rebuildGcodeModel()
     mirror.show(settings.showBed)
   })
   mirror.show(settings.showBed)
 
   /* ---- Reset buttons ---- */
 
-  const defaultOf = (controller: Controller): Settings[keyof Settings] => DEFAULTS[controller.property as keyof Settings]
-  const isDefault = (controller: Controller): boolean => controller.getValue() === defaultOf(controller)
-  const reset = (controller: Controller): void => { controller.load(defaultOf(controller)) }
-  const colorsAtDefault = (): boolean =>
-    settings.modelDefaultColor === DEFAULTS.modelDefaultColor &&
-    JSON.stringify(settings.modelColorRules) === JSON.stringify(DEFAULTS.modelColorRules)
+  /**
+   * Gets the setting a row edits
+   * @param controller - Controller of a setting row
+   * @returns Name of that setting
+   */
+  const keyOf = (controller: Controller): SettingKey => controller.property as SettingKey
+
+  /**
+   * Tells whether the model colors are at their default
+   * @returns True when both the color rules and the default color are unchanged
+   */
+  const colorsAtDefault = (): boolean => settings.isDefault('modelDefaultColor') && settings.isDefault('modelColorRules')
+
+  /**
+   * Builds a reset button
+   * @param title - Tooltip of the button
+   * @returns The button, with no click handler attached
+   */
   const makeResetButton = (title: string): HTMLButtonElement => {
     const button = document.createElement('button')
     button.type = 'button'
@@ -211,7 +243,11 @@ export function initSettingsPanel (app: PrettyGCodeApp): GUI {
   const resetEntries: ResetEntry[] = [
     ...gui.controllersRecursive()
       .filter((controller) => !customControllers.has(controller))
-      .map((controller) => ({ controller, atDefault: () => isDefault(controller), resetToDefault: () => reset(controller) })),
+      .map((controller) => ({
+        controller,
+        atDefault: () => settings.isDefault(keyOf(controller)),
+        resetToDefault: () => { controller.load(settings.defaultOf(keyOf(controller))) }
+      })),
     ...customResets
   ]
 
@@ -223,19 +259,24 @@ export function initSettingsPanel (app: PrettyGCodeApp): GUI {
     refreshers.push(() => { button.disabled = atDefault() })
   }
 
-  // Panel header: the title and a reset button for every setting, disabled while all are at their default
+  // Panel header has a "reset all settings" button, disabled while all are at their default
   const resetAll = makeResetButton('Reset all settings to their default values')
-  resetAll.id = 'pg-reset-all'
+  resetAll.classList.add('pg-reset-all')
   resetAll.addEventListener('click', () => resetEntries.forEach((entry) => entry.resetToDefault()))
-  const header = document.createElement('div')
-  header.id = 'pg-settings-header'
-  header.append('Settings', resetAll)
-  $('#pg-view-settings').append(header)
+  container.querySelector('.pg-view-settings-header')!.append(resetAll)
   refreshers.push(() => { resetAll.disabled = resetEntries.every((entry) => entry.atDefault()) })
 
+  container.append(gui.domElement)
   refreshResets()
 
   /* ---- Return ---- */
 
-  return gui
+  return {
+    refresh: () => {
+      gui.controllersRecursive().forEach((controller) => controller.updateDisplay())
+      updateNozzleControls()
+      mirror.show(settings.showBed)
+      refreshResets()
+    }
+  }
 }

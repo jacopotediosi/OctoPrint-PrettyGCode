@@ -162,54 +162,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     --pg-margin-top: calc(var(--pg-status-height) + var(--pg-stack-gap));
 }
 
-/* === Overlay windows === */
-.pg-maximized #state_wrapper,
-.pg-maximized #files_wrapper {
-    top: var(--pg-margin-top);
-    left: var(--pg-margin-left);
-    width: 300px;
-    max-height: calc(100vh - var(--pg-margin-top) - var(--pg-margin-bottom) - var(--pg-toggle-height) - var(--pg-stack-gap) - var(--pg-segment-lane));
-    box-sizing: border-box;
-    padding-top: var(--pg-window-header-height);
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    box-shadow: var(--pg-shadow);
-    background: var(--pg-window-bg);
-    z-index: var(--pg-z-top-windows);
-}
-.pg-maximized #files_wrapper {
-    max-width: 80%;
-}
-.pg-maximized #state_wrapper .accordion-toggle,
-.pg-maximized #files_wrapper .accordion-toggle {
-    display: none;
-}
-.pg-maximized #state_wrapper .accordion-body,
-.pg-maximized #files_wrapper .accordion-body {
-    height: auto !important;
-    overflow-y: auto !important;
-}
-.pg-maximized #state_wrapper .accordion-heading,
-.pg-maximized #files_wrapper .accordion-heading {
-    display: flow-root;
-}
-.pg-maximized #state_wrapper .accordion-heading-button > a,
-.pg-maximized #files_wrapper .accordion-heading-button > a {
-    color: var(--pg-window-text);
-}
-.pg-maximized #state_wrapper::after,
-.pg-maximized #files_wrapper::after {
-    position: absolute;
-    top: 0;
-    line-height: var(--pg-window-header-height);
-    font-weight: bold;
-    color: var(--pg-window-text);
-    pointer-events: none;
-}
-.pg-maximized #state_wrapper::after { content: "State"; right: 15px; }
-.pg-maximized #files_wrapper::after { content: "Files"; right: 15px; }
-/* View Settings (lil-gui host) */
+/* === View settings === */
 #pg-view-settings {
     position: absolute;
     right: 130px;
@@ -233,7 +186,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-maximized #pg-view-settings {
     z-index: var(--pg-z-top-windows);
 }
-#pg-view-settings .lil-gui {
+.pg-view-settings-panel .lil-gui {
     --font-size: 14px;
     --width: 300px;
     --name-width: 45%;
@@ -246,26 +199,26 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     --focus-color: rgba(0, 0, 0, 0.12);
     --color-input-min-width: 65px;
 }
-#pg-view-settings .lil-root > .lil-title {
+.pg-view-settings-panel .lil-root > .lil-title {
     display: none;
 }
-#pg-view-settings .lil-controller.lil-option {
+.pg-view-settings-panel .lil-controller.lil-option {
     position: relative;
 }
-#pg-view-settings .lil-controller.lil-option .lil-widget {
+.pg-view-settings-panel .lil-controller.lil-option .lil-widget {
     position: static;
 }
-#pg-view-settings .lil-controller.lil-option select {
+.pg-view-settings-panel .lil-controller.lil-option select {
     left: 0;
 }
-#pg-view-settings .lil-controller.lil-option .lil-display {
+.pg-view-settings-panel .lil-controller.lil-option .lil-display {
     flex-grow: 1;
 }
-#pg-view-settings .lil-controller.lil-boolean input[type="checkbox"] {
+.pg-view-settings-panel .lil-controller.lil-boolean input[type="checkbox"] {
     margin: 0;
 }
-#pg-view-settings .lil-controller.lil-number input,
-#pg-view-settings .lil-controller.lil-color input[type="text"] {
+.pg-view-settings-panel .lil-controller.lil-number input,
+.pg-view-settings-panel .lil-controller.lil-color input[type="text"] {
     height: var(--widget-height);
     margin-bottom: 0;
     border: 0;
@@ -274,21 +227,21 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     box-shadow: none;
     color: var(--text-color);
 }
-#pg-view-settings .lil-controller.lil-number .lil-fill {
+.pg-view-settings-panel .lil-controller.lil-number .lil-fill {
     background: var(--number-color);
 }
-#pg-view-settings .lil-controller.lil-number input:hover,
-#pg-view-settings .lil-controller.lil-color input[type="text"]:hover {
+.pg-view-settings-panel .lil-controller.lil-number input:hover,
+.pg-view-settings-panel .lil-controller.lil-color input[type="text"]:hover {
     background: var(--hover-color);
 }
-#pg-view-settings .lil-controller.lil-number input:active,
-#pg-view-settings .lil-controller.lil-number input:focus,
-#pg-view-settings .lil-controller.lil-color input[type="text"]:active,
-#pg-view-settings .lil-controller.lil-color input[type="text"]:focus {
+.pg-view-settings-panel .lil-controller.lil-number input:active,
+.pg-view-settings-panel .lil-controller.lil-number input:focus,
+.pg-view-settings-panel .lil-controller.lil-color input[type="text"]:active,
+.pg-view-settings-panel .lil-controller.lil-color input[type="text"]:focus {
     background: var(--focus-color);
 }
 /* Reset buttons */
-#pg-view-settings .pg-reset {
+.pg-view-settings-panel .pg-reset {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -300,14 +253,14 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     line-height: 1;
     cursor: pointer;
 }
-#pg-view-settings .pg-reset:hover:not(:disabled) {
+.pg-view-settings-panel .pg-reset:hover:not(:disabled) {
     background: rgba(128, 128, 128, 0.2);
 }
-#pg-view-settings .pg-reset:disabled {
+.pg-view-settings-panel .pg-reset:disabled {
     opacity: 0.3;
     cursor: default;
 }
-#pg-view-settings .lil-controller .pg-reset {
+.pg-view-settings-panel .lil-controller .pg-reset {
     position: relative;
     flex-shrink: 0;
     width: var(--widget-height);
@@ -315,57 +268,41 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     margin-left: var(--spacing);
     border-radius: var(--widget-border-radius);
 }
-#pg-settings-header {
-    position: absolute;
-    top: 0;
-    left: 15px;
-    height: var(--pg-window-header-height);
+.pg-view-settings-header {
     display: flex;
     align-items: center;
     gap: var(--pg-buttons-gap);
     font-weight: bold;
+}
+#pg-view-settings .pg-view-settings-header {
+    position: absolute;
+    top: 0;
+    left: 15px;
+    height: var(--pg-window-header-height);
     color: var(--pg-window-text);
 }
-#pg-reset-all {
+.pg-reset-all {
     width: var(--pg-window-header-height);
     height: var(--pg-window-header-height);
     border-radius: var(--pg-window-radius);
 }
-/* Bottom overlays (webcam & dashboard) commons */
-.pg-maximized #pg-webcam,
-.pg-maximized #tab_plugin_dashboard {
+#pg-view-settings .pg-view-settings-notice {
+    flex: none;
+    margin: 0;
+    padding: 0 15px 8px;
+    font-size: 12px;
+    line-height: 1.3;
+    color: var(--pg-window-text);
+}
+.pg-view-settings-defaults-link {
     display: block;
-    position: absolute;
-    bottom: calc(var(--pg-margin-bottom) + var(--pg-segment-lane));
-    box-shadow: var(--pg-shadow);
-    background: var(--pg-window-bg);
+}
+/* Default view settings (lil-gui host in the plugin settings tab) */
+#pg-default-view-settings > .lil-gui {
+    --width: 100%;
+    border: 1px solid rgba(128, 128, 128, 0.3);
     border-radius: var(--pg-window-radius);
-}
-/* Webcam overlay */
-#pg-webcam {
-    display: none;
-}
-.pg-maximized #pg-webcam {
-    right: calc(var(--pg-margin-right) + var(--pg-slider-lane));
-    z-index: var(--pg-z-webcam);
-}
-#pg-webcam #webcam_plugins_container {
-    min-height: 0;
-    margin-top: 0;
-    border-radius: var(--pg-window-radius);
-}
-/* Dashboard overlay */
-.pg-maximized #tab_plugin_dashboard {
-    left: var(--pg-margin-left);
-    z-index: var(--pg-z-dashboard);
-    transform: scale(var(--pg-dash-scale, 1));
-    transform-origin: bottom left;
-    box-shadow: 0 calc(var(--pg-shadow-offset) / var(--pg-dash-scale, 1)) calc(var(--pg-shadow-blur) / var(--pg-dash-scale, 1)) var(--pg-shadow-color);
-    border-radius: calc(var(--pg-window-radius) / var(--pg-dash-scale, 1));
-}
-.pg-maximized #tab_plugin_dashboard #fullWindowIconLink,
-.pg-maximized #tab_plugin_dashboard #dashboard_fullScreenIcon {
-    display: none;
+    overflow: hidden;
 }
 
 /* === Model colors modal === */
@@ -470,7 +407,92 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     margin-top: 12px;
 }
 
-/* === Resize handles === */
+/* === Top overlay windows === */
+.pg-maximized #state_wrapper,
+.pg-maximized #files_wrapper {
+    top: var(--pg-margin-top);
+    left: var(--pg-margin-left);
+    width: 300px;
+    max-height: calc(100vh - var(--pg-margin-top) - var(--pg-margin-bottom) - var(--pg-toggle-height) - var(--pg-stack-gap) - var(--pg-segment-lane));
+    box-sizing: border-box;
+    padding-top: var(--pg-window-header-height);
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--pg-shadow);
+    background: var(--pg-window-bg);
+    z-index: var(--pg-z-top-windows);
+}
+.pg-maximized #files_wrapper {
+    max-width: 80%;
+}
+.pg-maximized #state_wrapper .accordion-toggle,
+.pg-maximized #files_wrapper .accordion-toggle {
+    display: none;
+}
+.pg-maximized #state_wrapper .accordion-body,
+.pg-maximized #files_wrapper .accordion-body {
+    height: auto !important;
+    overflow-y: auto !important;
+}
+.pg-maximized #state_wrapper .accordion-heading,
+.pg-maximized #files_wrapper .accordion-heading {
+    display: flow-root;
+}
+.pg-maximized #state_wrapper .accordion-heading-button > a,
+.pg-maximized #files_wrapper .accordion-heading-button > a {
+    color: var(--pg-window-text);
+}
+.pg-maximized #state_wrapper::after,
+.pg-maximized #files_wrapper::after {
+    position: absolute;
+    top: 0;
+    line-height: var(--pg-window-header-height);
+    font-weight: bold;
+    color: var(--pg-window-text);
+    pointer-events: none;
+}
+.pg-maximized #state_wrapper::after { content: "State"; right: 15px; }
+.pg-maximized #files_wrapper::after { content: "Files"; right: 15px; }
+
+/* === Bottom overlay windows === */
+.pg-maximized #pg-webcam,
+.pg-maximized #tab_plugin_dashboard {
+    display: block;
+    position: absolute;
+    bottom: calc(var(--pg-margin-bottom) + var(--pg-segment-lane));
+    box-shadow: var(--pg-shadow);
+    background: var(--pg-window-bg);
+    border-radius: var(--pg-window-radius);
+}
+/* Webcam overlay */
+#pg-webcam {
+    display: none;
+}
+.pg-maximized #pg-webcam {
+    right: calc(var(--pg-margin-right) + var(--pg-slider-lane));
+    z-index: var(--pg-z-webcam);
+}
+#pg-webcam #webcam_plugins_container {
+    min-height: 0;
+    margin-top: 0;
+    border-radius: var(--pg-window-radius);
+}
+/* Dashboard overlay */
+.pg-maximized #tab_plugin_dashboard {
+    left: var(--pg-margin-left);
+    z-index: var(--pg-z-dashboard);
+    transform: scale(var(--pg-dash-scale, 1));
+    transform-origin: bottom left;
+    box-shadow: 0 calc(var(--pg-shadow-offset) / var(--pg-dash-scale, 1)) calc(var(--pg-shadow-blur) / var(--pg-dash-scale, 1)) var(--pg-shadow-color);
+    border-radius: calc(var(--pg-window-radius) / var(--pg-dash-scale, 1));
+}
+.pg-maximized #tab_plugin_dashboard #fullWindowIconLink,
+.pg-maximized #tab_plugin_dashboard #dashboard_fullScreenIcon {
+    display: none;
+}
+
+/* === Overlay windows resize handles === */
 .pg-resize-handle {
     display: none;
     position: absolute;
@@ -630,12 +652,13 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-overlay-message > .fa-solid {
     font-size: 32px;
 }
-#pg-large-file-confirmation span {
+#pg-large-file-confirmation > span {
     max-width: 400px;
 }
 
 /* === Dark mode === */
-.pg-dark {
+.pg-dark .pg-view,
+.pg-dark:has(.pg-maximized) {
     --pg-window-bg: rgba(34, 34, 34, 0.85);
     --pg-window-text: #ccc;
     --pg-shadow-color: rgba(0, 0, 0, 0.6);
@@ -688,95 +711,96 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-dark #pg-segment-slider-ui.slider-disabled .slider-handle {
     background-image: linear-gradient(to bottom, #555, #444);
 }
-.pg-dark #pg-view-settings .lil-gui {
+.pg-dark .pg-view .lil-gui,
+.pg-dark:has(.pg-maximized) .lil-gui {
     --title-background-color: rgba(255, 255, 255, 0.08);
     --widget-color: rgba(255, 255, 255, 0.1);
     --hover-color: rgba(255, 255, 255, 0.15);
     --focus-color: rgba(255, 255, 255, 0.22);
 }
-.pg-dark .pg-maximized #state_wrapper,
-.pg-dark .pg-maximized #files_wrapper {
+.pg-dark:has(.pg-maximized) #state_wrapper,
+.pg-dark:has(.pg-maximized) #files_wrapper {
     border-color: #444;
 }
-.pg-dark .pg-maximized #state_wrapper hr {
+.pg-dark:has(.pg-maximized) #state_wrapper hr {
     border-top-color: #444;
     border-bottom-color: transparent;
 }
-.pg-dark .pg-maximized #state_wrapper .progress,
-.pg-dark .pg-maximized #files_wrapper .progress {
+.pg-dark:has(.pg-maximized) #state_wrapper .progress,
+.pg-dark:has(.pg-maximized) #files_wrapper .progress {
     background-color: rgba(255, 255, 255, 0.12);
     background-image: none;
 }
-.pg-dark .pg-maximized #files .gcode_files .entry {
+.pg-dark:has(.pg-maximized) #files .gcode_files .entry {
     border-bottom-color: #444;
 }
-.pg-dark .pg-maximized #files .gcode_files .entry:hover {
+.pg-dark:has(.pg-maximized) #files .gcode_files .entry:hover {
     background-color: rgba(255, 255, 255, 0.08);
 }
 .pg-dark #pg-view-settings,
-.pg-dark #state_wrapper,
-.pg-dark #files_wrapper {
+.pg-dark:has(.pg-maximized) #state_wrapper,
+.pg-dark:has(.pg-maximized) #files_wrapper {
     color-scheme: dark;
 }
 
 /* === Dark mode: modals === */
-.pg-dark .modal-backdrop,
-.pg-dark .modal-backdrop.fade.in {
+.pg-dark:has(.pg-maximized) .modal-backdrop,
+.pg-dark:has(.pg-maximized) .modal-backdrop.fade.in {
     background: #000;
 }
-.pg-dark .modal {
+.pg-dark:has(.pg-maximized) .modal {
     color: #ccc;
     color-scheme: dark;
     background-color: #2a2a2a;
     border-color: rgba(255, 255, 255, 0.15);
     box-shadow: 0 3px 7px rgba(0, 0, 0, 0.6);
 }
-.pg-dark .modal-header {
+.pg-dark:has(.pg-maximized) .modal .modal-header {
     border-bottom-color: #444;
 }
-.pg-dark .modal-footer {
+.pg-dark:has(.pg-maximized) .modal .modal-footer {
     background-color: #222;
     border-top-color: #444;
     box-shadow: none;
 }
-.pg-dark .modal .close {
+.pg-dark:has(.pg-maximized) .modal .close {
     color: #ccc;
     text-shadow: none;
     opacity: 0.6;
 }
-.pg-dark .modal .close:hover {
+.pg-dark:has(.pg-maximized) .modal .close:hover {
     opacity: 1;
 }
-.pg-dark .modal hr {
+.pg-dark:has(.pg-maximized) .modal hr {
     border-top-color: #444;
     border-bottom-color: transparent;
 }
-.pg-dark .modal .help-block {
+.pg-dark:has(.pg-maximized) .modal .help-block {
     color: #bbb;
 }
-.pg-dark .modal a:not(.btn):not(.close),
+.pg-dark:has(.pg-maximized) .modal a:not(.btn):not(.close),
 .pg-dark .pg-overlay-message a {
     color: #4db3ff;
 }
-.pg-dark .modal input:not([type="color"]):not([type="checkbox"]):not([type="radio"]),
-.pg-dark .modal textarea,
-.pg-dark .modal select {
+.pg-dark:has(.pg-maximized) .modal input:not([type="color"]):not([type="checkbox"]):not([type="radio"]),
+.pg-dark:has(.pg-maximized) .modal textarea,
+.pg-dark:has(.pg-maximized) .modal select {
     color: #ddd;
     border-color: #1a1a1a;
     background-color: #333;
 }
-.pg-dark .modal input::placeholder,
-.pg-dark .modal textarea::placeholder {
+.pg-dark:has(.pg-maximized) .modal input::placeholder,
+.pg-dark:has(.pg-maximized) .modal textarea::placeholder {
     color: #888;
 }
-.pg-dark .modal .btn:not(.btn-primary):not(.btn-danger):not(.btn-success):not(.btn-info):not(.btn-warning):not(.btn-inverse):not(.btn-link) {
+.pg-dark:has(.pg-maximized) .modal .btn:not(.btn-primary):not(.btn-danger):not(.btn-success):not(.btn-info):not(.btn-warning):not(.btn-inverse):not(.btn-link) {
     color: #ddd;
     text-shadow: none;
     border-color: #1a1a1a;
     background-color: #333;
     background-image: linear-gradient(to bottom, #3c3c3c, #2b2b2b);
 }
-.pg-dark .modal .btn:not(.btn-primary):not(.btn-danger):not(.btn-success):not(.btn-info):not(.btn-warning):not(.btn-inverse):not(.btn-link):hover {
+.pg-dark:has(.pg-maximized) .modal .btn:not(.btn-primary):not(.btn-danger):not(.btn-success):not(.btn-info):not(.btn-warning):not(.btn-inverse):not(.btn-link):hover {
     color: #fff;
     background-color: #2b2b2b;
     background-image: none;

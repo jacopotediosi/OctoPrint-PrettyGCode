@@ -1,7 +1,7 @@
-import { type ColorRule, COLOR_PRESETS, DEFAULT_COLOR, DEFAULT_COLOR_RULES, cloneColorRules, presetColorRules } from '../gcode/model-colors'
-import type { PrettyGCodeApp } from '../app'
+import { type ColorPreset, type ColorRule, cloneColorRules } from '../gcode/model-colors'
+import type { Settings } from '../settings'
 
-/** Handle of the model colors modal */
+/** Handles of the model colors modal */
 export interface ModelColorsModal {
   /** Opens the modal */
   open: () => void
@@ -65,13 +65,12 @@ const ROW_MARKUP = `
 
 /**
  * Builds the modal to customize the model colors
- * @param app - Application instance
+ * @param settings - Settings holding the model colors to customize
+ * @param colorPresets - Color presets offered for loading into the settings
  * @param onChange - Callback called after a color change
  * @returns A handle to open and reset the modal
  */
-export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void): ModelColorsModal {
-  const settings = app.settings
-
+export function initModelColorsModal (settings: Settings, colorPresets: ColorPreset[], onChange: () => void): ModelColorsModal {
   const modal = htmlStringToElement(MODAL_MARKUP)
 
   const resetButton = modal.querySelector<HTMLButtonElement>('.pg-modal-color-reset')!
@@ -88,19 +87,10 @@ export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void)
 
   /* ---- Preset & reset controls ---- */
 
-  /**
-   * Tells whether the current colors equal the given ones
-   * @param defaultColor - Default color to compare
-   * @param rules - Color rules to compare
-   * @returns True when both the default color and the rules match
-   */
-  const colorsMatch = (defaultColor: string, rules: ColorRule[]): boolean =>
-    settings.modelDefaultColor === defaultColor &&
-    JSON.stringify(settings.modelColorRules) === JSON.stringify(rules)
-
   /** Index of the preset matching the current colors, or -1 when they match none */
   const currentPresetIndex = (): number =>
-    COLOR_PRESETS.findIndex((preset) => colorsMatch(preset.defaultColor, presetColorRules(preset)))
+    colorPresets.findIndex((preset) =>
+      settings.matches('modelDefaultColor', preset.defaultColor) && settings.matches('modelColorRules', preset.colorRules))
 
   /** Enables preset Load button only when the selected option is not the current preset */
   const refreshPresetLoadButton = (): void => {
@@ -111,11 +101,11 @@ export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void)
   /** Refreshes controls to reflect the current colors */
   const refreshControls = (): void => {
     // Reset button
-    resetButton.disabled = colorsMatch(DEFAULT_COLOR, DEFAULT_COLOR_RULES)
+    resetButton.disabled = settings.isDefault('modelDefaultColor') && settings.isDefault('modelColorRules')
 
     // Preset select
     const current = currentPresetIndex()
-    const options = COLOR_PRESETS.map((preset, i) => new Option(preset.name, String(i)))
+    const options = colorPresets.map((preset, i) => new Option(preset.name, String(i)))
     if (current < 0) options.unshift(new Option('Custom', String(current)))
     presetSelect.replaceChildren(...options)
     presetSelect.value = String(current)
@@ -126,7 +116,6 @@ export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void)
 
   /** Applies the current colors */
   const applyChange = (): void => {
-    app.updateModelColors()
     onChange()
     refreshControls()
   }
@@ -225,13 +214,13 @@ export function initModelColorsModal (app: PrettyGCodeApp, onChange: () => void)
   const open = (): void => { fillInputs(); refreshControls(); $(modal).modal('show') }
 
   /** Reset to the default colors */
-  const resetToDefault = (): void => replaceColors(DEFAULT_COLOR, cloneColorRules(DEFAULT_COLOR_RULES))
+  const resetToDefault = (): void => replaceColors(settings.defaultOf('modelDefaultColor'), cloneColorRules(settings.defaultOf('modelColorRules')))
 
   // Control listeners
   presetSelect.addEventListener('change', refreshPresetLoadButton)
   presetLoadButton.addEventListener('click', () => {
-    const preset = COLOR_PRESETS[Number(presetSelect.value)]
-    replaceColors(preset.defaultColor, presetColorRules(preset))
+    const preset = colorPresets[Number(presetSelect.value)]
+    replaceColors(preset.defaultColor, cloneColorRules(preset.colorRules))
   })
   defaultColorInput.addEventListener('change', commit)
   resetButton.addEventListener('click', resetToDefault)

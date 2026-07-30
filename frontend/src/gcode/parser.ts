@@ -1,5 +1,5 @@
 import { arcOffsetFromRadius, interpolateArc } from './arc-interpolation'
-import { type ParserColors, DEFAULT_COLOR_RULES, DEFAULT_COLOR } from './model-colors'
+import type { ParserColors } from './model-colors'
 
 /* ---- Parse result ---- */
 
@@ -286,11 +286,11 @@ export class GCodeParser {
   private extrusionRelative = false
 
   /**
-   * @param objectTag - Tag of the "@<tag> <name>" object markers
    * @param colors - Colors the parser paints segments with
+   * @param objectTag - Tag of the "@<tag> <name>" object markers
    * @param g90InfluencesExtruder - Whether G90/G91 also switch the extrusion mode
    */
-  constructor (objectTag = 'Object', colors: ParserColors = { colorRules: DEFAULT_COLOR_RULES, defaultColor: DEFAULT_COLOR }, g90InfluencesExtruder = false) {
+  constructor (colors: ParserColors, objectTag = 'Object', g90InfluencesExtruder = false) {
     this.objectTag = objectTag.toLowerCase()
     this.g90InfluencesExtruder = g90InfluencesExtruder
 

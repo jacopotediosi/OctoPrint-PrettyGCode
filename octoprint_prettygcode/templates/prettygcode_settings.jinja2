@@ -1,10 +1,11 @@
 {# === Settings header === #}
 <h3>
     PrettyGCode plugin settings
-    <small>Version: {{ plugin_prettygcode_version }}</small>
+    <small>Version: {{ plugin_prettygcode_plugin_version }}</small>
 </h3>
+{# === Large file confirmation === #}
+<h4>Large file confirmation</h4>
 <form class="form-horizontal" onsubmit="return false;">
-    {# === Large file threshold === #}
     <div class="control-group">
         <label class="control-label" for="settings-prettygcode-largeFileThresholdMb">Large file threshold</label>
         <div class="controls">
@@ -18,3 +19,11 @@
         </div>
     </div>
 </form>
+{# === Default view settings === #}
+<div id="pg-default-view-settings"
+     class="pg-view-settings-panel"
+     data-default-default-view-settings='{{ plugin_prettygcode_default_default_view_settings|tojson }}'
+     data-model-color-presets='{{ plugin_prettygcode_model_color_presets|tojson }}'>
+    <h4 class="pg-view-settings-header">Default view settings</h4>
+    <p class="help-block">The settings below are used by every browser where you have not overridden them.</p>
+</div>

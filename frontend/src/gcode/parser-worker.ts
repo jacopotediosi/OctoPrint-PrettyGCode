@@ -33,7 +33,7 @@ declare const self: {
  * @returns The parsed gcode
  */
 async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode> {
-  const parser = new GCodeParser(request.objectTag, request.colors, request.g90InfluencesExtruder)
+  const parser = new GCodeParser(request.colors, request.objectTag, request.g90InfluencesExtruder)
 
   const response = await fetch(request.fileUrl)
   if (response.body) {
