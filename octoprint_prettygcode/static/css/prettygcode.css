@@ -241,22 +241,25 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     background: var(--focus-color);
 }
 /* Reset buttons */
-.pg-view-settings-panel .pg-reset {
+.pg-reset {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    width: 24px;
+    height: 24px;
     padding: 0;
     border: 0;
+    border-radius: var(--pg-window-radius);
     background: transparent;
     color: var(--pg-window-text);
     font-size: 13px;
     line-height: 1;
     cursor: pointer;
 }
-.pg-view-settings-panel .pg-reset:hover:not(:disabled) {
+.pg-reset:hover:not(:disabled) {
     background: rgba(128, 128, 128, 0.2);
 }
-.pg-view-settings-panel .pg-reset:disabled {
+.pg-reset:disabled {
     opacity: 0.3;
     cursor: default;
 }
@@ -284,7 +287,6 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-reset-all {
     width: var(--pg-window-header-height);
     height: var(--pg-window-header-height);
-    border-radius: var(--pg-window-radius);
 }
 #pg-view-settings .pg-view-settings-notice {
     flex: none;

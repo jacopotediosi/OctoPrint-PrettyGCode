@@ -216,7 +216,7 @@ class PrettyGCodePlugin(
 
     def get_template_vars(self):
         return {
-            "default_default_view_settings": DEFAULT_DEFAULT_VIEW_SETTINGS,
+            "default_settings": self.get_settings_defaults(),
             "github_url": GITHUB_URL,
             "model_color_presets": MODEL_COLOR_PRESETS,
             "plugin_version": self._plugin_version,
