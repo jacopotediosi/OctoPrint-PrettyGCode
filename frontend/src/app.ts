@@ -3,18 +3,18 @@ import { Viewer } from './viewer/viewer'
 import { loadGcodeFile, cancelGcodeLoad } from './gcode/loader'
 import { PrintTimeline } from './gcode/print-timeline'
 import { PrintExclusions } from './gcode/exclusions'
-import { GCodeModel, DEFAULT_NOZZLE_DIAMETER } from './gcode/gcode-model'
-import { initViewSettingsPanel, type ViewSettingsPanel } from './ui/view-settings-panel'
-import { saveDefaultViewSettings, updateDefaultViewSettingsPanel } from './ui/default-view-settings-panel'
-import { initOverlayWindows } from './ui/overlay-windows'
-import { updateDashboardOverlay } from './ui/dashboard'
-import { updateWebcamOverlay } from './ui/webcam'
-import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue, applyLayerSliderVisibility } from './ui/layer-slider'
-import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue, applySegmentSliderVisibility } from './ui/segment-slider'
+import { GcodeModel } from './gcode/gcode-model'
+import { initViewSettingsPanel, type ViewSettingsPanel } from './ui/view-settings/view-settings-panel'
+import { saveDefaultViewSettings, updateDefaultViewSettingsPanel } from './ui/view-settings/default-view-settings-panel'
+import { initOverlayWindows } from './ui/overlays/overlay-windows'
+import { updateDashboardOverlay } from './ui/overlays/dashboard'
+import { updateWebcamOverlay } from './ui/overlays/webcam'
+import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue, applyLayerSliderVisibility } from './ui/sliders/layer-slider'
+import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue, applySegmentSliderVisibility } from './ui/sliders/segment-slider'
 import { initToggleButtons } from './ui/toggle-buttons'
 import { setStatusBarText, applyStatusBarVisibility } from './ui/status-bar'
-import { showLoadingScreen, hideLoadingScreen } from './ui/loading-screen'
-import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/large-file-confirmation'
+import { showLoadingScreen, hideLoadingScreen } from './ui/notices/loading-screen'
+import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/notices/large-file-confirmation'
 import type { ParsedGcode } from './gcode/parser'
 import type { ParserColors } from './gcode/model-colors'
 import type { BedVolume } from './viewer/bed'
@@ -40,6 +40,14 @@ const PG_TAB = '#tab_plugin_prettygcode'
 /** Selector of the plugin settings tab */
 const PG_SETTINGS_TAB = '#settings_plugin_prettygcode'
 
+/** Nozzle diameter in mm assumed when the printer profile does not state one */
+const DEFAULT_NOZZLE_DIAMETER_MM = 0.4
+
+/** Bed width, depth and height in mm assumed until the printer profile is read */
+const DEFAULT_BED_SIZE_MM = 200
+/** Bed origin assumed until the printer profile is read */
+const DEFAULT_BED_ORIGIN = 'lowerleft'
+
 /** Main plugin container, orchestrating all its components */
 export class PrettyGCodeApp {
   /** OctoPrint printer profiles view model */
@@ -63,7 +71,7 @@ export class PrettyGCodeApp {
   /** Print timeline of the loaded gcode */
   private readonly printTimeline = new PrintTimeline(this.exclusions)
   /** The rendered gcode model */
-  private readonly gcodeModel = new GCodeModel(this.settings, this.printTimeline, this.exclusions, this.viewer.mirrorBoundsPlanes)
+  private readonly gcodeModel = new GcodeModel(this.settings, () => this.nozzleDiameter, this.printTimeline, this.exclusions, this.viewer.mirrorBoundsPlanes)
 
   /** Parsed gcode of the currently loaded job */
   private parsedGcode: ParsedGcode | null = null
@@ -71,10 +79,10 @@ export class PrettyGCodeApp {
   private parsedColors: ParserColors | null = null
 
   /** Print bed geometry */
-  private bedVolume: BedVolume = { depth: 200, height: 200, origin: 'lowerleft', width: 200 }
+  private bedVolume: BedVolume = { depth: DEFAULT_BED_SIZE_MM, height: DEFAULT_BED_SIZE_MM, origin: DEFAULT_BED_ORIGIN, width: DEFAULT_BED_SIZE_MM }
 
-  /** Nozzle diameter from the active printer profile */
-  private nozzleDiameter: number | null = null
+  /** Nozzle diameter in mm from the active printer profile */
+  private profileNozzleDiameter = DEFAULT_NOZZLE_DIAMETER_MM
 
   /** Server path of the currently loaded job */
   private currentJobPath = ''
@@ -122,16 +130,9 @@ export class PrettyGCodeApp {
         // Load settings, layered over the defaults configured on the server
         this.settings.load(this.defaultViewSettings())
 
-        // Bed geometry and nozzle size, kept in sync with the active printer profile
-        this.updateBedVolume()
-        this.updateNozzleDiameter()
-        this.printerProfilesVM.currentProfileData.subscribe(() => {
-          this.updateBedVolume()
-          this.updateNozzleDiameter()
-          this.updateLineWidth()
-          this.viewer.updateBedMesh()
-          this.viewer.resetCameraTarget()
-        })
+        // Printer profile, synced now and on every change
+        this.updatePrinterProfile()
+        this.printerProfilesVM.currentProfileData.subscribe(() => this.updatePrinterProfile())
 
         // 3D view and gcode
         this.viewer.init()
@@ -289,7 +290,6 @@ export class PrettyGCodeApp {
       // Index the timeline and build the model
       this.printTimeline.index(this.parsedGcode.layers)
       this.gcodeModel.build(this.parsedGcode.layers)
-      this.updateLineWidth()
 
       // Apply the gcode bounds
       this.viewer.applyGcodeBounds(this.parsedGcode.bounds)
@@ -318,13 +318,6 @@ export class PrettyGCodeApp {
     this.gcodeModel.build([])
     updateLayerSliderMax(this)
     updateSegmentSliderMax(this)
-    this.viewer.requestRender()
-  }
-
-  /** Updates the drawn line thickness to the current nozzle diameter */
-  private updateLineWidth (): void {
-    // The slicer's nozzle diameter wins over the printer profile
-    this.gcodeModel.applyLineWidth(this.parsedGcode?.slicerNozzleDiameter ?? this.nozzleDiameter)
     this.viewer.requestRender()
   }
 
@@ -379,8 +372,7 @@ export class PrettyGCodeApp {
     // Highlight the revealed layer
     if (revealedLayer != null) this.gcodeModel.highlightLayer(revealedLayer)
 
-    const nozzleDiameter = this.parsedGcode?.slicerNozzleDiameter ?? this.nozzleDiameter ?? DEFAULT_NOZZLE_DIAMETER
-    return { needRender, nozzlePosition, nozzleDiameter }
+    return { needRender, nozzlePosition, nozzleDiameter: this.nozzleDiameter }
   }
 
   /* ---- UI events ---- */
@@ -474,17 +466,34 @@ export class PrettyGCodeApp {
      */
     const anyOf = (...names: SettingKey[]): boolean => names.some((name) => toApply.has(name))
 
-    const rebuilding = anyOf('modelColorRules', 'modelDefaultColor') && this.updateModelColors()
-    if (!rebuilding && anyOf('thickLines', 'showExcluded', 'showBed', 'showMirror')) this.rebuildGcodeModel()
+    const mustReload = anyOf('modelColorRules', 'modelDefaultColor') &&
+      (
+        this.parsedColors == null ||
+        !this.settings.matches('modelColorRules', this.parsedColors.colorRules) ||
+        !this.settings.matches('modelDefaultColor', this.parsedColors.defaultColor)
+      )
+    // Model color changes require a reload, which rebuilds the model on its own
+    if (mustReload) this.loadGcode(this.currentJobPath, true)
+    else if (anyOf('thickLines', 'showExcluded', 'showBed', 'showMirror')) {
+      this.gcodeModel.rebuild()
+      this.viewer.requestRender()
+    }
 
-    if (anyOf('darkMode')) this.updateDarkMode()
-    if (anyOf('antialias')) this.updateAntialias()
+    if (anyOf('darkMode')) {
+      $('html').toggleClass('pg-dark', this.settings.darkMode)
+      this.viewer.applyBackground(this.settings.darkMode)
+      this.viewer.updateBedMesh()
+    }
+    if (anyOf('antialias')) this.viewer.applyAntialias(this.settings.antialias)
 
-    if (anyOf('navigationMode')) this.updateNavigationMode()
-    if (anyOf('projectionMode')) this.updateProjectionMode()
+    if (anyOf('navigationMode')) this.viewer.applyNavigationMode(this.settings.navigationMode)
+    if (anyOf('projectionMode')) this.viewer.applyProjectionMode(this.settings.projectionMode)
 
-    if (anyOf('showBed')) this.updateBedVisibility()
-    if (anyOf('showExclusionMarker')) this.updateExclusionMarkersVisibility()
+    if (anyOf('showBed')) this.viewer.applyBedVisibility(this.settings.showBed)
+    if (anyOf('showExclusionMarker')) {
+      this.exclusions.regionMarkersGroup.visible = this.settings.showExclusionMarker
+      this.viewer.requestRender()
+    }
 
     if (anyOf('highlightIntensity')) this.updateLayerHighlight()
 
@@ -503,60 +512,9 @@ export class PrettyGCodeApp {
     ) this.updateWindowStates()
   }
 
-  /** (Re)applies the navigation mode setting to the 3D view */
-  updateNavigationMode (): void {
-    this.viewer.applyNavigationMode(this.settings.navigationMode)
-  }
-
-  /** (Re)applies the projection mode setting to the 3D view */
-  updateProjectionMode (): void {
-    this.viewer.applyProjectionMode(this.settings.projectionMode)
-  }
-
-  /** (Re)applies the dark mode setting */
-  updateDarkMode (): void {
-    $('html').toggleClass('pg-dark', this.settings.darkMode)
-    this.viewer.applyBackground(this.settings.darkMode)
-    this.viewer.updateBedMesh()
-  }
-
-  /** (Re)applies the antialias setting to the 3D view */
-  updateAntialias (): void {
-    this.viewer.applyAntialias(this.settings.antialias)
-  }
-
   /** (Re)applies the layer highlight setting to the displayed layer */
-  updateLayerHighlight (): void {
+  private updateLayerHighlight (): void {
     this.gcodeModel.highlightLayer(this.currentLayerNumber)
-    this.viewer.requestRender()
-  }
-
-  /** Rebuilds the displayed gcode model to reflect the current settings */
-  rebuildGcodeModel (): void {
-    this.gcodeModel.rebuild()
-    this.viewer.requestRender()
-  }
-
-  /**
-   * (Re)applies the model color settings
-   * @returns True when the model is being rebuilt
-   */
-  updateModelColors (): boolean {
-    const parsed = this.parsedColors
-    if (parsed && this.settings.matches('modelColorRules', parsed.colorRules) && this.settings.matches('modelDefaultColor', parsed.defaultColor)) return false
-
-    this.loadGcode(this.currentJobPath, true)
-    return true
-  }
-
-  /** (Re)applies the show bed setting to the 3D view */
-  updateBedVisibility (): void {
-    this.viewer.applyBedVisibility(this.settings.showBed)
-  }
-
-  /** (Re)applies the show exclusion markers setting to the 3D view */
-  updateExclusionMarkersVisibility (): void {
-    this.exclusions.regionMarkersGroup.visible = this.settings.showExclusionMarker
     this.viewer.requestRender()
   }
 
@@ -578,11 +536,27 @@ export class PrettyGCodeApp {
 
   /* ---- Printer profile ---- */
 
+  /** Nozzle diameter in mm the print is drawn with */
+  private get nozzleDiameter (): number {
+    return this.parsedGcode?.slicerNozzleDiameter ?? this.profileNozzleDiameter
+  }
+
+  /** Syncs the app with the active printer profile */
+  private updatePrinterProfile (): void {
+    this.updateBedVolume()
+    this.updateProfileNozzleDiameter()
+    this.gcodeModel.updateLineWidth()
+    this.viewer.updateBedMesh()
+    this.viewer.resetCameraTarget()
+    this.viewer.requestRender()
+  }
+
   /** Refreshes the nozzle diameter from the active printer profile */
-  private updateNozzleDiameter (): void {
+  private updateProfileNozzleDiameter (): void {
     const currentProfileData = this.printerProfilesVM.currentProfileData()
     const extruder = currentProfileData && currentProfileData.extruder
-    this.nozzleDiameter = extruder && typeof extruder.nozzleDiameter === 'function' ? extruder.nozzleDiameter() : null
+    const extruderNozzleDiameter = extruder && typeof extruder.nozzleDiameter === 'function' ? extruder.nozzleDiameter() : null
+    this.profileNozzleDiameter = extruderNozzleDiameter ?? DEFAULT_NOZZLE_DIAMETER_MM
   }
 
   /** Refreshes the print bed geometry from the active printer profile */

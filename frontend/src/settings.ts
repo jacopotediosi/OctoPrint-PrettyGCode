@@ -35,7 +35,7 @@ export class Settings {
   /** Whether to auto-orbit the camera when idle */
   declare orbitWhenIdle: boolean
 
-  /* ---- GCode model ---- */
+  /* ---- Gcode model ---- */
 
   /** Whether to draw the lines with their real thickness */
   declare thickLines: boolean

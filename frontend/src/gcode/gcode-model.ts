@@ -1,11 +1,11 @@
 import * as THREE from '../three-exports'
+import { isThickLine, isThickMaterial, makeThickMaterial, makeThinMaterial } from './line-materials'
+import { TipLine } from './tip-line'
+import type { GcodeLine, GcodeLineMaterial } from './line-materials'
 import type { Settings } from '../settings'
 import type { Layer } from './parser'
 import type { PrintExclusions } from './exclusions'
 import type { PrintTimeline, TimelineSpot } from './print-timeline'
-
-/** A layer's rendered line object */
-type LayerLine = THREE.LineSegments2 | THREE.LineSegments
 
 /** Metadata a rendered layer part carries */
 interface LayerPartMetadata {
@@ -31,105 +31,20 @@ const LAYER_PREFIX = 'layer#'
  * @param child - Scene object to test
  * @returns True for layer line objects
  */
-const isLayerObject = (child: THREE.Object3D): child is LayerLine => child.name.startsWith(LAYER_PREFIX)
+const isLayerObject = (child: THREE.Object3D): child is GcodeLine => child.name.startsWith(LAYER_PREFIX)
 
 /**
  * Reads the metadata a layer line object carries
  * @param line - Layer line object
  * @returns Its metadata
  */
-const layerPartMetadata = (line: LayerLine): LayerPartMetadata => line.userData as LayerPartMetadata
+const layerPartMetadata = (line: GcodeLine): LayerPartMetadata => line.userData as LayerPartMetadata
 
-/** Nozzle diameter in mm assumed when none is known */
-export const DEFAULT_NOZZLE_DIAMETER = 0.4
 /** Oversize factor of the drawn lines, to avoid gaps */
 const LINE_THICKNESS_FACTOR = 1.1
 
 /** Brightness the mirror multiplies the model colors by */
 const MIRROR_BRIGHTNESS = 0.5
-
-/**
- * Makes the material for thin gcode lines
- * @param clippingPlanes - Clipping planes to apply, if any
- * @returns The new material
- */
-const makeThinMaterial = (clippingPlanes: THREE.Plane[] | null = null): THREE.LineBasicMaterial => new THREE.LineBasicMaterial({ vertexColors: true, clippingPlanes })
-
-/**
- * Fixes the thick-line shaders: in orthographic view and
- * very close up the lines under the top layers show through them
- * @param parameters - WebGL program parameters holding the shader sources
- */
-const patchThickMaterialShaders = (parameters: THREE.WebGLProgramParametersWithUniforms): void => {
-  const fixes: Array<{ shader: 'vertexShader' | 'fragmentShader', from: string, to: string }> = [
-    // Likely a three.js bug: it builds the flat quads that render each line facing the camera
-    // position, assuming a perspective camera. An orthographic camera looks along a fixed axis
-    // regardless of its position, so the quads come out misrotated and tilted views break the
-    // lines into stripes exposing the layers beneath: orient the quads along the orthographic
-    // view axis instead
-    {
-      shader: 'vertexShader',
-      from: 'vec3 tmpFwd = normalize( mix( start.xyz, end.xyz, 0.5 ) );',
-      to: 'vec3 tmpFwd = perspective ? normalize( mix( start.xyz, end.xyz, 0.5 ) ) : vec3( 0.0, 0.0, - 1.0 );'
-    },
-    // three.js pins each quad's depth to its line center to blend the joints between segments.
-    // The quads are inflated half a linewidth towards the camera, and keeping their real depth
-    // seals the small gaps between adjacent lines: perspective view already works that way, since
-    // the logarithmic depth buffer recomputes the pinned depths, but in orthographic view the
-    // pinning would survive and let the layers beneath show through the gaps at tilted angles
-    {
-      shader: 'vertexShader',
-      from: 'clip.z = clipPose.z * clip.w;',
-      to: 'if ( perspective ) clip.z = clipPose.z * clip.w;'
-    },
-    // The camera type checks below need the projection matrix, which three.js only hands to the
-    // vertex shader: declare it in the fragment shader too
-    {
-      shader: 'fragmentShader',
-      from: '#include <logdepthbuf_pars_fragment>',
-      to: '#include <logdepthbuf_pars_fragment>\nuniform mat4 projectionMatrix;'
-    },
-    // Likely a three.js bug too: to make the flat quads look like round lines, it discards the
-    // pixels farther than half a linewidth from the view ray, building every ray out of the
-    // camera position as a perspective camera would. Orthographic view rays are parallel instead,
-    // and the fanned-out rays keep the wrong pixels, leaving stray pieces of the lines beneath
-    // floating over the surface
-    {
-      shader: 'fragmentShader',
-      from: 'vec3 rayEnd = normalize( worldPos.xyz ) * 1e5;',
-      to: 'bool perspective = ( projectionMatrix[ 2 ][ 3 ] == - 1.0 );\n' +
-        'vec3 rayOrigin = perspective ? vec3( 0.0 ) : vec3( worldPos.xy, 1e5 );\n' +
-        'vec3 rayEnd = perspective ? normalize( worldPos.xyz ) * 1e5 : vec3( worldPos.xy, - 1e5 );'
-    },
-    // Hand the ray start above to the distance test, which assumed all rays start at the camera
-    {
-      shader: 'fragmentShader',
-      from: 'closestLineToLine( worldStart, worldEnd, vec3( 0.0, 0.0, 0.0 ), rayEnd )',
-      to: 'closestLineToLine( worldStart, worldEnd, rayOrigin, rayEnd )'
-    },
-    // Locate the nearest ray point from the ray start too, now that it is not the camera position
-    {
-      shader: 'fragmentShader',
-      from: 'vec3 p2 = rayEnd * params.y;',
-      to: 'vec3 p2 = mix( rayOrigin, rayEnd, params.y );'
-    }
-  ]
-  for (const { shader, from, to } of fixes) {
-    if (!parameters[shader].includes(from)) throw new Error(`Thick-line shader code to fix not found: "${from}"`)
-    parameters[shader] = parameters[shader].replace(from, to)
-  }
-}
-
-/**
- * Makes the material for thick gcode lines
- * @param clippingPlanes - Clipping planes to apply, if any
- * @returns The new material
- */
-const makeThickMaterial = (clippingPlanes: THREE.Plane[] | null = null): THREE.LineMaterial => {
-  const material = new THREE.LineMaterial({ worldUnits: true, linewidth: DEFAULT_NOZZLE_DIAMETER * LINE_THICKNESS_FACTOR, vertexColors: true, clippingPlanes })
-  material.onBeforeCompile = patchThickMaterialShaders
-  return material
-}
 
 /** A subset of a layer's segments */
 class LayerPart {
@@ -162,7 +77,7 @@ class LayerPart {
 }
 
 /** The rendered gcode model, made of per-layer line objects */
-export class GCodeModel {
+export class GcodeModel {
   /** Group holding the gcode model lines */
   readonly linesGroup = new THREE.Group()
 
@@ -179,7 +94,7 @@ export class GCodeModel {
   private highlightedLayer = -1
 
   /** The growing tip drawn along the segment the nozzle is currently laying down */
-  private tipLine: LayerLine | null = null
+  private readonly tipLine: TipLine
 
   /** Material for thin lines */
   private readonly thinMaterial = makeThinMaterial()
@@ -198,6 +113,9 @@ export class GCodeModel {
   /** Plugin frontend settings */
   private readonly settings: Settings
 
+  /** Getter of the current nozzle diameter in mm */
+  private readonly getNozzleDiameter: () => number
+
   /** Print timeline of the loaded gcode */
   private readonly timeline: PrintTimeline
 
@@ -206,12 +124,14 @@ export class GCodeModel {
 
   /**
    * @param settings - Plugin frontend settings
+   * @param getNozzleDiameter - Getter of the current nozzle diameter in mm
    * @param timeline - Print timeline of the loaded gcode
    * @param exclusions - Print exclusions of the loaded gcode
    * @param mirrorBoundsPlanes - Planes clipping the mirror to the bed
    */
-  constructor (settings: Settings, timeline: PrintTimeline, exclusions: PrintExclusions, mirrorBoundsPlanes: THREE.Plane[]) {
+  constructor (settings: Settings, getNozzleDiameter: () => number, timeline: PrintTimeline, exclusions: PrintExclusions, mirrorBoundsPlanes: THREE.Plane[]) {
     this.settings = settings
+    this.getNozzleDiameter = getNozzleDiameter
     this.timeline = timeline
     this.exclusions = exclusions
 
@@ -230,6 +150,29 @@ export class GCodeModel {
     this.mirrorGroup.matrixAutoUpdate = false
     this.mirrorGroup.updateMatrix()
     this.linesGroup.add(this.mirrorGroup)
+
+    this.tipLine = new TipLine(timeline, this.linesGroup)
+  }
+
+  /* ---- Materials ---- */
+
+  /** Material the layers are drawn with */
+  private get defaultMaterial (): GcodeLineMaterial {
+    return this.settings.thickLines ? this.thickMaterial : this.thinMaterial
+  }
+
+  /** Material the highlighted layer is drawn with */
+  private get highlightMaterial (): GcodeLineMaterial {
+    return this.settings.thickLines ? this.highlightThickMaterial : this.highlightThinMaterial
+  }
+
+  /** Refreshes the drawn line thickness from the nozzle size */
+  updateLineWidth (): void {
+    const lineWidth = this.getNozzleDiameter() * LINE_THICKNESS_FACTOR
+
+    this.thickMaterial.linewidth = lineWidth
+    this.mirrorThickMaterial.linewidth = lineWidth
+    this.highlightThickMaterial.linewidth = lineWidth
   }
 
   /* ---- Object building ---- */
@@ -249,11 +192,13 @@ export class GCodeModel {
     this.revealedIndex = -1
     this.highlightedLayer = -1
 
+    this.updateLineWidth()
+
     for (const { layerNumber, globalBase } of this.timeline.drawnLayers) {
       this.addLayerLines(layers[layerNumber - 1], layerNumber, globalBase)
     }
 
-    this.buildTipLine()
+    this.tipLine.build(this.highlightMaterial)
   }
 
   /** Rebuilds the model from the last given layers, e.g. after a settings change */
@@ -268,16 +213,16 @@ export class GCodeModel {
    * @param material - Material to render with
    * @returns The new line object
    */
-  private makeLine (vertices: Float32Array, colors: Uint8ClampedArray, material: THREE.LineMaterial | THREE.LineBasicMaterial): LayerLine {
-    let line: LayerLine
-    if (this.settings.thickLines) {
+  private makeLine (vertices: Float32Array, colors: Uint8ClampedArray, material: GcodeLineMaterial): GcodeLine {
+    let line: GcodeLine
+    if (isThickMaterial(material)) {
       // Thick lines
       const geometry = new THREE.LineSegmentsGeometry()
       geometry.setPositions(vertices)
       const colorBuffer = new THREE.InstancedInterleavedBuffer(colors, 6, 1)
       geometry.setAttribute('instanceColorStart', new THREE.InterleavedBufferAttribute(colorBuffer, 3, 0, true))
       geometry.setAttribute('instanceColorEnd', new THREE.InterleavedBufferAttribute(colorBuffer, 3, 3, true))
-      line = new THREE.LineSegments2(geometry, material as THREE.LineMaterial)
+      line = new THREE.LineSegments2(geometry, material)
     } else {
       // Thin lines
       const geometry = new THREE.BufferGeometry()
@@ -342,8 +287,6 @@ export class GCodeModel {
     // Skip empty parts
     if (vertices.length <= 2) return
 
-    const thickLines = this.settings.thickLines
-
     const metadata: LayerPartMetadata = {
       layerZ: layer.z,
       layerNumber,
@@ -353,15 +296,15 @@ export class GCodeModel {
     }
 
     // Build the part's line object and add it to the gcode group
-    const line = this.makeLine(vertices, colors, thickLines ? this.thickMaterial : this.thinMaterial)
+    const line = this.makeLine(vertices, colors, this.defaultMaterial)
     line.name = LAYER_PREFIX + layerNumber
     line.userData = metadata
     this.linesGroup.add(line)
 
     // Draw the part's geometry in the mirror too
     if (this.settings.showBed && this.settings.showMirror) {
-      const mirror: LayerLine = thickLines
-        ? new THREE.LineSegments2(line.geometry as THREE.LineSegmentsGeometry, this.mirrorThickMaterial)
+      const mirror: GcodeLine = isThickLine(line)
+        ? new THREE.LineSegments2(line.geometry, this.mirrorThickMaterial)
         : new THREE.LineSegments(line.geometry, this.mirrorThinMaterial)
       mirror.matrixAutoUpdate = false
       mirror.name = LAYER_PREFIX + layerNumber
@@ -387,18 +330,6 @@ export class GCodeModel {
     }
   }
 
-  /**
-   * Sets the drawn line thickness from the nozzle size
-   * @param nozzleDiameter - Nozzle diameter in mm, or null for the default
-   */
-  applyLineWidth (nozzleDiameter: number | null): void {
-    const lineWidth = (nozzleDiameter ?? DEFAULT_NOZZLE_DIAMETER) * LINE_THICKNESS_FACTOR
-
-    this.thickMaterial.linewidth = lineWidth
-    this.mirrorThickMaterial.linewidth = lineWidth
-    this.highlightThickMaterial.linewidth = lineWidth
-  }
-
   /* ---- Reveal and highlight ---- */
 
   /**
@@ -416,10 +347,6 @@ export class GCodeModel {
     if (highlighted === this.highlightedLayer) return
     this.highlightedLayer = highlighted
 
-    const thickLines = this.settings.thickLines
-    const highlightMaterial = thickLines ? this.highlightThickMaterial : this.highlightThinMaterial
-    const defaultMaterial = thickLines ? this.thickMaterial : this.thinMaterial
-
     this.linesGroup.traverse((child) => {
       if (!isLayerObject(child)) return
       const metadata = layerPartMetadata(child)
@@ -428,7 +355,7 @@ export class GCodeModel {
       if (metadata.mirror) return
 
       // Highlight the target layer, default on the others
-      child.material = metadata.layerNumber === highlighted ? highlightMaterial : defaultMaterial
+      child.material = metadata.layerNumber === highlighted ? this.highlightMaterial : this.defaultMaterial
     })
   }
 
@@ -442,10 +369,7 @@ export class GCodeModel {
     let needUpdate = false
 
     // Hide the growing tip while sliding layer/segments manually
-    if (this.tipLine && this.tipLine.visible) {
-      this.tipLine.visible = false
-      needUpdate = true
-    }
+    if (this.tipLine.hide()) needUpdate = true
 
     if (this.revealUpTo(this.timeline.revealIndex(layerNumber, segmentsShown))) needUpdate = true
 
@@ -460,7 +384,7 @@ export class GCodeModel {
     this.revealUpTo(spot.segmentIndex)
 
     // Grow the segment the nozzle is mid-way through
-    this.updateTipLine(spot)
+    this.tipLine.update(spot)
   }
 
   /**
@@ -494,7 +418,7 @@ export class GCodeModel {
    * @param revealed - Global index of the reveal position
    * @returns The number of segments passed
    */
-  private partRevealCount (child: LayerLine, revealed: number): number {
+  private partRevealCount (child: GcodeLine, revealed: number): number {
     const { globalBase, numSegments, segmentIndices } = layerPartMetadata(child)
 
     // How many of the layer's segments the reveal has passed
@@ -519,108 +443,15 @@ export class GCodeModel {
    * @param count - Segments to draw
    * @returns True if the count changed
    */
-  private setRevealCount (child: LayerLine, count: number): boolean {
+  private setRevealCount (child: GcodeLine, count: number): boolean {
     // Thick lines are instanced; thin ones aren't, so limit their drawn vertex range (2 per segment)
-    if (this.settings.thickLines) {
-      const geometry = child.geometry as THREE.LineSegmentsGeometry
-      if (geometry.instanceCount === count) return false
-      geometry.instanceCount = count
+    if (isThickLine(child)) {
+      if (child.geometry.instanceCount === count) return false
+      child.geometry.instanceCount = count
     } else {
-      const geometry = child.geometry
-      if (geometry.drawRange.count === count * 2) return false
-      geometry.setDrawRange(0, count * 2)
+      if (child.geometry.drawRange.count === count * 2) return false
+      child.geometry.setDrawRange(0, count * 2)
     }
     return true
-  }
-
-  /* ---- Growing tip line ---- */
-
-  /** (Re)creates the line used to draw the partially printed segment */
-  private buildTipLine (): void {
-    if (this.tipLine) {
-      this.linesGroup.remove(this.tipLine)
-      this.tipLine.geometry.dispose()
-    }
-
-    const positions = new Float32Array(6)
-    const colors = new Float32Array(6)
-    let line: LayerLine
-    if (this.settings.thickLines) {
-      const geometry = new THREE.LineSegmentsGeometry()
-      geometry.setPositions(positions)
-      geometry.setColors(colors)
-      line = new THREE.LineSegments2(geometry, this.highlightThickMaterial)
-    } else {
-      const geometry = new THREE.BufferGeometry()
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-      line = new THREE.LineSegments(geometry, this.highlightThinMaterial)
-    }
-
-    line.visible = false
-    line.frustumCulled = false
-
-    this.tipLine = line
-    this.linesGroup.add(line)
-  }
-
-  /**
-   * Grows the partially printed segment's line up to a timeline position
-   * @param spot - Timeline position
-   */
-  private updateTipLine (spot: TimelineSpot): void {
-    const tipLine = this.tipLine
-    if (!tipLine) return
-
-    // Nothing grows while traveling between segments or past the end
-    if (!spot.onSegment || spot.fraction <= 0) {
-      tipLine.visible = false
-      return
-    }
-
-    const segment = this.timeline.segmentAt(spot.segmentIndex)!
-    const vertices = segment.layer.vertices
-    const offset = segment.localIndex * 6
-    const startX = vertices[offset]; const startY = vertices[offset + 1]; const startZ = vertices[offset + 2]
-
-    // Grow up to how far along the segment the nozzle has reached
-    const progress = spot.fraction
-    const colors = segment.layer.colors
-    this.setTipLineGeometry(startX, startY, startZ,
-      startX + (vertices[offset + 3] - startX) * progress, startY + (vertices[offset + 4] - startY) * progress, startZ + (vertices[offset + 5] - startZ) * progress,
-      colors[offset] / 255, colors[offset + 1] / 255, colors[offset + 2] / 255)
-    tipLine.visible = true
-  }
-
-  /**
-   * Writes new endpoints and color into the tip line
-   * @param startX - Start point X
-   * @param startY - Start point Y
-   * @param startZ - Start point Z
-   * @param endX - End point X
-   * @param endY - End point Y
-   * @param endZ - End point Z
-   * @param r - Red component (0-1)
-   * @param g - Green component (0-1)
-   * @param b - Blue component (0-1)
-   */
-  private setTipLineGeometry (startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, r: number, g: number, b: number): void {
-    if (!this.tipLine) return
-
-    const geometry = this.tipLine.geometry
-    if (this.settings.thickLines) {
-      const attributes = geometry.attributes as Record<string, THREE.InterleavedBufferAttribute>
-      const positions = attributes.instanceStart.data
-      positions.array.set([startX, startY, startZ, endX, endY, endZ])
-      positions.needsUpdate = true
-      const colors = attributes.instanceColorStart.data
-      colors.array.set([r, g, b, r, g, b])
-      colors.needsUpdate = true
-    } else {
-      geometry.attributes.position.array.set([startX, startY, startZ, endX, endY, endZ])
-      geometry.attributes.position.needsUpdate = true
-      geometry.attributes.color.array.set([r, g, b, r, g, b])
-      geometry.attributes.color.needsUpdate = true
-    }
   }
 }

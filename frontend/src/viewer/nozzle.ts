@@ -37,6 +37,8 @@ export class Nozzle {
   /** Dot marking the nozzle position */
   private readonly dot = new THREE.Mesh(new THREE.SphereGeometry(0.5), this.dotMaterial)
 
+  /* ---- Setup ---- */
+
   /**
    * @param settings - Plugin frontend settings
    * @param scene - The 3D scene
@@ -81,6 +83,8 @@ export class Nozzle {
       this.requestRender()
     })
   }
+
+  /* ---- Render loop ---- */
 
   /**
    * Updates the nozzle for a new frame

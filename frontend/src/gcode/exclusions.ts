@@ -61,6 +61,8 @@ export class PrintExclusions {
   /** Ids the cancelled objects have in the loaded gcode */
   private cancelledIds = new Set<number>()
 
+  /* ---- Plugin updates ---- */
+
   /**
    * Applies the exclusions update from an Exclude Region or Cancel Object message, ignoring those from any other plugin
    * @param plugin - Identifier of the sending plugin
@@ -123,6 +125,8 @@ export class PrintExclusions {
     return changed
   }
 
+  /* ---- Gcode objects ---- */
+
   /**
    * Sets the names of the objects the loaded gcode contains
    * @param objectNames - Object names, by object id
@@ -139,6 +143,8 @@ export class PrintExclusions {
       if (this.cancelledObjects.has(name)) this.cancelledIds.add(id)
     })
   }
+
+  /* ---- Segment classification ---- */
 
   /**
    * Flags which of a layer's segments are excluded from printing
@@ -176,6 +182,8 @@ export class PrintExclusions {
     }
     return false
   }
+
+  /* ---- Region markers ---- */
 
   /** (Re)builds the region markers from the current regions */
   private rebuildRegionMarkers (): void {

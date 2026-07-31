@@ -239,7 +239,7 @@ class OpenLayer {
 /* ---- Parser ---- */
 
 /** Streaming gcode parser: feed it text chunks to get colored layers of segments with file positions and time estimates */
-export class GCodeParser {
+export class GcodeParser {
   /** Parsed layers: segment endpoints, colors, file positions and estimated durations */
   readonly layers: Layer[] = []
 

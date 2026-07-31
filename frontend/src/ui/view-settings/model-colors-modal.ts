@@ -1,5 +1,5 @@
-import { type ColorPreset, type ColorRule, cloneColorRules } from '../gcode/model-colors'
-import type { Settings } from '../settings'
+import { type ColorPreset, type ColorRule, cloneColorRules } from '../../gcode/model-colors'
+import type { Settings } from '../../settings'
 
 /** Handles of the model colors modal */
 export interface ModelColorsModal {
@@ -27,7 +27,7 @@ const MODAL_MARKUP = `
       <button type="button" class="close" data-dismiss="modal">&times;</button>
       <h3 class="pg-modal-color-title">
         Model colors
-        <button type="button" class="pg-modal-color-reset" title="Reset colors to their defaults"><i class="fa-solid fa-arrow-rotate-left"></i></button>
+        <button type="button" class="pg-reset pg-modal-color-reset" title="Reset colors to their defaults"><i class="fa-solid fa-arrow-rotate-left"></i></button>
       </h3>
     </div>
     <div class="modal-body">

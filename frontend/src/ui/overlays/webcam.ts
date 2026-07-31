@@ -1,9 +1,11 @@
 import { clampOverlayHeight, defaultOverlayHeight, makeResizable } from './overlay-windows'
 import type { Overlay } from './overlay-windows'
-import type { Settings } from '../settings'
+import type { Settings } from '../../settings'
 
 /** Placeholder for restoring the webcam containers to their original position */
 let restorePlaceholder: Comment | null = null
+
+/* ---- Webcam docking ---- */
 
 /**
  * Finds OctoPrint's webcam containers
@@ -12,23 +14,6 @@ let restorePlaceholder: Comment | null = null
 function getWebcamContainers (): JQuery<HTMLElement> {
   const plugins = $('#webcam_plugins_container')
   return plugins.length ? plugins : $('#webcam_video_container, #webcam_container')
-}
-
-/**
- * Resizes the webcam overlay
- * @param height - Height in px
- */
-function applyWebcamHeight (height: number): void {
-  const overlay = $('#pg-webcam')
-  if (!overlay.length) return
-
-  const target = clampOverlayHeight(height)
-
-  // The docked content derives its height from the width, so steer the width toward the target height
-  const rect = overlay[0].getBoundingClientRect()
-  if (Math.abs(rect.height - target) < 1) return
-  const aspect = rect.height ? rect.width / rect.height : 16 / 9
-  overlay.css('width', Math.round(target * aspect) + 'px')
 }
 
 /**
@@ -95,6 +80,25 @@ function undockWebcam (): void {
     // Stop the streams on OctoPrint < 1.9
     controlVM?._disableWebcam?.()
   }
+}
+
+/* ---- Overlay window ---- */
+
+/**
+ * Resizes the webcam overlay
+ * @param height - Height in px
+ */
+function applyWebcamHeight (height: number): void {
+  const overlay = $('#pg-webcam')
+  if (!overlay.length) return
+
+  const target = clampOverlayHeight(height)
+
+  // The docked content derives its height from the width, so steer the width toward the target height
+  const rect = overlay[0].getBoundingClientRect()
+  if (Math.abs(rect.height - target) < 1) return
+  const aspect = rect.height ? rect.width / rect.height : 16 / 9
+  overlay.css('width', Math.round(target * aspect) + 'px')
 }
 
 /**

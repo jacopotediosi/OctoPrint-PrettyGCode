@@ -1,4 +1,4 @@
-import { Settings, type SettingKey, type SettingValues } from '../settings'
+import { Settings, type SettingKey, type SettingValues } from '../../settings'
 import { buildViewSettingsPanel } from './view-settings-panel'
 
 /** Handles of the panel editing the default view settings, null until it is built */

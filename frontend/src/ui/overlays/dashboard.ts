@@ -1,6 +1,6 @@
 import { clampOverlayHeight, defaultOverlayHeight, makeResizable } from './overlay-windows'
 import type { Overlay } from './overlay-windows'
-import type { Settings } from '../settings'
+import type { Settings } from '../../settings'
 
 /**
  * Resizes the dashboard overlay
@@ -13,7 +13,7 @@ function applyDashboardHeight (height: number): void {
   const target = clampOverlayHeight(height)
 
   // The overlay is a scaled miniature: derive the scale from the content's natural height
-  if (dashboardElement.offsetHeight) dashboardElement.style.setProperty('--pg-dash-scale', String(target / dashboardElement.offsetHeight))
+  if (dashboardElement.offsetHeight) dashboardElement.style.setProperty('--pg-dashboard-scale', String(target / dashboardElement.offsetHeight))
 }
 
 /**

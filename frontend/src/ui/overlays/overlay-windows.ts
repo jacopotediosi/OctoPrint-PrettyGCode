@@ -1,6 +1,6 @@
 import { initWebcamOverlay } from './webcam'
 import { initDashboardOverlay } from './dashboard'
-import type { Settings } from '../settings'
+import type { Settings } from '../../settings'
 
 /** A resizable overlay sized through its height in px */
 export interface Overlay {

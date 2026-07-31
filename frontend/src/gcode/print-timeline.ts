@@ -56,6 +56,8 @@ export class PrintTimeline {
     this.exclusions = exclusions
   }
 
+  /* ---- Indexing ---- */
+
   /**
    * Indexes parsed layers into a new timeline
    * @param layers - Parsed gcode layers
@@ -99,32 +101,7 @@ export class PrintTimeline {
     this.targetTime = 0
   }
 
-  /**
-   * Moves the nozzle along the timeline toward the printer's read position
-   * @param filePosition - Bytes of the file sent to the printer so far
-   * @param deltaSeconds - Seconds elapsed since the previous call
-   * @returns Where the nozzle now sits, or null when no gcode is indexed
-   */
-  advance (filePosition: number, deltaSeconds: number): TimelineSpot | null {
-    if (!this.drawnLayers.length) return null
-
-    // How much of the print has been sent to the printer so far
-    const segmentsRead = this.segmentsReadAt(filePosition)
-    this.targetTime = segmentsRead < this.totalSegments
-      ? this.segmentStartTimes[segmentsRead]
-      : this.endTimeAt(this.totalSegments - 1)
-
-    // Follow that point smoothly: the nozzle stops when nothing new arrives and speeds up
-    // after a burst of commands; it jumps only when the point is behind it or very far ahead
-    const backlog = this.targetTime - this.nozzleTime
-    if (backlog < 0 || backlog > NOZZLE_SNAP_SECONDS) this.nozzleTime = this.targetTime
-    else this.nozzleTime += backlog * (1 - Math.exp(-deltaSeconds / NOZZLE_LAG_SECONDS))
-
-    // Where along the timeline the nozzle sits: reveal, tip and nozzle model all derive from here
-    const spot = this.locateTime(this.nozzleTime)
-    this.updateNozzlePosition(spot)
-    return spot
-  }
+  /* ---- Reveal positions ---- */
 
   /**
    * Locates a reveal position by layer and within-layer segment
@@ -196,6 +173,35 @@ export class PrintTimeline {
     if (layer.layerNumber !== layerNumber) return layer.globalBase
 
     return layer.globalBase + Math.min(segmentsShown, layer.numSegments)
+  }
+
+  /* ---- Print tracking ---- */
+
+  /**
+   * Moves the nozzle along the timeline toward the printer's read position
+   * @param filePosition - Bytes of the file sent to the printer so far
+   * @param deltaSeconds - Seconds elapsed since the previous call
+   * @returns Where the nozzle now sits, or null when no gcode is indexed
+   */
+  advance (filePosition: number, deltaSeconds: number): TimelineSpot | null {
+    if (!this.drawnLayers.length) return null
+
+    // How much of the print has been sent to the printer so far
+    const segmentsRead = this.segmentsReadAt(filePosition)
+    this.targetTime = segmentsRead < this.totalSegments
+      ? this.segmentStartTimes[segmentsRead]
+      : this.endTimeAt(this.totalSegments - 1)
+
+    // Follow that point smoothly: the nozzle stops when nothing new arrives and speeds up
+    // after a burst of commands; it jumps only when the point is behind it or very far ahead
+    const backlog = this.targetTime - this.nozzleTime
+    if (backlog < 0 || backlog > NOZZLE_SNAP_SECONDS) this.nozzleTime = this.targetTime
+    else this.nozzleTime += backlog * (1 - Math.exp(-deltaSeconds / NOZZLE_LAG_SECONDS))
+
+    // Where along the timeline the nozzle sits: reveal, tip and nozzle model all derive from here
+    const spot = this.locateTime(this.nozzleTime)
+    this.updateNozzlePosition(spot)
+    return spot
   }
 
   /**
@@ -280,6 +286,8 @@ export class PrintTimeline {
     return this.segmentStartTimes[globalIndex] + extrusion
   }
 
+  /* ---- Nozzle position ---- */
+
   /**
    * Moves the nozzle position to a timeline spot
    * @param spot - Timeline position
@@ -328,6 +336,8 @@ export class PrintTimeline {
   getNozzlePosition (): THREE.Vector3 | null {
     return this.targetTime > 0 ? this.nozzlePosition : null
   }
+
+  /* ---- Segment lookup ---- */
 
   /**
    * Resolves a global segment index to its layer and index within it

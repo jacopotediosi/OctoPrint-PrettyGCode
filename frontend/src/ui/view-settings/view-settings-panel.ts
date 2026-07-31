@@ -1,9 +1,9 @@
 import GUI, { type Controller } from 'lil-gui'
-import { NAVIGATION_MODES } from '../viewer/navigation'
+import { NAVIGATION_MODES } from '../../viewer/navigation'
 import { initModelColorsModal } from './model-colors-modal'
-import type { ColorPreset } from '../gcode/model-colors'
-import type { Settings, SettingKey } from '../settings'
-import type { PrettyGCodeApp } from '../app'
+import type { ColorPreset } from '../../gcode/model-colors'
+import type { Settings, SettingKey } from '../../settings'
+import type { PrettyGCodeApp } from '../../app'
 
 /** Handles of a view settings panel */
 export interface ViewSettingsPanel {
@@ -103,9 +103,9 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     'After 5 seconds with no mouse/camera movement the camera slowly orbits around the center.'
   )
 
-  /* ---- GCode model ---- */
+  /* ---- Gcode model ---- */
 
-  const gcodeModelFolder = gui.addFolder('GCode model')
+  const gcodeModelFolder = gui.addFolder('G-code model')
 
   option(
     gcodeModelFolder,

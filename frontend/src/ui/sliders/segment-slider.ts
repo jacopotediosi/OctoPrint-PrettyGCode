@@ -1,4 +1,4 @@
-import type { PrettyGCodeApp } from '../app'
+import type { PrettyGCodeApp } from '../../app'
 import { bindStepButton } from './slider-step-button'
 
 /** Segments the slider is showing */
@@ -25,8 +25,8 @@ export function initSegmentSlider (app: PrettyGCodeApp): void {
 
   // Create HTML elements, slider last so its handle paints over the step buttons
   $('.pg-view').append(
-    '<button id="pg-segment-step-back-button" class="pg-segment-step-button btn" title="Segment back" disabled><i class="fa-solid fa-chevron-left"></i></button>',
-    '<button id="pg-segment-step-forward-button" class="pg-segment-step-button btn" title="Segment forward" disabled><i class="fa-solid fa-chevron-right"></i></button>',
+    '<button id="pg-segment-step-back-button" class="pg-step-button pg-segment-step-button btn" title="Segment back" disabled><i class="fa-solid fa-chevron-left"></i></button>',
+    '<button id="pg-segment-step-forward-button" class="pg-step-button pg-segment-step-button btn" title="Segment forward" disabled><i class="fa-solid fa-chevron-right"></i></button>',
     '<div id="pg-segment-slider"></div>'
   )
 

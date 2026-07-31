@@ -1,4 +1,4 @@
-import type { PrettyGCodeApp } from '../app'
+import type { PrettyGCodeApp } from '../../app'
 import { bindStepButton } from './slider-step-button'
 
 /** Layer the slider is showing */
@@ -25,8 +25,8 @@ export function initLayerSlider (app: PrettyGCodeApp): void {
 
   // Create HTML elements, slider last so its handle paints over the step buttons
   $('.pg-view').append(
-    '<button id="pg-layer-step-up-button" class="pg-layer-step-button btn" title="Layer up" disabled><i class="fa-solid fa-chevron-up"></i></button>',
-    '<button id="pg-layer-step-down-button" class="pg-layer-step-button btn" title="Layer down" disabled><i class="fa-solid fa-chevron-down"></i></button>',
+    '<button id="pg-layer-step-up-button" class="pg-step-button pg-layer-step-button btn" title="Layer up" disabled><i class="fa-solid fa-chevron-up"></i></button>',
+    '<button id="pg-layer-step-down-button" class="pg-step-button pg-layer-step-button btn" title="Layer down" disabled><i class="fa-solid fa-chevron-down"></i></button>',
     '<div id="pg-layer-slider"></div>'
   )
 

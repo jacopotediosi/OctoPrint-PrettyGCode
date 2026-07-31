@@ -163,7 +163,7 @@ DEFAULT_DEFAULT_VIEW_SETTINGS = {
     "projectionMode": "perspective",
     # Whether to auto-orbit the camera when idle
     "orbitWhenIdle": False,
-    # ---- GCode model ----
+    # ---- Gcode model ----
     # Whether to draw the lines with their real thickness
     "thickLines": True,
     # Shading intensity of the topmost displayed layer, in percent

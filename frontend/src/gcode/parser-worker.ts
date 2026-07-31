@@ -1,4 +1,4 @@
-import { GCodeParser, type ParsedGcode } from './parser'
+import { GcodeParser, type ParsedGcode } from './parser'
 import type { ParserColors } from './model-colors'
 
 /** Gcode parse request */
@@ -33,7 +33,7 @@ declare const self: {
  * @returns The parsed gcode
  */
 async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode> {
-  const parser = new GCodeParser(request.colors, request.objectTag, request.g90InfluencesExtruder)
+  const parser = new GcodeParser(request.colors, request.objectTag, request.g90InfluencesExtruder)
 
   const response = await fetch(request.fileUrl)
   if (response.body) {

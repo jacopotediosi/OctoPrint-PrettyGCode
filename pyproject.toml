@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "OctoPrint-PrettyGCode"
 version = "2.2.0"
-description = "Pretty GCode Visualizer"
+description = "Pretty G-code Visualizer"
 authors = [
     { name = "Jacopo Tediosi", email = "jacopotediosi@gmail.com" },
     { name = "Kragrathea", email = "redacted@example.com" },
