@@ -71,7 +71,7 @@ export class PrettyGCodeApp {
   private parsedColors: ParserColors | null = null
 
   /** Print bed geometry */
-  private bedVolume: BedVolume = { depth: 0, height: 0, origin: '', width: 0 }
+  private bedVolume: BedVolume = { depth: 200, height: 200, origin: 'lowerleft', width: 200 }
 
   /** Nozzle diameter from the active printer profile */
   private nozzleDiameter: number | null = null
