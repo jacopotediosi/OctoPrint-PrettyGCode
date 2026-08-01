@@ -1,3 +1,4 @@
+{# === Tab header === #}
 <div id="pg-header">
     <h3 id="injector_link">PrettyGCode</h3>
     <span id="pg-subtitle" class="muted">A 3D G-code visualizer</span>
@@ -9,10 +10,32 @@
         <i class="fa-brands fa-github"></i>
     </a>
 </div>
+{# === 3D view === #}
 <div id="pg-container">
     <div class="pg-view">
+        {# ---- Canvas ---- #}
         <canvas id="pg-canvas"></canvas>
+        {# ---- Notices ---- #}
+        <div id="pg-loading" class="pg-notice pg-hidden">
+            <i class="fa-solid fa-spinner fa-spin"></i>
+            <span>Loading G-code...</span>
+        </div>
+        <div id="pg-large-file-confirmation" class="pg-notice pg-hidden">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>
+                This G-code file is <strong id="pg-large-file-confirmation-size"></strong>.
+                <br>
+                Files this large can be slow to load and render on less powerful devices.
+                <span data-bind="visible: loginState.hasPermissionKo(access.permissions.SETTINGS)">
+                    <br>
+                    To change the size above which this confirmation appears, open the <a href="#" data-bind="click: showPluginSettings">plugin settings</a>.
+                </span>
+            </span>
+            <button id="pg-large-file-confirmation-load" class="btn">Load file</button>
+        </div>
+        {# ---- Status bar ---- #}
         <div class="pg-status">T:0/0 B:0/0</div>
+        {# ---- Camera buttons ---- #}
         <div class="pg-buttons pg-camera-buttons">
             <button class="pg-toggle pg-reset-view" title="Reset camera view">
                 <i class="fa-solid fa-arrows-to-dot"></i>
@@ -36,6 +59,7 @@
                 <i class="fa-solid fa-arrow-right"></i>
             </button>
         </div>
+        {# ---- Bottom buttons ---- #}
         <div class="pg-buttons pg-bottom-left-buttons">
             <button class="pg-toggle pg-maximized-only pg-toggle-dashboard"
                     title="Toggle DashBoard window (if installed)">
@@ -48,7 +72,19 @@
                 <i class="fa-solid fa-video"></i>
             </button>
         </div>
-        <div id="pg-view-settings" class="pg-hidden"></div>
+        {# ---- View settings ---- #}
+        <div id="pg-view-settings"
+             class="pg-view-settings-panel pg-hidden"
+             data-model-color-presets='{{ plugin_prettygcode_model_color_presets|tojson }}'>
+            <div class="pg-view-settings-header">View settings</div>
+            <p class="pg-view-settings-notice">
+                The settings below are saved in this browser only.
+                <a class="pg-view-settings-defaults-link"
+                   href="#"
+                   data-bind="visible: loginState.hasPermissionKo(access.permissions.SETTINGS), click: showPluginSettings">Change the defaults for every browser</a>
+            </p>
+        </div>
+        {# ---- Top buttons ---- #}
         <div class="pg-buttons pg-top-left-buttons">
             <button class="pg-toggle pg-maximized-only pg-toggle-state"
                     title="Toggle state window">
@@ -60,7 +96,8 @@
             </button>
         </div>
         <div class="pg-buttons pg-top-right-buttons">
-            <button class="pg-toggle pg-toggle-settings" title="Toggle settings window">
+            <button class="pg-toggle pg-toggle-view-settings"
+                    title="Toggle view settings window">
                 <i class="fa-solid fa-gear"></i>
             </button>
             <button class="pg-toggle pg-toggle-maximized" title="Toggle maximized view">

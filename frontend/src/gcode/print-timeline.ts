@@ -7,10 +7,11 @@ interface DrawnLayer {
   layerNumber: number
   globalBase: number
   numSegments: number
-  vertices: number[]
-  colors: number[]
-  filePositions: number[]
-  durations: number[]
+  vertices: Float32Array
+  colors: Uint8ClampedArray
+  filePositions: Uint32Array
+  durations: Float32Array
+  excluded: Uint8Array | null
 }
 
 /** A point along the timeline: a segment (or the travel gap before it) and the fraction into it */
@@ -37,8 +38,6 @@ export class PrintTimeline {
 
   /** Cumulative estimated time at each segment's start, travel gaps included */
   private segmentStartTimes = new Float64Array(0)
-  /** Cumulative estimated time at each segment's end, travel gaps included */
-  private segmentEndTimes = new Float64Array(0)
 
   /** Timeline coordinate the nozzle has been eased to */
   private nozzleTime = 0
@@ -57,20 +56,20 @@ export class PrintTimeline {
     this.exclusions = exclusions
   }
 
+  /* ---- Indexing ---- */
+
   /**
    * Indexes parsed layers into a new timeline
    * @param layers - Parsed gcode layers
    */
-  index (layers: Layer[]) {
+  index (layers: Layer[]): void {
     // Flatten the drawn layers into print order, tracking each one's running segment offset
     this.drawnLayers = []
-    const excludedFlags: (Uint8Array | null)[] = []
     let base = 0
     layers.forEach((layer, i) => {
       if (layer.vertices.length <= 2) return // empty layers have no drawn object
       const numSegments = layer.vertices.length / 6
-      this.drawnLayers.push({ layerNumber: i + 1, globalBase: base, numSegments, vertices: layer.vertices, colors: layer.colors, filePositions: layer.filePositions, durations: layer.durations })
-      excludedFlags.push(this.exclusions.classifyLayer(layer))
+      this.drawnLayers.push({ layerNumber: i + 1, globalBase: base, numSegments, vertices: layer.vertices, colors: layer.colors, filePositions: layer.filePositions, durations: layer.durations, excluded: this.exclusions.classifyLayer(layer) })
       base += numSegments
     })
     this.totalSegments = base
@@ -78,12 +77,11 @@ export class PrintTimeline {
     // Timeline coordinate of every segment, counting the travel gaps between them, so the
     // nozzle can be eased along the whole path at each move's own pace
     const starts = new Float64Array(this.totalSegments)
-    const ends = new Float64Array(this.totalSegments)
     let time = 0
     let globalIndex = 0
-    this.drawnLayers.forEach((layer, i) => {
+    this.drawnLayers.forEach((layer) => {
       const durations = layer.durations
-      const excluded = excludedFlags[i]
+      const excluded = layer.excluded
       for (let offset = 0, segment = 0; offset < durations.length; offset += 2, segment++) {
         // Excluded segments take no time
         if (excluded && excluded[segment]) {
@@ -93,17 +91,91 @@ export class PrintTimeline {
           starts[globalIndex] = time
           time += durations[offset + 1]
         }
-        ends[globalIndex] = time
         globalIndex++
       }
     })
     this.segmentStartTimes = starts
-    this.segmentEndTimes = ends
 
     // Start the nozzle from scratch on the new timeline
     this.nozzleTime = 0
     this.targetTime = 0
   }
+
+  /* ---- Reveal positions ---- */
+
+  /**
+   * Locates a reveal position by layer and within-layer segment
+   * @param index - Global index of the reveal position
+   * @returns The 1-based layer and its shown segment count
+   */
+  revealPosition (index: number): { layerNumber: number, segmentNumber: number } {
+    const layerNumber = this.layerNumberAt(index)
+    return { layerNumber, segmentNumber: Math.max(0, index - this.revealIndex(layerNumber, 0)) }
+  }
+
+  /**
+   * Finds the layer holding the last revealed segment
+   * @param segmentIndex - Global index of the reveal position
+   * @returns The 1-based layer number, or 0 before the first segment
+   */
+  private layerNumberAt (segmentIndex: number): number {
+    // First layer starting at or past the index (binary search)
+    const layers = this.drawnLayers
+    let lo = 0; let hi = layers.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (layers[mid].globalBase < segmentIndex) lo = mid + 1
+      else hi = mid
+    }
+
+    return lo > 0 ? layers[lo - 1].layerNumber : 0
+  }
+
+  /**
+   * Counts the drawn segments of a layer
+   * @param layerNumber - 1-based layer number
+   * @returns The drawn segment count, or 0 for an empty layer
+   */
+  layerSegmentCount (layerNumber: number): number {
+    const layer = this.drawnLayers[this.drawnLayerIndex(layerNumber)]
+    return layer?.layerNumber === layerNumber ? layer.numSegments : 0
+  }
+
+  /**
+   * Finds where a layer sits among the drawn ones
+   * @param layerNumber - 1-based layer number
+   * @returns Index of the first drawn layer reaching that number
+   */
+  private drawnLayerIndex (layerNumber: number): number {
+    const layers = this.drawnLayers
+    let lo = 0; let hi = layers.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (layers[mid].layerNumber < layerNumber) lo = mid + 1
+      else hi = mid
+    }
+    return lo
+  }
+
+  /**
+   * Maps a within-layer position to a global reveal index
+   * @param layerNumber - 1-based topmost layer to show
+   * @param segmentsShown - Segments of that layer to include
+   * @returns The global segment index to reveal up to
+   */
+  revealIndex (layerNumber: number, segmentsShown: number): number {
+    const layer = this.drawnLayers[this.drawnLayerIndex(layerNumber)]
+
+    // Past the last drawn layer
+    if (!layer) return this.totalSegments
+
+    // Layers with nothing drawn reveal up to where the next drawn one starts
+    if (layer.layerNumber !== layerNumber) return layer.globalBase
+
+    return layer.globalBase + Math.min(segmentsShown, layer.numSegments)
+  }
+
+  /* ---- Print tracking ---- */
 
   /**
    * Moves the nozzle along the timeline toward the printer's read position
@@ -111,14 +183,14 @@ export class PrintTimeline {
    * @param deltaSeconds - Seconds elapsed since the previous call
    * @returns Where the nozzle now sits, or null when no gcode is indexed
    */
-  advance (filePosition: number, deltaSeconds: number) {
+  advance (filePosition: number, deltaSeconds: number): TimelineSpot | null {
     if (!this.drawnLayers.length) return null
 
     // How much of the print has been sent to the printer so far
     const segmentsRead = this.segmentsReadAt(filePosition)
     this.targetTime = segmentsRead < this.totalSegments
       ? this.segmentStartTimes[segmentsRead]
-      : this.segmentEndTimes[this.totalSegments - 1]
+      : this.endTimeAt(this.totalSegments - 1)
 
     // Follow that point smoothly: the nozzle stops when nothing new arrives and speeds up
     // after a burst of commands; it jumps only when the point is behind it or very far ahead
@@ -133,84 +205,38 @@ export class PrintTimeline {
   }
 
   /**
-   * Locates a reveal position by layer and within-layer segment
-   * @param index - Global index of the reveal position
-   * @returns The 1-based layer and its shown segment count
-   */
-  revealPosition (index: number) {
-    const layerNumber = this.layerNumberAt(index)
-    return { layerNumber, segmentNumber: Math.max(0, index - this.revealIndex(layerNumber, 0)) }
-  }
-
-  /**
-   * Finds the layer holding the last revealed segment
-   * @param segmentIndex - Global index of the reveal position
-   * @returns The 1-based layer number, or 0 before the first segment
-   */
-  private layerNumberAt (segmentIndex: number) {
-    let layerNumber = 0
-    for (const layer of this.drawnLayers) {
-      if (segmentIndex <= layer.globalBase) break
-      layerNumber = layer.layerNumber
-    }
-    return layerNumber
-  }
-
-  /**
-   * Counts the drawn segments of a layer
-   * @param layerNumber - 1-based layer number
-   * @returns The drawn segment count, or 0 for an empty layer
-   */
-  layerSegmentCount (layerNumber: number) {
-    for (const layer of this.drawnLayers) {
-      if (layer.layerNumber === layerNumber) return layer.numSegments
-    }
-    return 0
-  }
-
-  /**
-   * Maps a within-layer position to a global reveal index
-   * @param layerNumber - 1-based topmost layer to show
-   * @param segmentsShown - Segments of that layer to include
-   * @returns The global segment index to reveal up to
-   */
-  revealIndex (layerNumber: number, segmentsShown: number) {
-    let index = 0
-    for (const layer of this.drawnLayers) {
-      if (layer.layerNumber > layerNumber) break
-      if (layer.layerNumber === layerNumber) return layer.globalBase + Math.min(segmentsShown, layer.numSegments)
-      index = layer.globalBase + layer.numSegments
-    }
-    return index
-  }
-
-  /**
    * Counts the drawn segments a file position has passed
    * @param filePosition - Bytes of the file sent to the printer
    * @returns The number of drawn segments passed
    */
-  private segmentsReadAt (filePosition: number) {
-    let count = 0
+  private segmentsReadAt (filePosition: number): number {
+    const layers = this.drawnLayers
 
-    for (const layer of this.drawnLayers) {
-      const filePositions = layer.filePositions
-      if (filePositions[0] > filePosition) break
-      if (filePositions[filePositions.length - 1] < filePosition) {
-        count = layer.globalBase + layer.numSegments
-      } else {
-        // Segments in this layer already read (binary search over the sorted file positions)
-        let lo = 0; let hi = filePositions.length
-        while (lo < hi) {
-          const mid = (lo + hi) >> 1
-          if (filePositions[mid] < filePosition) lo = mid + 1
-          else hi = mid
-        }
-        count = layer.globalBase + lo
-        break
-      }
+    // First layer the read position has not passed whole (binary search)
+    let loLayer = 0; let hiLayer = layers.length
+    while (loLayer < hiLayer) {
+      const mid = (loLayer + hiLayer) >> 1
+      const positions = layers[mid].filePositions
+      if (positions[positions.length - 1] < filePosition) loLayer = mid + 1
+      else hiLayer = mid
     }
 
-    return count
+    // Past the last drawn layer
+    const layer = layers[loLayer]
+    if (!layer) return this.totalSegments
+
+    // The read position has not reached this layer
+    const filePositions = layer.filePositions
+    if (filePositions[0] > filePosition) return layer.globalBase
+
+    // Segments in this layer already read (binary search over the sorted file positions)
+    let lo = 0; let hi = filePositions.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (filePositions[mid] < filePosition) lo = mid + 1
+      else hi = mid
+    }
+    return layer.globalBase + lo
   }
 
   /**
@@ -220,31 +246,53 @@ export class PrintTimeline {
    */
   private locateTime (time: number): TimelineSpot {
     const starts = this.segmentStartTimes
-    const ends = this.segmentEndTimes
 
-    // First segment whose end lies past the coordinate (binary search)
-    let lo = 0; let hi = ends.length
+    // First segment starting past the coordinate (binary search)
+    let lo = 0; let hi = starts.length
     while (lo < hi) {
       const mid = (lo + hi) >> 1
-      if (ends[mid] <= time) lo = mid + 1
+      if (starts[mid] <= time) lo = mid + 1
       else hi = mid
     }
-    if (lo >= ends.length) return { segmentIndex: ends.length, fraction: 1, onSegment: false }
 
-    if (time >= starts[lo]) {
-      const duration = ends[lo] - starts[lo]
-      return { segmentIndex: lo, fraction: duration > 0 ? (time - starts[lo]) / duration : 1, onSegment: true }
-    }
-    const gapStart = lo > 0 ? ends[lo - 1] : 0
-    const gap = starts[lo] - gapStart
-    return { segmentIndex: lo, fraction: gap > 0 ? (time - gapStart) / gap : 0, onSegment: false }
+    // Before the first segment: sweep the travel gap that opens the print
+    if (lo === 0) return { segmentIndex: 0, fraction: starts[0] > 0 ? time / starts[0] : 0, onSegment: false }
+
+    // The last segment started is the only one the coordinate can still fall in
+    const current = lo - 1
+    const start = starts[current]
+    const end = this.endTimeAt(current)
+    if (time < end) return { segmentIndex: current, fraction: (time - start) / (end - start), onSegment: true }
+
+    // Past the last segment
+    if (lo >= starts.length) return { segmentIndex: starts.length, fraction: 1, onSegment: false }
+
+    // In the travel gap before the next segment
+    const gap = starts[lo] - end
+    return { segmentIndex: lo, fraction: gap > 0 ? (time - end) / gap : 0, onSegment: false }
   }
+
+  /**
+   * Gets the timeline coordinate a segment ends at
+   * @param globalIndex - Global segment index
+   * @returns The coordinate in seconds
+   */
+  private endTimeAt (globalIndex: number): number {
+    const { layer, localIndex } = this.segmentAt(globalIndex)!
+
+    // Excluded segments take no time
+    const extrusion = layer.excluded?.[localIndex] ? 0 : layer.durations[localIndex * 2 + 1]
+
+    return this.segmentStartTimes[globalIndex] + extrusion
+  }
+
+  /* ---- Nozzle position ---- */
 
   /**
    * Moves the nozzle position to a timeline spot
    * @param spot - Timeline position
    */
-  private updateNozzlePosition (spot: TimelineSpot) {
+  private updateNozzlePosition (spot: TimelineSpot): void {
     const position = this.nozzlePosition
 
     // Past the end: park on the last segment's endpoint
@@ -285,19 +333,28 @@ export class PrintTimeline {
    * Gets the current nozzle position
    * @returns The position, or null until the print reaches the first segment
    */
-  getNozzlePosition () {
+  getNozzlePosition (): THREE.Vector3 | null {
     return this.targetTime > 0 ? this.nozzlePosition : null
   }
+
+  /* ---- Segment lookup ---- */
 
   /**
    * Resolves a global segment index to its layer and index within it
    * @param globalIndex - Global segment index
    * @returns The layer and local index, or null when out of range
    */
-  segmentAt (globalIndex: number) {
-    for (const layer of this.drawnLayers) {
-      if (globalIndex < layer.globalBase + layer.numSegments) return { layer, localIndex: globalIndex - layer.globalBase }
+  segmentAt (globalIndex: number): { layer: DrawnLayer, localIndex: number } | null {
+    // First layer reaching past the index (binary search)
+    const layers = this.drawnLayers
+    let lo = 0; let hi = layers.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (layers[mid].globalBase + layers[mid].numSegments <= globalIndex) lo = mid + 1
+      else hi = mid
     }
-    return null
+
+    const layer = layers[lo]
+    return layer ? { layer, localIndex: globalIndex - layer.globalBase } : null
   }
 }

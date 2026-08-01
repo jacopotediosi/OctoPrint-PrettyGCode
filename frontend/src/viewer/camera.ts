@@ -3,6 +3,7 @@ import CameraControls from 'camera-controls'
 import { Vector2, Vector3, Vector4, Quaternion, Matrix4, Spherical, Box3, Sphere, Raycaster } from 'three'
 import { bedCenter } from './bed'
 import { NAVIGATION_MODES, VIEW_ANGLES } from './navigation'
+import type { GcodeBounds } from '../gcode/parser'
 import type { BedVolume } from './bed'
 import type { MouseBinding, MouseButton, NavigationMode, NavigationModeKey, ProjectionMode, ViewAngle } from './navigation'
 import type { Settings } from '../settings'
@@ -80,7 +81,6 @@ export class Camera {
     this.controls.dollyToCursor = true
     this.controls.infinityDolly = true
     this.controls.minDistance = 10
-    this.applyNavigationMode(settings.navigationMode)
     this.applyDefaultView(bedVolume)
 
     // Watch navigation modifiers
@@ -90,7 +90,7 @@ export class Camera {
   }
 
   /** The active camera */
-  get active () {
+  get active (): THREE.PerspectiveCamera | THREE.OrthographicCamera {
     return this.activeCamera
   }
 
@@ -98,7 +98,7 @@ export class Camera {
    * Switches the camera to the given canvas
    * @param canvas - Canvas to listen on
    */
-  setCanvas (canvas: HTMLCanvasElement) {
+  setCanvas (canvas: HTMLCanvasElement): void {
     this.controls.disconnect()
     this.controls.connect(canvas)
   }
@@ -110,7 +110,7 @@ export class Camera {
    * @param deltaSeconds - Seconds elapsed since the previous frame
    * @returns True if the camera moved
    */
-  update (deltaSeconds: number) {
+  update (deltaSeconds: number): boolean {
     // Cap any pending dolly at the zoom-out limit
     if (this.activeCamera === this.perspectiveCamera && this.controls.getSpherical(new Spherical()).radius > this.controls.maxDistance) {
       this.controls.dollyTo(this.controls.maxDistance, true)
@@ -146,7 +146,7 @@ export class Camera {
    * @param width - Canvas width in px
    * @param height - Canvas height in px
    */
-  setSize (width: number, height: number) {
+  setSize (width: number, height: number): void {
     const aspect = width / height
     this.perspectiveCamera.aspect = aspect
     this.perspectiveCamera.updateProjectionMatrix()
@@ -162,7 +162,7 @@ export class Camera {
    * Adapts the camera to the given bed geometry
    * @param bedVolume - Print bed geometry
    */
-  applyBedVolume (bedVolume: BedVolume) {
+  applyBedVolume (bedVolume: BedVolume): void {
     const gcodeSize = this.gcodeBounds.getSize(new Vector3())
     const maxSceneDimension = Math.max(100, bedVolume.width, bedVolume.depth, bedVolume.height, gcodeSize.x, gcodeSize.y, gcodeSize.z)
     const center = bedCenter(bedVolume)
@@ -193,7 +193,7 @@ export class Camera {
    * @param bedVolume - Print bed geometry
    * @param enableTransition - True to animate the move
    */
-  resetTarget (bedVolume: BedVolume, enableTransition = false) {
+  resetTarget (bedVolume: BedVolume, enableTransition = false): void {
     const center = bedCenter(bedVolume)
     this.controls.setTarget(center.x, center.y, 0, enableTransition)
   }
@@ -203,7 +203,7 @@ export class Camera {
    * @param bedVolume - Print bed geometry
    * @param enableTransition - True to animate the move
    */
-  applyDefaultView (bedVolume: BedVolume, enableTransition = false) {
+  applyDefaultView (bedVolume: BedVolume, enableTransition = false): void {
     // Re-center on the bed first
     this.resetTarget(bedVolume, enableTransition)
 
@@ -222,7 +222,7 @@ export class Camera {
    * @param view - View angle to rotate to
    * @param enableTransition - True to animate the move
    */
-  applyViewAngle (view: ViewAngle, enableTransition = false) {
+  applyViewAngle (view: ViewAngle, enableTransition = false): void {
     const [azimuthAngle, polarAngle] = VIEW_ANGLES[view]
     this.controls.normalizeRotations()
     this.controls.rotateTo(azimuthAngle, polarAngle, enableTransition)
@@ -231,8 +231,9 @@ export class Camera {
   /**
    * Converts a perspective camera distance to the orthographic zoom framing the same height
    * @param distance - Distance from the camera target
+   * @returns The orthographic camera zoom
    */
-  private toOrthographicZoom (distance: number) {
+  private toOrthographicZoom (distance: number): number {
     const viewHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.perspectiveCamera.fov) / 2)
     return ORTHOGRAPHIC_VIEW_HEIGHT_MM / viewHeight
   }
@@ -240,8 +241,9 @@ export class Camera {
   /**
    * Converts an orthographic zoom to the perspective camera distance framing the same height
    * @param zoom - Orthographic camera zoom
+   * @returns The distance from the camera target
    */
-  private toPerspectiveDistance (zoom: number) {
+  private toPerspectiveDistance (zoom: number): number {
     const viewHeight = ORTHOGRAPHIC_VIEW_HEIGHT_MM / zoom
     return viewHeight / (2 * Math.tan(THREE.MathUtils.degToRad(this.perspectiveCamera.fov) / 2))
   }
@@ -251,8 +253,9 @@ export class Camera {
    * @param bounds - Gcode bounding box, in scene coordinates
    * @param bedVolume - Print bed geometry
    */
-  applyGcodeBounds (bounds: THREE.Box3, bedVolume: BedVolume) {
-    this.gcodeBounds.copy(bounds)
+  applyGcodeBounds (bounds: GcodeBounds, bedVolume: BedVolume): void {
+    this.gcodeBounds.min.set(bounds.minX, bounds.minY, bounds.minZ)
+    this.gcodeBounds.max.set(bounds.maxX, bounds.maxY, bounds.maxZ)
     this.applyBedVolume(bedVolume)
   }
 
@@ -262,7 +265,7 @@ export class Camera {
    * Switches the mouse mappings to the given navigation mode
    * @param mode - NAVIGATION_MODES key
    */
-  applyNavigationMode (mode: NavigationModeKey) {
+  applyNavigationMode (mode: NavigationModeKey): void {
     this.navigationMode = NAVIGATION_MODES[mode] ?? NAVIGATION_MODES.prusaslicer
     this.applyMouseBindings()
   }
@@ -271,7 +274,7 @@ export class Camera {
    * (Re)applies the mouse bindings for the held modifier key
    * @param event - Event carrying the modifier key state, or null when the window loses focus
    */
-  private updateNavigationModifier (event: KeyboardEvent | null) {
+  private updateNavigationModifier (event: KeyboardEvent | null): void {
     const modifier = event?.shiftKey ? 'shift' : event?.ctrlKey ? 'ctrl' : null
     if (modifier !== this.navigationModifier) {
       this.navigationModifier = modifier
@@ -280,7 +283,7 @@ export class Camera {
   }
 
   /** Binds each mouse button to its action in the active navigation mode */
-  private applyMouseBindings () {
+  private applyMouseBindings (): void {
     const isPerspective = this.activeCamera === this.perspectiveCamera
     const zoomAction = isPerspective ? CameraControls.ACTION.DOLLY : CameraControls.ACTION.ZOOM
     const actions: Array<[MouseBinding | MouseBinding[] | undefined, number]> = [
@@ -306,7 +309,7 @@ export class Camera {
    * Switches the 3D view to the given camera projection
    * @param mode - Camera projection to use
    */
-  applyProjectionMode (mode: ProjectionMode) {
+  applyProjectionMode (mode: ProjectionMode): void {
     const camera = mode === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera
     if (camera === this.activeCamera) return
 

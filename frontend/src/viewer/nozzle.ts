@@ -37,6 +37,8 @@ export class Nozzle {
   /** Dot marking the nozzle position */
   private readonly dot = new THREE.Mesh(new THREE.SphereGeometry(0.5), this.dotMaterial)
 
+  /* ---- Setup ---- */
+
   /**
    * @param settings - Plugin frontend settings
    * @param scene - The 3D scene
@@ -46,13 +48,12 @@ export class Nozzle {
     this.settings = settings
     this.scene = scene
     this.requestRender = requestRender
-    scene.add(this.reflectionCamera)
     this.dot.visible = false
     scene.add(this.dot)
   }
 
   /** Loads the nozzle marker assets and shows them in the scene once ready */
-  load () {
+  load (): void {
     new THREE.OBJLoader().load(MODEL_URL, (obj) => {
       obj.rotation.x = Math.PI / 2
       obj.scale.setScalar(MODEL_BASE_SCALE * this.settings.nozzleSize / 100)
@@ -83,6 +84,8 @@ export class Nozzle {
     })
   }
 
+  /* ---- Render loop ---- */
+
   /**
    * Updates the nozzle for a new frame
    * @param position - Nozzle position to show, or null to move the nozzle back to the origin
@@ -91,7 +94,7 @@ export class Nozzle {
    * @param sceneChanged - True if the scene already changed this frame
    * @returns True if the nozzle changed the scene
    */
-  update (position: Vector3 | null, nozzleDiameter: number, renderer: THREE.WebGLRenderer, sceneChanged: boolean) {
+  update (position: Vector3 | null, nozzleDiameter: number, renderer: THREE.WebGLRenderer, sceneChanged: boolean): boolean {
     const settings = this.settings
     const style = settings.nozzleStyle
     let needRender = false

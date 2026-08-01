@@ -3,6 +3,7 @@ import { Vector2 } from 'three'
 import { Bed } from './bed'
 import { Camera } from './camera'
 import { Nozzle } from './nozzle'
+import type { GcodeBounds } from '../gcode/parser'
 import type { BedVolume } from './bed'
 import type { NavigationModeKey, ProjectionMode, ViewAngle } from './navigation'
 import type { Settings } from '../settings'
@@ -26,10 +27,30 @@ export class Viewer {
 
   /** WebGL renderer */
   private renderer!: THREE.WebGLRenderer
+  /** Whether the renderer draws with antialiasing */
+  private antialias!: boolean
   /** Whether to render the next frame regardless of changes */
   private forceRender = true
+  /** Whether the next frame is already scheduled */
+  private frameScheduled = false
   /** Timer measuring frame deltas */
   private timer!: THREE.Timer
+
+  /** Width the canvas is displayed at, in px */
+  private canvasWidth = 0
+  /** Height the canvas is displayed at, in px */
+  private canvasHeight = 0
+  /** Watcher of the canvas display size */
+  private readonly canvasSizeObserver = new ResizeObserver(([{ target }]) => {
+    // Track the displayed canvas size
+    this.canvasWidth = target.clientWidth
+    this.canvasHeight = target.clientHeight
+
+    // Redraw at the new size
+    this.requestRender()
+    this.timer.reset()
+    this.scheduleFrame()
+  })
 
   /** The 3D scene */
   readonly scene = new THREE.Scene()
@@ -72,19 +93,17 @@ export class Viewer {
   }
 
   /** Sets up the 3D view and starts its render loop */
-  init () {
+  init (): void {
     const settings = this.settings
     const bedVolume = this.getBedVolume()
     const canvas = document.getElementById('pg-canvas') as HTMLCanvasElement
 
     // Renderer
+    this.scene.matrixWorldAutoUpdate = false
     this.createRenderer(canvas, settings.antialias)
 
     // Camera
     this.camera = new Camera(settings, canvas, bedVolume, () => this.requestRender())
-
-    // Background
-    this.applyBackground(settings.darkMode)
 
     // Bed (grid)
     this.updateBedMesh()
@@ -105,7 +124,7 @@ export class Viewer {
     this.scene.add(this.cameraLight)
 
     this.timer = new THREE.Timer()
-    this.animate()
+    this.scheduleFrame()
   }
 
   /**
@@ -113,29 +132,38 @@ export class Viewer {
    * @param canvas - Canvas to render into
    * @param antialias - True to enable antialiasing
    */
-  private createRenderer (canvas: HTMLCanvasElement, antialias: boolean) {
+  private createRenderer (canvas: HTMLCanvasElement, antialias: boolean): void {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias, logarithmicDepthBuffer: true })
+    this.antialias = antialias
     this.renderer.setPixelRatio(window.devicePixelRatio)
     this.renderer.localClippingEnabled = true // Needed for the gcode reflection on the bed surface
+
+    this.canvasSizeObserver.disconnect()
+    this.canvasSizeObserver.observe(canvas)
   }
 
   /* ---- Render loop ---- */
 
+  /** Schedules the next frame */
+  private scheduleFrame (): void {
+    if (this.frameScheduled) return
+
+    this.frameScheduled = true
+    requestAnimationFrame(() => this.animate())
+  }
+
   /** Renders a frame when needed and schedules the next one */
-  private animate () {
+  private animate (): void {
+    this.frameScheduled = false
+
+    // Skip animation if canvas size is 0 (e.g. plugin tab is not shown)
+    if (this.canvasWidth === 0 || this.canvasHeight === 0) return
+
     this.timer.update()
     const deltaSeconds = this.timer.getDelta()
 
     let needRender = this.forceRender
     this.forceRender = false
-
-    // Skip animation if canvas size is 0 (e.g. plugin tab is not shown)
-    const canvas = this.renderer.domElement
-    if (canvas.clientWidth === 0 || canvas.clientHeight === 0) {
-      // Schedule the next frame and return
-      requestAnimationFrame(() => this.animate())
-      return
-    }
 
     // Update and get the print view
     const printView = this.onFrame(deltaSeconds)
@@ -157,14 +185,17 @@ export class Viewer {
     if (needRender) this.bed.update(this.camera.active, this.renderer, this.getBedVolume())
 
     // Render only when something changed this frame
-    if (needRender) this.renderer.render(this.scene, this.camera.active)
+    if (needRender) {
+      this.scene.updateMatrixWorld()
+      this.renderer.render(this.scene, this.camera.active)
+    }
 
     // Schedule the next frame
-    requestAnimationFrame(() => this.animate())
+    this.scheduleFrame()
   }
 
   /** Forces a render on the next animation frame */
-  requestRender () {
+  requestRender (): void {
     this.forceRender = true
   }
 
@@ -172,11 +203,10 @@ export class Viewer {
    * Matches the rendering size to the canvas display size
    * @returns True if the size changed
    */
-  private resizeCanvasToDisplaySize () {
+  private resizeCanvasToDisplaySize (): boolean {
     // Get new canvas size
-    const canvas = this.renderer.domElement
-    const width = canvas.clientWidth
-    const height = canvas.clientHeight
+    const width = this.canvasWidth
+    const height = this.canvasHeight
 
     // Skip if already at the display size
     const current = this.renderer.getSize(new Vector2())
@@ -194,7 +224,7 @@ export class Viewer {
   /* ---- Scene and camera ---- */
 
   /** (Re)builds the bed and adapts the camera to the current bed geometry */
-  updateBedMesh () {
+  updateBedMesh (): void {
     if (!this.camera) return
 
     const bedVolume = this.getBedVolume()
@@ -206,7 +236,7 @@ export class Viewer {
    * Shows or hides the print bed
    * @param visible - True to show the bed
    */
-  applyBedVisibility (visible: boolean) {
+  applyBedVisibility (visible: boolean): void {
     this.bed.applyVisibility(visible)
   }
 
@@ -214,7 +244,7 @@ export class Viewer {
    * Points the camera back at the bed center
    * @param enableTransition - True to animate the move
    */
-  resetCameraTarget (enableTransition = false) {
+  resetCameraTarget (enableTransition = false): void {
     if (!this.camera) return
     this.camera.resetTarget(this.getBedVolume(), enableTransition)
   }
@@ -223,7 +253,7 @@ export class Viewer {
    * Moves the camera to the default view
    * @param enableTransition - True to animate the move
    */
-  applyDefaultView (enableTransition = false) {
+  applyDefaultView (enableTransition = false): void {
     this.camera.applyDefaultView(this.getBedVolume(), enableTransition)
   }
 
@@ -232,7 +262,7 @@ export class Viewer {
    * @param view - View angle to rotate to
    * @param enableTransition - True to animate the move
    */
-  applyViewAngle (view: ViewAngle, enableTransition = false) {
+  applyViewAngle (view: ViewAngle, enableTransition = false): void {
     this.camera.applyViewAngle(view, enableTransition)
   }
 
@@ -240,7 +270,7 @@ export class Viewer {
    * Updates the camera limits to the loaded gcode bounds
    * @param bounds - Gcode bounding box, in scene coordinates
    */
-  applyGcodeBounds (bounds: THREE.Box3) {
+  applyGcodeBounds (bounds: GcodeBounds): void {
     this.camera.applyGcodeBounds(bounds, this.getBedVolume())
   }
 
@@ -250,7 +280,7 @@ export class Viewer {
    * Applies the light or dark background to the scene
    * @param darkMode - True for the dark background
    */
-  applyBackground (darkMode: boolean) {
+  applyBackground (darkMode: boolean): void {
     this.scene.background = new THREE.Color(darkMode ? DARK_BACKGROUND : LIGHT_BACKGROUND)
     this.requestRender()
   }
@@ -259,7 +289,7 @@ export class Viewer {
    * Switches the mouse mappings to the given navigation mode
    * @param mode - NAVIGATION_MODES key
    */
-  applyNavigationMode (mode: NavigationModeKey) {
+  applyNavigationMode (mode: NavigationModeKey): void {
     this.camera.applyNavigationMode(mode)
   }
 
@@ -267,7 +297,7 @@ export class Viewer {
    * Switches the 3D view to the given camera projection
    * @param mode - Camera projection to use
    */
-  applyProjectionMode (mode: ProjectionMode) {
+  applyProjectionMode (mode: ProjectionMode): void {
     this.camera.applyProjectionMode(mode)
   }
 
@@ -275,7 +305,9 @@ export class Viewer {
    * Turns renderer antialiasing on or off
    * @param antialias - True to enable antialiasing
    */
-  applyAntialias (antialias: boolean) {
+  applyAntialias (antialias: boolean): void {
+    if (antialias === this.antialias) return
+
     // Antialias is a fixed WebGL context attribute, so toggling it means recreating the
     // context. A context stays bound to its canvas, so swap in a fresh canvas too.
     const oldCanvas = this.renderer.domElement

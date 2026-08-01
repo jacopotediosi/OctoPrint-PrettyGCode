@@ -1,26 +1,26 @@
 import { clampOverlayHeight, defaultOverlayHeight, makeResizable } from './overlay-windows'
 import type { Overlay } from './overlay-windows'
-import type { Settings } from '../settings'
+import type { Settings } from '../../settings'
 
 /**
  * Resizes the dashboard overlay
  * @param height - Height in px
  */
-function applyDashboardHeight (height: number) {
+function applyDashboardHeight (height: number): void {
   const dashboardElement = document.getElementById('tab_plugin_dashboard')
   if (!dashboardElement) return
 
   const target = clampOverlayHeight(height)
 
   // The overlay is a scaled miniature: derive the scale from the content's natural height
-  if (dashboardElement.offsetHeight) dashboardElement.style.setProperty('--pg-dash-scale', String(target / dashboardElement.offsetHeight))
+  if (dashboardElement.offsetHeight) dashboardElement.style.setProperty('--pg-dashboard-scale', String(target / dashboardElement.offsetHeight))
 }
 
 /**
  * Shows or hides the dashboard overlay to match the current settings
  * @param settings - Plugin frontend settings
  */
-export function updateDashboardOverlay (settings: Settings) {
+export function updateDashboardOverlay (settings: Settings): void {
   $('#tab_plugin_dashboard').toggleClass('pg-hidden', !settings.showDashboard)
   if (settings.showDashboard && $('.page-container').hasClass('pg-maximized')) applyDashboardHeight(settings.dashboardHeight || defaultOverlayHeight())
 }
@@ -29,7 +29,7 @@ export function updateDashboardOverlay (settings: Settings) {
  * Creates the dashboard overlay
  * @param settings - Plugin frontend settings
  */
-export function initDashboardOverlay (settings: Settings) {
+export function initDashboardOverlay (settings: Settings): void {
   const $dashboard = $('#tab_plugin_dashboard')
   if (!$dashboard.length) return
 

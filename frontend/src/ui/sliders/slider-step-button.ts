@@ -15,12 +15,12 @@ interface StepButtonActions {
  * @param button - Selector of the step button
  * @param actions - Step, start and stop callbacks
  */
-export function bindStepButton (button: string, { onStep, onStart, onStop }: StepButtonActions) {
+export function bindStepButton (button: string, { onStep, onStart, onStop }: StepButtonActions): void {
   let delayTimer: number | undefined
   let repeatTimer: number | undefined
   let repeated = false
 
-  const release = () => {
+  const release = (): void => {
     clearTimeout(delayTimer)
     clearInterval(repeatTimer)
     onStop()

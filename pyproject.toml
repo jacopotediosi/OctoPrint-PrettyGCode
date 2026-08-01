@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "OctoPrint-PrettyGCode"
-version = "2.2.0"
-description = "Pretty GCode Visualizer"
+version = "2.3.0"
+description = "Pretty G-code Visualizer"
 authors = [
     { name = "Jacopo Tediosi", email = "jacopotediosi@gmail.com" },
     { name = "Kragrathea", email = "redacted@example.com" },
@@ -51,4 +51,4 @@ fix = true
 extend-select = ["I"]
 
 [tool.codespell]
-skip = "octoprint_prettygcode/static/js/pg-main.bundle.js,package-lock.json"
+skip = "octoprint_prettygcode/static/js/*.bundle.js,package-lock.json"

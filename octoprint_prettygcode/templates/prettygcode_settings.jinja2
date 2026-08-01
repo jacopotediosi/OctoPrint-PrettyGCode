@@ -1,0 +1,35 @@
+{# === Settings header === #}
+<h3>
+    PrettyGCode plugin settings
+    <small>Version: {{ plugin_prettygcode_plugin_version }}</small>
+</h3>
+{# === Large file confirmation === #}
+<h4>Large file confirmation</h4>
+<form class="form-horizontal" onsubmit="return false;">
+    <div class="control-group">
+        <label class="control-label" for="settings-prettygcode-largeFileThresholdMb">Large file threshold</label>
+        <div class="controls">
+            <input id="settings-prettygcode-largeFileThresholdMb"
+                   type="number"
+                   min="0"
+                   class="input-mini text-right"
+                   data-bind="value: settings.plugins.prettygcode.largeFileThresholdMb, valueUpdate: 'input'">
+            <span class="help-inline">MB</span>
+            <button type="button"
+                    class="pg-reset"
+                    title="Reset this setting to its default value"
+                    data-bind="click: function () { settings.plugins.prettygcode.largeFileThresholdMb({{ plugin_prettygcode_default_settings.largeFileThresholdMb|tojson }}) }, enable: settings.plugins.prettygcode.largeFileThresholdMb() != {{ plugin_prettygcode_default_settings.largeFileThresholdMb|tojson }}">
+                <i class="fa-solid fa-arrow-rotate-left"></i>
+            </button>
+            <span class="help-block">Size above which loading a G-code file asks for confirmation. Set to zero to never ask.</span>
+        </div>
+    </div>
+</form>
+{# === Default view settings === #}
+<div id="pg-default-view-settings"
+     class="pg-view-settings-panel"
+     data-default-default-view-settings='{{ plugin_prettygcode_default_settings.defaultViewSettings|tojson }}'
+     data-model-color-presets='{{ plugin_prettygcode_model_color_presets|tojson }}'>
+    <h4 class="pg-view-settings-header">Default view settings</h4>
+    <p class="help-block">The settings below are used by every browser where you have not overridden them.</p>
+</div>

@@ -30,7 +30,7 @@ const regionMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xe76666, tran
  * @param y - Point Y
  * @returns True if the point is inside the region
  */
-const regionContains = (region: ExcludedRegion, x: number, y: number) =>
+const regionContains = (region: ExcludedRegion, x: number, y: number): boolean =>
   region.type === 'CircularRegion'
     ? Math.hypot(x - region.cx!, y - region.cy!) <= region.r!
     : x >= region.x1! && x <= region.x2! && y >= region.y1! && y <= region.y2!
@@ -41,7 +41,7 @@ const regionContains = (region: ExcludedRegion, x: number, y: number) =>
  * @param b - Second region
  * @returns True if the regions match
  */
-const sameRegion = (a: ExcludedRegion, b: ExcludedRegion) => {
+const sameRegion = (a: ExcludedRegion, b: ExcludedRegion): boolean => {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof ExcludedRegion>
   return [...keys].every((key) => a[key] === b[key])
 }
@@ -61,13 +61,15 @@ export class PrintExclusions {
   /** Ids the cancelled objects have in the loaded gcode */
   private cancelledIds = new Set<number>()
 
+  /* ---- Plugin updates ---- */
+
   /**
    * Applies the exclusions update from an Exclude Region or Cancel Object message, ignoring those from any other plugin
    * @param plugin - Identifier of the sending plugin
    * @param data - Message payload
    * @returns True if the exclusions changed
    */
-  applyPluginMessage (plugin: string, data: any) {
+  applyPluginMessage (plugin: string, data: any): boolean {
     if (plugin === 'excluderegion' && data.excluded_regions) return this.setRegions(data.excluded_regions)
     if (plugin === 'cancelobject' && data.objects) return this.setCancelledObjects(data.objects)
     return false
@@ -77,7 +79,7 @@ export class PrintExclusions {
    * Fetches the exclusions currently defined by the Exclude Region or Cancel Object plugins
    * @returns True if the exclusions changed
    */
-  async fetch () {
+  async fetch (): Promise<boolean> {
     let changed = false
 
     try {
@@ -98,7 +100,7 @@ export class PrintExclusions {
    * @param regions - Excluded regions reported by the Exclude Region plugin
    * @returns True if the regions changed
    */
-  private setRegions (regions: ExcludedRegion[]) {
+  private setRegions (regions: ExcludedRegion[]): boolean {
     const previous = this.excludedRegions
     this.excludedRegions = regions
 
@@ -112,7 +114,7 @@ export class PrintExclusions {
    * @param entries - Objects reported by the Cancel Object plugin
    * @returns True if the cancelled objects changed
    */
-  private setCancelledObjects (entries: CancelObjectEntry[]) {
+  private setCancelledObjects (entries: CancelObjectEntry[]): boolean {
     const cancelled = new Set(entries.filter((entry) => entry.cancelled).map((entry) => entry.object))
 
     const changed = cancelled.size !== this.cancelledObjects.size || [...cancelled].some((name) => !this.cancelledObjects.has(name))
@@ -123,37 +125,42 @@ export class PrintExclusions {
     return changed
   }
 
+  /* ---- Gcode objects ---- */
+
   /**
    * Sets the names of the objects the loaded gcode contains
    * @param objectNames - Object names, by object id
    */
-  setGcodeObjectNames (objectNames: string[]) {
+  setGcodeObjectNames (objectNames: string[]): void {
     this.objectNames = objectNames
     this.rebuildCancelledIds()
   }
 
   /** (Re)builds the ids the cancelled objects have in the loaded gcode */
-  private rebuildCancelledIds () {
+  private rebuildCancelledIds (): void {
     this.cancelledIds = new Set()
     this.objectNames.forEach((name, id) => {
       if (this.cancelledObjects.has(name)) this.cancelledIds.add(id)
     })
   }
 
+  /* ---- Segment classification ---- */
+
   /**
    * Flags which of a layer's segments are excluded from printing
    * @param layer - Parsed layer
    * @returns One flag per segment, 1 where excluded and 0 otherwise, or null when none is excluded
    */
-  classifyLayer (layer: Layer) {
+  classifyLayer (layer: Layer): Uint8Array | null {
     if (!this.excludedRegions.length && !this.cancelledIds.size) return null
 
     const { vertices, objectIds } = layer
+    const segments = vertices.length / 6
     let flags: Uint8Array | null = null
-    for (let segment = 0; segment < objectIds.length; segment++) {
-      const excluded = this.cancelledIds.has(objectIds[segment]) || this.inExcludedRegion(vertices, segment * 6)
+    for (let segment = 0; segment < segments; segment++) {
+      const excluded = (objectIds !== null && this.cancelledIds.has(objectIds[segment])) || this.inExcludedRegion(vertices, segment * 6)
       if (excluded) {
-        flags ??= new Uint8Array(objectIds.length)
+        flags ??= new Uint8Array(segments)
         flags[segment] = 1
       }
     }
@@ -166,7 +173,7 @@ export class PrintExclusions {
    * @param offset - Offset of the segment's first endpoint in the vertices
    * @returns True if the segment is in the excluded region
    */
-  private inExcludedRegion (vertices: number[], offset: number) {
+  private inExcludedRegion (vertices: Float32Array, offset: number): boolean {
     for (const excludedRegion of this.excludedRegions) {
       if (
         regionContains(excludedRegion, vertices[offset], vertices[offset + 1]) ||
@@ -176,8 +183,10 @@ export class PrintExclusions {
     return false
   }
 
+  /* ---- Region markers ---- */
+
   /** (Re)builds the region markers from the current regions */
-  private rebuildRegionMarkers () {
+  private rebuildRegionMarkers (): void {
     for (const child of this.regionMarkersGroup.children) (child as THREE.Mesh).geometry.dispose()
     this.regionMarkersGroup.clear()
 

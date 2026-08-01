@@ -1,6 +1,6 @@
 import { initWebcamOverlay } from './webcam'
 import { initDashboardOverlay } from './dashboard'
-import type { Settings } from '../settings'
+import type { Settings } from '../../settings'
 
 /** A resizable overlay sized through its height in px */
 export interface Overlay {
@@ -20,7 +20,7 @@ const DEFAULT_OVERLAY_HEIGHT_FRACTION = 1 / 3
  * Computes the default overlay height for the current viewport
  * @returns Height in px
  */
-export function defaultOverlayHeight () {
+export function defaultOverlayHeight (): number {
   return Math.round(window.innerHeight * DEFAULT_OVERLAY_HEIGHT_FRACTION)
 }
 
@@ -29,7 +29,7 @@ export function defaultOverlayHeight () {
  * @param height - Desired height in px
  * @returns The clamped height in px
  */
-export function clampOverlayHeight (height: number) {
+export function clampOverlayHeight (height: number): number {
   return Math.min(window.innerHeight * MAX_OVERLAY_HEIGHT_FRACTION, Math.max(MIN_OVERLAY_HEIGHT, height))
 }
 
@@ -40,7 +40,7 @@ export function clampOverlayHeight (height: number) {
  * @param axis - Pointer axis the drag follows
  * @param direction - 1 if dragging along the axis grows the overlay, -1 otherwise
  */
-export function makeResizable ($handle: JQuery, overlay: Overlay, axis: 'x' | 'y', direction: 1 | -1) {
+export function makeResizable ($handle: JQuery, overlay: Overlay, axis: 'x' | 'y', direction: 1 | -1): void {
   const pointerCoord = axis === 'x' ? 'clientX' : 'clientY'
   $handle.on('pointerdown', function (e) {
     const pointerEvent = (e.originalEvent ?? e) as PointerEvent
@@ -52,11 +52,11 @@ export function makeResizable ($handle: JQuery, overlay: Overlay, axis: 'x' | 'y
     const startDimension = axis === 'x' ? startSize.width : startSize.height
     if (this.setPointerCapture) this.setPointerCapture(pointerEvent.pointerId)
 
-    const onMove = (ev: JQuery.TriggeredEvent) => {
+    const onMove = (ev: JQuery.TriggeredEvent): void => {
       const delta = direction * (((ev.originalEvent ?? ev) as PointerEvent)[pointerCoord] - startCoord)
       if (startDimension) overlay.apply(startSize.height * (startDimension + delta) / startDimension)
     }
-    const onUp = () => {
+    const onUp = (): void => {
       $handle.off('pointermove', onMove).off('pointerup pointercancel', onUp)
       overlay.persist()
     }
@@ -68,7 +68,7 @@ export function makeResizable ($handle: JQuery, overlay: Overlay, axis: 'x' | 'y
  * Creates the overlays
  * @param settings - Plugin frontend settings
  */
-export function initOverlayWindows (settings: Settings) {
+export function initOverlayWindows (settings: Settings): void {
   initWebcamOverlay(settings)
   initDashboardOverlay(settings)
 }

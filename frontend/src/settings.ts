@@ -1,104 +1,186 @@
 import type { NavigationModeKey, ProjectionMode } from './viewer/navigation'
 import type { NozzleStyle } from './viewer/nozzle'
-import { type ColorRule, DEFAULT_COLOR_RULES, DEFAULT_COLOR, cloneColorRules } from './gcode/model-colors'
+import type { ColorRule } from './gcode/model-colors'
 
 /** localStorage key holding the settings */
 const STORAGE_KEY = 'pg-settings'
 
-/** Plugin frontend settings, persisted in the browser */
+/** Value of every setting, by name */
+export type SettingValues = { [K in keyof Settings as Settings[K] extends Function ? never : K]: Settings[K] }
+
+/** Name of a setting */
+export type SettingKey = keyof SettingValues
+
+/** Plugin frontend settings */
 export class Settings {
   /* ---- Interface ---- */
 
   /** Whether to use a dark theme */
-  darkMode = false
+  declare darkMode: boolean
   /** Whether to show the temperature status bar */
-  showStatusBar = true
+  declare showStatusBar: boolean
   /** Whether to show the layer slider */
-  showLayerSlider = true
+  declare showLayerSlider: boolean
   /** Whether to show the segment slider */
-  showSegmentSlider = true
+  declare showSegmentSlider: boolean
   /** Whether to antialias the 3D view */
-  antialias = true
+  declare antialias: boolean
 
   /* ---- Camera ---- */
 
   /** Navigation mode of the 3D view */
-  navigationMode: NavigationModeKey = 'prusaslicer'
+  declare navigationMode: NavigationModeKey
   /** Projection mode of the 3D view */
-  projectionMode: ProjectionMode = 'perspective'
+  declare projectionMode: ProjectionMode
   /** Whether to auto-orbit the camera when idle */
-  orbitWhenIdle = false
+  declare orbitWhenIdle: boolean
 
-  /* ---- GCode model ---- */
+  /* ---- Gcode model ---- */
 
   /** Whether to draw the lines with their real thickness */
-  thickLines = true
+  declare thickLines: boolean
   /** Shading intensity of the topmost displayed layer, in percent */
-  highlightIntensity = 40
+  declare highlightIntensity: number
   /** Whether to show gcode excluded from printing, greyed out */
-  showExcluded = true
+  declare showExcluded: boolean
   /** Model color rules, tried in order */
-  modelColorRules: ColorRule[] = cloneColorRules(DEFAULT_COLOR_RULES)
+  declare modelColorRules: ColorRule[]
   /** Color of segments matching no color rule */
-  modelDefaultColor = DEFAULT_COLOR
+  declare modelDefaultColor: string
 
   /* ---- Nozzle ---- */
 
   /** Marker shown at the nozzle position */
-  nozzleStyle: NozzleStyle = 'model'
+  declare nozzleStyle: NozzleStyle
   /** Size of the nozzle marker, in percent of its default */
-  nozzleSize = 100
+  declare nozzleSize: number
   /** Color of the nozzle marker */
-  nozzleColor = '#e6d36b'
+  declare nozzleColor: string
   /** Transparency of the nozzle marker, in percent */
-  nozzleTransparency = 0
+  declare nozzleTransparency: number
   /** Whether to reflect the scene on the nozzle model */
-  nozzleReflection = true
+  declare nozzleReflection: boolean
 
   /* ---- Bed ---- */
 
   /** Whether to show the print bed */
-  showBed = true
+  declare showBed: boolean
   /** Whether to show a reflection of the print on the bed */
-  showMirror = false
+  declare showMirror: boolean
   /** Whether to show the markers of the excluded regions */
-  showExclusionMarker = true
+  declare showExclusionMarker: boolean
 
   /* ---- Top windows ---- */
 
   /** Whether to show the state top window */
-  showState = true
+  declare showState: boolean
   /** Whether to show the files top window */
-  showFiles = false
+  declare showFiles: boolean
 
   /* ---- Bottom windows ---- */
 
   /** Whether to show the dashboard overlay */
-  showDashboard = false
+  declare showDashboard: boolean
   /** Dashboard overlay height in px, 0 for the default */
-  dashboardHeight = 0
+  declare dashboardHeight: number
 
   /** Whether to show the webcam overlay */
-  showWebcam = false
+  declare showWebcam: boolean
   /** Webcam overlay height in px, 0 for the default */
-  webcamHeight = 0
+  declare webcamHeight: number
 
-  /** Restores the saved settings */
-  load () {
+  /** Default of the settings the server does not configure */
+  private static readonly BROWSER_ONLY_DEFAULTS = {
+    showState: true,
+    showFiles: false,
+    showDashboard: false,
+    dashboardHeight: 0,
+    showWebcam: false,
+    webcamHeight: 0
+  } satisfies Partial<SettingValues>
+
+  /** Default value of every setting */
+  private defaults = {} as SettingValues
+
+  /**
+   * Sets every setting from the given defaults and overrides
+   * @param defaults - Default values of the settings
+   * @param overrides - Values overriding the defaults
+   * @returns Names of the settings whose value changed
+   */
+  set (defaults: Partial<SettingValues>, overrides: Partial<SettingValues>): SettingKey[] {
+    this.defaults = { ...Settings.BROWSER_ONLY_DEFAULTS, ...defaults } as SettingValues
+    const values = this as any
+    const changed: SettingKey[] = []
+    for (const key of Object.keys(this.defaults) as SettingKey[]) {
+      const value = structuredClone(overrides[key] ?? this.defaults[key])
+      if (!this.matches(key, value)) changed.push(key)
+      values[key] = value
+    }
+    return changed
+  }
+
+  /**
+   * Loads the settings saved in this browser, on top of the given defaults
+   * @param defaults - Default values of the settings
+   * @returns Names of the settings whose value changed
+   */
+  load (defaults: Partial<SettingValues>): SettingKey[] {
+    let saved: Partial<SettingValues> = {}
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')
-      for (const key in saved) {
-        if (key in this) {
-          (this as any)[key] = saved[key]
-        }
-      }
+      saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')
+    } catch {}
+    return this.set(defaults, saved)
+  }
+
+  /** Persists in the browser the settings */
+  save (): void {
+    const changed = Object.fromEntries(
+      (Object.keys(this.defaults) as SettingKey[]).filter((key) => !this.isDefault(key)).map((key) => [key, this[key]])
+    )
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(changed))
     } catch {}
   }
 
-  /** Persists the current settings */
-  save () {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...this }))
-    } catch {}
+  /**
+   * Tells whether a setting holds the given value
+   * @param key - Name of the setting
+   * @param value - Value to compare it with
+   * @returns True when the setting equals it
+   */
+  matches<K extends SettingKey> (key: K, value: SettingValues[K]): boolean {
+    // Sorting the keys of every object makes values that differ only in their order compare equal
+    const sortKeys = (_key: string, item: unknown): unknown =>
+      item !== null && typeof item === 'object' && !Array.isArray(item)
+        ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : 1)))
+        : item
+    return JSON.stringify(this[key], sortKeys) === JSON.stringify(value, sortKeys)
+  }
+
+  /**
+   * Tells whether a setting holds its default value
+   * @param key - Name of the setting
+   * @returns True when the setting is at its default value
+   */
+  isDefault (key: SettingKey): boolean {
+    return this.matches(key, this.defaults[key])
+  }
+
+  /**
+   * Gets the default value of a setting
+   * @param key - Name of the setting
+   * @returns Its default value
+   */
+  defaultOf<K extends SettingKey> (key: K): SettingValues[K] {
+    return this.defaults[key]
+  }
+
+  /**
+   * Gets the name of every setting
+   * @returns The setting names
+   */
+  keys (): SettingKey[] {
+    return Object.keys(this.defaults) as SettingKey[]
   }
 }
