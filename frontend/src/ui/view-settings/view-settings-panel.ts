@@ -98,6 +98,13 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
 
   option(
     cameraFolder,
+    'showCameraControls',
+    'Camera controls',
+    'Show the camera controls (view cube, reset view button).'
+  )
+
+  option(
+    cameraFolder,
     'orbitWhenIdle',
     'Orbit when idle',
     'After 5 seconds with no mouse/camera movement the camera slowly orbits around the center.'

@@ -1,5 +1,4 @@
 import type { PrettyGCodeApp } from '../app'
-import type { ViewAngle } from '../viewer/navigation'
 
 /** Settings keys of the toggleable windows */
 type WindowKey = 'showState' | 'showFiles' | 'showWebcam' | 'showDashboard'
@@ -73,10 +72,9 @@ export function initToggleButtons (app: PrettyGCodeApp): void {
     }
   })
 
-  /* ---- Camera buttons ---- */
+  /* ---- Camera controls ---- */
 
   $('.pg-reset-view').on('click', () => app.resetView())
-  $('.pg-camera-buttons [data-view]').on('click', (event) => app.applyViewAngle(event.currentTarget.dataset.view as ViewAngle))
 
   /* ---- Bottom buttons ---- */
 

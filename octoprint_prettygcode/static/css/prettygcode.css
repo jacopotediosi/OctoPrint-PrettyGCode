@@ -37,7 +37,7 @@
     --pg-z-dashboard: 2002;
     --pg-z-webcam: 2003;
     --pg-z-bottom-buttons: 2004;
-    --pg-z-camera-buttons: 2005;
+    --pg-z-camera-controls: 2005;
     --pg-z-top-windows: 2006;
     --pg-z-top-buttons: 2007;
     --pg-z-sliders: 2008;
@@ -125,25 +125,37 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     display: flex;
     gap: var(--pg-buttons-gap);
 }
+
+/* ---- Top buttons ---- */
 .pg-maximized .pg-top-left-buttons,
 .pg-maximized .pg-top-right-buttons {
     z-index: var(--pg-z-top-buttons);
 }
-.pg-maximized .pg-camera-buttons {
-    z-index: var(--pg-z-camera-buttons);
-}
-.pg-maximized .pg-bottom-left-buttons,
-.pg-maximized .pg-bottom-right-buttons {
-    z-index: var(--pg-z-bottom-buttons);
-}
 .pg-top-left-buttons { top: var(--pg-margin-top); left: var(--pg-margin-left); }
 .pg-top-right-buttons { top: var(--pg-margin-top); right: calc(var(--pg-margin-right) + var(--pg-layer-slider-lane)); }
-.pg-camera-buttons { top: var(--pg-margin-top); left: var(--pg-margin-left); }
-.pg-maximized .pg-camera-buttons {
+
+/* ---- Camera controls ---- */
+.pg-maximized .pg-camera-controls {
+    z-index: var(--pg-z-camera-controls);
     top: calc(var(--pg-margin-top) + var(--pg-toggle-height) + var(--pg-stack-gap));
     left: auto;
     right: calc(var(--pg-margin-right) + var(--pg-layer-slider-lane));
+}
+.pg-camera-controls {
+    top: var(--pg-margin-top);
+    left: var(--pg-margin-left);
     flex-direction: column;
+    align-items: center;
+}
+#pg-view-cube {
+    position: relative;
+    isolation: isolate;
+}
+
+/* ---- Bottom buttons ---- */
+.pg-maximized .pg-bottom-left-buttons,
+.pg-maximized .pg-bottom-right-buttons {
+    z-index: var(--pg-z-bottom-buttons);
 }
 .pg-bottom-left-buttons { bottom: calc(var(--pg-margin-bottom) + var(--pg-segment-slider-lane)); left: var(--pg-margin-left); }
 .pg-bottom-right-buttons { bottom: calc(var(--pg-margin-bottom) + var(--pg-segment-slider-lane)); right: calc(var(--pg-margin-right) + var(--pg-layer-slider-lane)); }

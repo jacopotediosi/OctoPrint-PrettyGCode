@@ -32,6 +32,8 @@ export class Settings {
   declare navigationMode: NavigationModeKey
   /** Projection mode of the 3D view */
   declare projectionMode: ProjectionMode
+  /** Whether to show the camera controls */
+  declare showCameraControls: boolean
   /** Whether to auto-orbit the camera when idle */
   declare orbitWhenIdle: boolean
 

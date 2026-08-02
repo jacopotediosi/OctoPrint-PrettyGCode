@@ -5,7 +5,7 @@ import { Camera } from './camera'
 import { Nozzle } from './nozzle'
 import type { GcodeBounds } from '../gcode/parser'
 import type { BedVolume } from './bed'
-import type { NavigationModeKey, ProjectionMode, ViewAngle } from './navigation'
+import type { NavigationModeKey, ProjectionMode } from './navigation'
 import type { Settings } from '../settings'
 
 /** Light theme background color */
@@ -103,7 +103,7 @@ export class Viewer {
     this.createRenderer(canvas, settings.antialias)
 
     // Camera
-    this.camera = new Camera(settings, canvas, bedVolume, () => this.requestRender())
+    this.camera = new Camera(settings, this.renderer, bedVolume, () => this.requestRender())
 
     // Bed (grid)
     this.updateBedMesh()
@@ -188,6 +188,7 @@ export class Viewer {
     if (needRender) {
       this.scene.updateMatrixWorld()
       this.renderer.render(this.scene, this.camera.active)
+      this.camera.renderViewCube()
     }
 
     // Schedule the next frame
@@ -258,15 +259,6 @@ export class Viewer {
   }
 
   /**
-   * Rotates the camera to a named view angle
-   * @param view - View angle to rotate to
-   * @param enableTransition - True to animate the move
-   */
-  applyViewAngle (view: ViewAngle, enableTransition = false): void {
-    this.camera.applyViewAngle(view, enableTransition)
-  }
-
-  /**
    * Updates the camera limits to the loaded gcode bounds
    * @param bounds - Gcode bounding box, in scene coordinates
    */
@@ -282,6 +274,24 @@ export class Viewer {
    */
   applyBackground (darkMode: boolean): void {
     this.scene.background = new THREE.Color(darkMode ? DARK_BACKGROUND : LIGHT_BACKGROUND)
+    this.requestRender()
+  }
+
+  /**
+   * Repaints the view cube in the light or dark theme
+   * @param darkMode - True for the dark theme
+   */
+  applyViewCubeTheme (darkMode: boolean): void {
+    this.camera.applyViewCubeTheme(darkMode)
+    this.requestRender()
+  }
+
+  /**
+   * Shows or hides the view cube
+   * @param visible - True to show the view cube
+   */
+  applyViewCubeVisibility (visible: boolean): void {
+    this.camera.applyViewCubeVisibility(visible)
     this.requestRender()
   }
 
@@ -317,7 +327,7 @@ export class Viewer {
 
     this.renderer.dispose()
     this.createRenderer(canvas, antialias)
-    this.camera.setCanvas(canvas)
+    this.camera.setRenderer(this.renderer)
 
     this.requestRender()
   }

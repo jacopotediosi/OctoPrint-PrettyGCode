@@ -161,6 +161,8 @@ DEFAULT_DEFAULT_VIEW_SETTINGS = {
     "navigationMode": "prusaslicer",
     # Projection mode of the 3D view
     "projectionMode": "perspective",
+    # Whether to show the camera controls
+    "showCameraControls": True,
     # Whether to auto-orbit the camera when idle
     "orbitWhenIdle": False,
     # ---- Printer ----

@@ -18,7 +18,6 @@ import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/notic
 import type { ParsedGcode } from './gcode/parser'
 import type { ParserColors } from './gcode/model-colors'
 import type { BedVolume } from './viewer/bed'
-import type { ViewAngle } from './viewer/navigation'
 import type { PrintViewUpdate } from './viewer/viewer'
 import type { Vector3 } from 'three'
 
@@ -453,14 +452,6 @@ export class PrettyGCodeApp {
   }
 
   /**
-   * Rotates the camera to a named view angle
-   * @param view - View angle to rotate to
-   */
-  applyViewAngle (view: ViewAngle): void {
-    this.viewer.applyViewAngle(view, true)
-  }
-
-  /**
    * (Re)applies the given settings to the view
    * @param keys - Names of the settings to apply
    */
@@ -493,6 +484,7 @@ export class PrettyGCodeApp {
     if (anyOf('darkMode')) {
       $('html').toggleClass('pg-dark', this.settings.darkMode)
       this.viewer.applyBackground(this.settings.darkMode)
+      this.viewer.applyViewCubeTheme(this.settings.darkMode)
       this.viewer.updateBedMesh()
     }
     if (anyOf('antialias')) this.viewer.applyAntialias(this.settings.antialias)
@@ -515,6 +507,7 @@ export class PrettyGCodeApp {
         'showStatusBar',
         'showLayerSlider',
         'showSegmentSlider',
+        'showCameraControls',
         'showState',
         'showFiles',
         'showDashboard',
@@ -539,6 +532,9 @@ export class PrettyGCodeApp {
     applySegmentSliderVisibility(this.settings.showSegmentSlider)
     if (!this.settings.showLayerSlider) this.setCurrentLayerNumber(this.layerCount)
     else if (!this.settings.showSegmentSlider) this.setCurrentSegmentNumber(this.currentLayerSegmentCount)
+
+    $('.pg-camera-controls').toggleClass('pg-hidden', !this.settings.showCameraControls)
+    this.viewer.applyViewCubeVisibility(this.settings.showCameraControls)
 
     $('#state_wrapper').toggleClass('pg-hidden', !this.settings.showState)
     $('#files_wrapper').toggleClass('pg-hidden', !this.settings.showFiles)
