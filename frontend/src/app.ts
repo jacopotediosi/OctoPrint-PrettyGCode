@@ -492,7 +492,10 @@ export class PrettyGCodeApp {
     if (anyOf('navigationMode')) this.viewer.applyNavigationMode(this.settings.navigationMode)
     if (anyOf('projectionMode')) this.viewer.applyProjectionMode(this.settings.projectionMode)
 
-    if (anyOf('beltPrinter', 'beltPrinterGantryAngle')) this.exclusions.placeRegionMarkers()
+    if (anyOf('beltPrinter', 'beltPrinterGantryAngle')) {
+      this.exclusions.placeRegionMarkers()
+      this.viewer.requestRender()
+    }
 
     if (anyOf('showBed')) this.viewer.applyBedVisibility(this.settings.showBed)
     if (anyOf('showExclusionMarker')) {
