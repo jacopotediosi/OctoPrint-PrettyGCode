@@ -36,7 +36,7 @@ export function initLayerSlider (app: PrettyGCodeApp): void {
     orientation: 'vertical',
     reversed: true,
     selection: 'after',
-    formatter: () => `Z: ${app.currentLayerZ}`,
+    formatter: () => `${app.settings.beltPrinter ? 'Belt' : 'Z'}: ${app.currentLayerZ}`,
     min: 0,
     max: 100,
     value: 100

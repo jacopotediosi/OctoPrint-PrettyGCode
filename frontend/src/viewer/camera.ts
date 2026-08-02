@@ -29,6 +29,14 @@ const DEFAULT_VIEW_POLAR_ANGLE = Math.PI / 4
 /** Height framed by the orthographic camera at zoom 1 */
 const ORTHOGRAPHIC_VIEW_HEIGHT_MM = 100
 
+/** Area the camera frames and orbits around */
+interface FramedArea {
+  centerX: number
+  centerY: number
+  depth: number
+  width: number
+}
+
 /** The camera of the 3D view */
 export class Camera {
   /** Plugin frontend settings */
@@ -159,20 +167,39 @@ export class Camera {
   /* ---- Views ---- */
 
   /**
+   * Computes the area the camera frames and orbits around
+   * @param bedVolume - Print bed geometry
+   * @returns Its center and size in mm
+   */
+  private framedArea (bedVolume: BedVolume): FramedArea {
+    const center = bedCenter(bedVolume)
+
+    if (this.settings.beltPrinter) {
+      // The print along the belt, which runs on with no end of its own to frame
+      const printCenter = this.gcodeBounds.getCenter(new Vector3())
+      const printSize = this.gcodeBounds.getSize(new Vector3())
+      return { centerX: center.x, centerY: printCenter.y, depth: printSize.y, width: bedVolume.width }
+    } else {
+      // The whole bed
+      return { centerX: center.x, centerY: center.y, depth: bedVolume.depth, width: bedVolume.width }
+    }
+  }
+
+  /**
    * Adapts the camera to the given bed geometry
    * @param bedVolume - Print bed geometry
    */
   applyBedVolume (bedVolume: BedVolume): void {
+    const area = this.framedArea(bedVolume)
     const gcodeSize = this.gcodeBounds.getSize(new Vector3())
-    const maxSceneDimension = Math.max(100, bedVolume.width, bedVolume.depth, bedVolume.height, gcodeSize.x, gcodeSize.y, gcodeSize.z)
-    const center = bedCenter(bedVolume)
+    const maxSceneDimension = Math.max(100, area.width, area.depth, bedVolume.height, gcodeSize.x, gcodeSize.y, gcodeSize.z)
 
     // Cap the zoom-out
     this.controls.maxDistance = MAX_ZOOM_OUT_FACTOR * maxSceneDimension
     this.controls.minZoom = this.toOrthographicZoom(this.controls.maxDistance)
     this.controls.setBoundary(new Box3(
-      new Vector3(center.x - 2 * maxSceneDimension, center.y - 2 * maxSceneDimension, -2 * maxSceneDimension),
-      new Vector3(center.x + 2 * maxSceneDimension, center.y + 2 * maxSceneDimension, 2 * maxSceneDimension)
+      new Vector3(area.centerX - 2 * maxSceneDimension, area.centerY - 2 * maxSceneDimension, -2 * maxSceneDimension),
+      new Vector3(area.centerX + 2 * maxSceneDimension, area.centerY + 2 * maxSceneDimension, 2 * maxSceneDimension)
     ))
 
     // Cameras only render between their near and far planes: put the far planes
@@ -189,13 +216,13 @@ export class Camera {
   }
 
   /**
-   * Points the camera back at the bed center
+   * Points the camera back at what it frames
    * @param bedVolume - Print bed geometry
    * @param enableTransition - True to animate the move
    */
   resetTarget (bedVolume: BedVolume, enableTransition = false): void {
-    const center = bedCenter(bedVolume)
-    this.controls.setTarget(center.x, center.y, 0, enableTransition)
+    const area = this.framedArea(bedVolume)
+    this.controls.setTarget(area.centerX, area.centerY, 0, enableTransition)
   }
 
   /**
@@ -211,8 +238,9 @@ export class Camera {
     this.controls.normalizeRotations()
     this.controls.rotateTo(0, DEFAULT_VIEW_POLAR_ANGLE, enableTransition)
 
-    // Pull back to fit the whole bed, with a floor for tiny beds
-    const distance = Math.max(40, bedVolume.width, bedVolume.depth)
+    // Pull back to fit the framed area, with a floor for tiny ones
+    const area = this.framedArea(bedVolume)
+    const distance = Math.max(40, area.width, area.depth)
     if (this.activeCamera === this.perspectiveCamera) this.controls.dollyTo(distance, enableTransition)
     else this.controls.zoomTo(this.toOrthographicZoom(distance), enableTransition)
   }

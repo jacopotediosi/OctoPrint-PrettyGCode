@@ -1,5 +1,7 @@
 import * as THREE from '../three-exports'
+import { BeltPrinterTransform } from './belt-printer-transform'
 import type { Layer } from './parser'
+import type { Settings } from '../settings'
 
 /** Excluded region defined in the Exclude Region plugin */
 export interface ExcludedRegion {
@@ -48,6 +50,9 @@ const sameRegion = (a: ExcludedRegion, b: ExcludedRegion): boolean => {
 
 /** Print exclusions gathered from the Exclude Region and Cancel Object plugins */
 export class PrintExclusions {
+  /** Plugin frontend settings */
+  private readonly settings: Settings
+
   /** Group holding the markers of the excluded regions */
   readonly regionMarkersGroup = new THREE.Group()
 
@@ -60,6 +65,13 @@ export class PrintExclusions {
   private objectNames: string[] = []
   /** Ids the cancelled objects have in the loaded gcode */
   private cancelledIds = new Set<number>()
+
+  /**
+   * @param settings - Plugin frontend settings
+   */
+  constructor (settings: Settings) {
+    this.settings = settings
+  }
 
   /* ---- Plugin updates ---- */
 
@@ -154,11 +166,13 @@ export class PrintExclusions {
   classifyLayer (layer: Layer): Uint8Array | null {
     if (!this.excludedRegions.length && !this.cancelledIds.size) return null
 
+    const beltPrinterTransform = this.settings.beltPrinter ? new BeltPrinterTransform(this.settings.beltPrinterGantryAngle) : null
+
     const { vertices, objectIds } = layer
     const segments = vertices.length / 6
     let flags: Uint8Array | null = null
     for (let segment = 0; segment < segments; segment++) {
-      const excluded = (objectIds !== null && this.cancelledIds.has(objectIds[segment])) || this.inExcludedRegion(vertices, segment * 6)
+      const excluded = (objectIds !== null && this.cancelledIds.has(objectIds[segment])) || this.inExcludedRegion(vertices, segment * 6, beltPrinterTransform)
       if (excluded) {
         flags ??= new Uint8Array(segments)
         flags[segment] = 1
@@ -171,19 +185,40 @@ export class PrintExclusions {
    * Tells whether a segment touches an excluded region
    * @param vertices - Layer vertices holding the segment endpoints
    * @param offset - Offset of the segment's first endpoint in the vertices
+   * @param beltPrinterTransform - Transform the vertices were drawn with, null for non-belt printers
    * @returns True if the segment is in the excluded region
    */
-  private inExcludedRegion (vertices: Float32Array, offset: number): boolean {
+  private inExcludedRegion (vertices: Float32Array, offset: number, beltPrinterTransform: BeltPrinterTransform | null): boolean {
+    // Regions bound the machine X and Y axes, and a belt printer runs its Y axis along the gantry
+    const startY = beltPrinterTransform ? beltPrinterTransform.gantryTravelOf(vertices[offset + 2]) : vertices[offset + 1]
+    const endY = beltPrinterTransform ? beltPrinterTransform.gantryTravelOf(vertices[offset + 5]) : vertices[offset + 4]
+
     for (const excludedRegion of this.excludedRegions) {
       if (
-        regionContains(excludedRegion, vertices[offset], vertices[offset + 1]) ||
-        regionContains(excludedRegion, vertices[offset + 3], vertices[offset + 4])
+        regionContains(excludedRegion, vertices[offset], startY) ||
+        regionContains(excludedRegion, vertices[offset + 3], endY)
       ) { return true }
     }
     return false
   }
 
   /* ---- Region markers ---- */
+
+  /** (Re)places the region markers to match the printer geometry */
+  placeRegionMarkers (): void {
+    const group = this.regionMarkersGroup
+
+    if (this.settings.beltPrinter) {
+      // A belt printer runs its Y axis along the gantry, so a region marks a band of heights across the belt
+      const beltPrinterTransform = new BeltPrinterTransform(this.settings.beltPrinterGantryAngle)
+      group.rotation.x = Math.PI / 2
+      group.scale.set(1, beltPrinterTransform.heightPerGantryTravel, 1)
+    } else {
+      // A region marks a footprint of the bed, at every height
+      group.rotation.x = 0
+      group.scale.set(1, 1, 1)
+    }
+  }
 
   /** (Re)builds the region markers from the current regions */
   private rebuildRegionMarkers (): void {

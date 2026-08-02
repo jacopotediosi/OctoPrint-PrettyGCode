@@ -241,7 +241,7 @@ export class Viewer {
   }
 
   /**
-   * Points the camera back at the bed center
+   * Points the camera back at what it frames
    * @param enableTransition - True to animate the move
    */
   resetCameraTarget (enableTransition = false): void {

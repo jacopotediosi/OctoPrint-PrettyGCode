@@ -11,6 +11,8 @@ export interface GcodeParseRequest {
   colors: ParserColors
   /** Whether G90/G91 also switch the extrusion mode */
   g90InfluencesExtruder: boolean
+  /** Angle between the belt and the printer gantry in degrees, null for non-belt printers */
+  beltPrinterGantryAngle: number | null
 }
 
 /** Gcode parse reply */
@@ -33,7 +35,7 @@ declare const self: {
  * @returns The parsed gcode
  */
 async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode> {
-  const parser = new GcodeParser(request.colors, request.objectTag, request.g90InfluencesExtruder)
+  const parser = new GcodeParser(request.colors, request.objectTag, request.g90InfluencesExtruder, request.beltPrinterGantryAngle)
 
   const response = await fetch(request.fileUrl)
   if (response.body) {

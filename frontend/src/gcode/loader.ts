@@ -21,9 +21,10 @@ export function cancelGcodeLoad (): void {
  * @param objectTag - Tag of the "@<tag> <name>" object markers
  * @param colors - Colors the parser paints segments with
  * @param g90InfluencesExtruder - Whether G90/G91 also switch the extrusion mode
+ * @param beltPrinterGantryAngle - Angle between the belt and the printer gantry in degrees, null for non-belt printers
  * @returns The parsed gcode
  */
-export async function loadGcodeFile (jobPath: string, objectTag: string | undefined, colors: ParserColors, g90InfluencesExtruder: boolean): Promise<ParsedGcode> {
+export async function loadGcodeFile (jobPath: string, objectTag: string | undefined, colors: ParserColors, g90InfluencesExtruder: boolean, beltPrinterGantryAngle: number | null): Promise<ParsedGcode> {
   // Drop the load still in flight, superseded by this one
   cancelGcodeLoad()
 
@@ -39,7 +40,7 @@ export async function loadGcodeFile (jobPath: string, objectTag: string | undefi
 
   try {
     // Send the request to the worker
-    const request: GcodeParseRequest = { fileUrl, objectTag, colors, g90InfluencesExtruder }
+    const request: GcodeParseRequest = { fileUrl, objectTag, colors, g90InfluencesExtruder, beltPrinterGantryAngle }
     const reply = await new Promise<GcodeParseReply>((resolve, reject) => {
       worker.onmessage = ({ data }) => resolve(data)
       worker.onerror = ({ message }) => reject(new Error(message))

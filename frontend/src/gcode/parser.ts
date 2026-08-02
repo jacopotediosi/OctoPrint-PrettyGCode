@@ -1,4 +1,5 @@
 import { arcOffsetFromRadius, interpolateArc } from './arc-interpolation'
+import { BeltPrinterTransform } from './belt-printer-transform'
 import type { ParserColors } from './model-colors'
 
 /* ---- Parse result ---- */
@@ -40,6 +41,13 @@ export interface GcodeBounds {
  * @returns The empty bounds
  */
 export const emptyBounds = (): GcodeBounds => ({ minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity })
+
+/** A point of the parsed gcode, in scene coordinates */
+export interface ScenePoint {
+  x: number
+  y: number
+  z: number
+}
 
 /* ---- Machine state ---- */
 
@@ -161,7 +169,7 @@ class OpenLayer {
    * @param extrusionSeconds - Estimated time extruding the segment
    * @param objectId - Id of the object the segment belongs to, -1 for none
    */
-  add (start: MachineState, end: MachineState, color: RgbColor, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number): void {
+  add (start: ScenePoint, end: ScenePoint, color: RgbColor, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number): void {
     if (this.segments === this.capacity) this.grow()
 
     const vertex = this.segments * 6
@@ -238,6 +246,11 @@ class OpenLayer {
 
 /* ---- Parser ---- */
 
+/** Scratch point reused for the scene start of each segment */
+const scratchStart: ScenePoint = { x: 0, y: 0, z: 0 }
+/** Scratch point reused for the scene end of each segment */
+const scratchEnd: ScenePoint = { x: 0, y: 0, z: 0 }
+
 /** Streaming gcode parser: feed it text chunks to get colored layers of segments with file positions and time estimates */
 export class GcodeParser {
   /** Parsed layers: segment endpoints, colors, file positions and estimated durations */
@@ -257,6 +270,9 @@ export class GcodeParser {
 
   /** Whether G90/G91 also switch the extrusion mode, not only the axes */
   private readonly g90InfluencesExtruder: boolean
+
+  /** Transform of the belt printer the gcode is meant for, null for non-belt printers */
+  private readonly beltPrinterTransform: BeltPrinterTransform | null
 
   /** Current machine state */
   private machineState: MachineState = INITIAL_MACHINE_STATE
@@ -289,10 +305,12 @@ export class GcodeParser {
    * @param colors - Colors the parser paints segments with
    * @param objectTag - Tag of the "@<tag> <name>" object markers
    * @param g90InfluencesExtruder - Whether G90/G91 also switch the extrusion mode
+   * @param beltPrinterGantryAngle - Angle between the belt and the printer gantry in degrees, null for non-belt printers
    */
-  constructor (colors: ParserColors, objectTag = 'Object', g90InfluencesExtruder = false) {
+  constructor (colors: ParserColors, objectTag = 'Object', g90InfluencesExtruder = false, beltPrinterGantryAngle: number | null = null) {
     this.objectTag = objectTag.toLowerCase()
     this.g90InfluencesExtruder = g90InfluencesExtruder
+    this.beltPrinterTransform = beltPrinterGantryAngle == null ? null : new BeltPrinterTransform(beltPrinterGantryAngle)
 
     // Precompute the colors and lowercase the keywords, dropping the empty ones
     this.defaultColor = hexStringToVividColor(colors.defaultColor)
@@ -529,17 +547,35 @@ export class GcodeParser {
    * @returns The new layer
    */
   private changeLayer (move: MachineState): OpenLayer {
-    this.finish()
+    this.sealLayer()
     this.layersOpened++
     this.currentLayer = new OpenLayer(move.z)
     return this.currentLayer
   }
 
-  /** Finishes parsing */
-  finish (): void {
+  /** Seals the open layer, if any */
+  private sealLayer (): void {
     if (!this.currentLayer) return
     this.layers.push(this.currentLayer.finish())
     this.currentLayer = null
+  }
+
+  /** Finishes parsing */
+  finish (): void {
+    this.sealLayer()
+    if (this.beltPrinterTransform) this.slidePrintToBeltOrigin()
+  }
+
+  /** Slides the print along the belt so it starts at the belt origin, where the printed shape trails behind it */
+  private slidePrintToBeltOrigin (): void {
+    const offset = -this.bounds.minY
+    if (!Number.isFinite(offset)) return
+
+    for (const { vertices } of this.layers) {
+      for (let y = 1; y < vertices.length; y += 3) vertices[y] += offset
+    }
+    this.bounds.minY += offset
+    this.bounds.maxY += offset
   }
 
   /**
@@ -556,7 +592,7 @@ export class GcodeParser {
    * Grows the model bounds to contain a point
    * @param point - Point to contain
    */
-  private expandBounds (point: MachineState): void {
+  private expandBounds (point: ScenePoint): void {
     const bounds = this.bounds
     bounds.minX = Math.min(bounds.minX, point.x)
     bounds.minY = Math.min(bounds.minY, point.y)
@@ -588,10 +624,15 @@ export class GcodeParser {
     const extrusionSeconds = length / feedrateMmPerSecond(end.f)
     this.pendingTravelSeconds = 0
 
+    // Turn the machine points into the points the segment prints at
+    const transform = this.beltPrinterTransform
+    const sceneStart = transform ? transform.toScenePoint(start, scratchStart) : start
+    const sceneEnd = transform ? transform.toScenePoint(end, scratchEnd) : end
+
     // Grow the model bounds only on moves that change position
     if (start.x !== end.x || start.y !== end.y || start.z !== end.z) {
-      this.expandBounds(start)
-      this.expandBounds(end)
+      this.expandBounds(sceneStart)
+      this.expandBounds(sceneEnd)
     }
 
     // Fake shading: tint by the segment's angle, alternating per layer for readability
@@ -603,6 +644,6 @@ export class GcodeParser {
     scratchColor.b = this.currentColor.b * brightness
 
     // Add the segment to the layer
-    layer.add(start, end, scratchColor, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId)
+    layer.add(sceneStart, sceneEnd, scratchColor, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId)
   }
 }

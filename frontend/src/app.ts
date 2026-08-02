@@ -67,7 +67,7 @@ export class PrettyGCodeApp {
   /** The 3D view */
   private readonly viewer = new Viewer(this.settings, () => this.bedVolume, (deltaSeconds) => this.updatePrintView(deltaSeconds))
   /** Print exclusions of the loaded gcode */
-  private readonly exclusions = new PrintExclusions()
+  private readonly exclusions = new PrintExclusions(this.settings)
   /** Print timeline of the loaded gcode */
   private readonly printTimeline = new PrintTimeline(this.exclusions)
   /** The rendered gcode model */
@@ -75,6 +75,8 @@ export class PrettyGCodeApp {
 
   /** Parsed gcode of the currently loaded job */
   private parsedGcode: ParsedGcode | null = null
+  /** Belt printer gantry angle the loaded gcode was parsed with */
+  private parsedBeltPrinterGantryAngle: number | null = null
   /** Model colors the loaded gcode was parsed with */
   private parsedColors: ParserColors | null = null
 
@@ -248,6 +250,11 @@ export class PrettyGCodeApp {
     return this.parsedGcode?.layers.length ?? 0
   }
 
+  /** Angle between the belt and the printer gantry in degrees, null for non-belt printers */
+  private get beltPrinterGantryAngle (): number | null {
+    return this.settings.beltPrinter ? this.settings.beltPrinterGantryAngle : null
+  }
+
   /**
    * Loads a job file and displays it in the 3D view
    * @param jobPath - Server path of the job file
@@ -258,6 +265,7 @@ export class PrettyGCodeApp {
     const sequence = ++this.loadSequence
     hideLargeFileConfirmation()
     this.unloadGcode()
+    this.parsedBeltPrinterGantryAngle = this.beltPrinterGantryAngle
     this.parsedColors = { colorRules: this.settings.modelColorRules, defaultColor: this.settings.modelDefaultColor }
 
     // Ask before loading a large file, which takes long and can bog the browser down
@@ -279,7 +287,7 @@ export class PrettyGCodeApp {
       const objectTag = this.settingsVM.settings?.plugins?.cancelobject?.reptag?.()
       // Whether G90/G91 affect extrusion follows OctoPrint's firmware setting
       const g90InfluencesExtruder = this.settingsVM.settings?.feature?.g90InfluencesExtruder?.() ?? false
-      const parsedGcode = await loadGcodeFile(jobPath, objectTag, this.parsedColors, g90InfluencesExtruder)
+      const parsedGcode = await loadGcodeFile(jobPath, objectTag, this.parsedColors, g90InfluencesExtruder, this.parsedBeltPrinterGantryAngle)
 
       // Stop if a newer load has started
       if (sequence !== this.loadSequence) return
@@ -392,7 +400,7 @@ export class PrettyGCodeApp {
     return this.printTimeline.layerSegmentCount(this._currentLayerNumber)
   }
 
-  /** Z height of the current layer */
+  /** Machine Z of the current layer */
   get currentLayerZ (): number {
     return this.parsedGcode?.layers[this._currentLayerNumber - 1]?.z ?? 0
   }
@@ -466,14 +474,17 @@ export class PrettyGCodeApp {
      */
     const anyOf = (...names: SettingKey[]): boolean => names.some((name) => toApply.has(name))
 
-    const mustReload = anyOf('modelColorRules', 'modelDefaultColor') &&
+    const beltPrinterChanged = anyOf('beltPrinter', 'beltPrinterGantryAngle') &&
+      this.beltPrinterGantryAngle !== this.parsedBeltPrinterGantryAngle
+    const colorsChanged = anyOf('modelColorRules', 'modelDefaultColor') &&
       (
         this.parsedColors == null ||
         !this.settings.matches('modelColorRules', this.parsedColors.colorRules) ||
         !this.settings.matches('modelDefaultColor', this.parsedColors.defaultColor)
       )
-    // Model color changes require a reload, which rebuilds the model on its own
-    if (mustReload) this.loadGcode(this.currentJobPath, true)
+
+    // Belt printer and model color changes require a reload, which rebuilds the model on its own
+    if (beltPrinterChanged || colorsChanged) this.loadGcode(this.currentJobPath, !beltPrinterChanged)
     else if (anyOf('thickLines', 'showExcluded', 'showBed', 'showMirror')) {
       this.gcodeModel.rebuild()
       this.viewer.requestRender()
@@ -488,6 +499,8 @@ export class PrettyGCodeApp {
 
     if (anyOf('navigationMode')) this.viewer.applyNavigationMode(this.settings.navigationMode)
     if (anyOf('projectionMode')) this.viewer.applyProjectionMode(this.settings.projectionMode)
+
+    if (anyOf('beltPrinter', 'beltPrinterGantryAngle')) this.exclusions.placeRegionMarkers()
 
     if (anyOf('showBed')) this.viewer.applyBedVisibility(this.settings.showBed)
     if (anyOf('showExclusionMarker')) {

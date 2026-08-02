@@ -38,7 +38,7 @@ MODEL_COLOR_RULE_DEFS: list[ModelColorRuleDef] = [
     {"id": "solidInfill", "keywords": ["solid"]},
     # SuperSlicer "Internal bridge infill"
     {"id": "internalBridge", "keywords": ["internal bridge infill"]},
-    # Prusa/SuperSlicer "Bridge infill", Bambu/Orca "Bridge", Simplify3D "bridge"
+    # Prusa/SuperSlicer "Bridge infill", Bambu/Orca "Bridge", Orca "Internal Bridge", Simplify3D "bridge"
     {"id": "bridge", "keywords": ["bridge"]},
     # Bambu "Support ironing"
     {"id": "supportIroning", "keywords": ["support ironing"]},
@@ -163,6 +163,11 @@ DEFAULT_DEFAULT_VIEW_SETTINGS = {
     "projectionMode": "perspective",
     # Whether to auto-orbit the camera when idle
     "orbitWhenIdle": False,
+    # ---- Printer ----
+    # Whether the printer prints onto a moving belt
+    "beltPrinter": False,
+    # Angle between the belt and the printer gantry, in degrees
+    "beltPrinterGantryAngle": 45,
     # ---- Gcode model ----
     # Whether to draw the lines with their real thickness
     "thickLines": True,

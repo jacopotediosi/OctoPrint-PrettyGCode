@@ -103,6 +103,23 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     'After 5 seconds with no mouse/camera movement the camera slowly orbits around the center.'
   )
 
+  /* ---- Printer ---- */
+
+  const printerFolder = gui.addFolder('Printer')
+
+  const beltPrinter = option(
+    printerFolder,
+    'beltPrinter',
+    'Belt printer',
+    'Set whether the printer prints onto a moving belt.'
+  )
+
+  const beltPrinterGantryAngle = printerFolder.add(settings, 'beltPrinterGantryAngle', 1, 89, 1).name('Gantry angle')
+  beltPrinterGantryAngle.domElement.title = 'Set the angle between the belt and the printer gantry.'
+
+  beltPrinter.onFinishChange(() => beltPrinterGantryAngle.show(settings.beltPrinter))
+  beltPrinterGantryAngle.show(settings.beltPrinter)
+
   /* ---- Gcode model ---- */
 
   const gcodeModelFolder = gui.addFolder('G-code model')
@@ -268,6 +285,7 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
   return {
     refresh: () => {
       gui.controllersRecursive().forEach((controller) => controller.updateDisplay())
+      beltPrinterGantryAngle.show(settings.beltPrinter)
       updateNozzleControls()
       mirror.show(settings.showBed)
       refreshResets()

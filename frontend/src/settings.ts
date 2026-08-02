@@ -35,6 +35,13 @@ export class Settings {
   /** Whether to auto-orbit the camera when idle */
   declare orbitWhenIdle: boolean
 
+  /* ---- Printer ---- */
+
+  /** Whether the printer prints onto a moving belt */
+  declare beltPrinter: boolean
+  /** Angle between the belt and the printer gantry, in degrees */
+  declare beltPrinterGantryAngle: number
+
   /* ---- Gcode model ---- */
 
   /** Whether to draw the lines with their real thickness */
