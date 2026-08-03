@@ -521,6 +521,11 @@ export class PrettyGCodeApp {
       this.viewer.requestRender()
     }
 
+    if (anyOf('travelScope', 'travelColor')) {
+      this.gcodeModel.updateTravelLines()
+      this.viewer.requestRender()
+    }
+
     if (anyOf('showBed')) this.viewer.applyBedVisibility(this.settings.showBed)
     if (anyOf('showExclusionMarker')) {
       this.exclusions.regionMarkersGroup.visible = this.settings.showExclusionMarker

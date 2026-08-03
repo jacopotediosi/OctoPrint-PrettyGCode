@@ -65,7 +65,7 @@ self.onmessage = async ({ data }) => {
 
     const buffers: Transferable[] = []
     for (const layer of gcode.layers) {
-      buffers.push(layer.vertices.buffer, layer.colors.buffer, layer.filePositions.buffer, layer.durations.buffer)
+      buffers.push(layer.vertices.buffer, layer.colors.buffer, layer.filePositions.buffer, layer.durations.buffer, layer.travelVertices.buffer, layer.travelSegmentIndices.buffer)
       if (layer.objectIds) buffers.push(layer.objectIds.buffer)
     }
     if (gcode.slicerTimeMarks) buffers.push(gcode.slicerTimeMarks.filePositions.buffer, gcode.slicerTimeMarks.elapsedSeconds.buffer)

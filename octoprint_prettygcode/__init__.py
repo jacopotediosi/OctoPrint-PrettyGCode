@@ -170,17 +170,6 @@ DEFAULT_DEFAULT_VIEW_SETTINGS = {
     "beltPrinter": False,
     # Angle between the belt and the printer gantry, in degrees
     "beltPrinterGantryAngle": 45,
-    # ---- Gcode model ----
-    # Whether to draw the lines with their real thickness
-    "thickLines": True,
-    # Shading intensity of the topmost displayed layer, in percent
-    "highlightIntensity": 40,
-    # Whether to show gcode excluded from printing, greyed out
-    "showExcluded": True,
-    # Model color rules, tried in order
-    "modelColorRules": MODEL_COLOR_PRESETS[0]["colorRules"],
-    # Color of segments matching no color rule
-    "modelDefaultColor": MODEL_COLOR_PRESETS[0]["defaultColor"],
     # ---- Nozzle ----
     # Marker shown at the nozzle position
     "nozzleStyle": "model",
@@ -192,6 +181,22 @@ DEFAULT_DEFAULT_VIEW_SETTINGS = {
     "nozzleTransparency": 0,
     # Whether to reflect the scene on the nozzle model
     "nozzleReflection": True,
+    # ---- Travel moves ----
+    # Part of the print the travel moves are drawn for
+    "travelScope": "none",
+    # Color of the travel moves
+    "travelColor": "#808080",
+    # ---- Gcode model ----
+    # Whether to draw the lines with their real thickness
+    "thickLines": True,
+    # Shading intensity of the topmost displayed layer, in percent
+    "highlightIntensity": 40,
+    # Whether to show gcode excluded from printing, greyed out
+    "showExcluded": True,
+    # Model color rules, tried in order
+    "modelColorRules": MODEL_COLOR_PRESETS[0]["colorRules"],
+    # Color of segments matching no color rule
+    "modelDefaultColor": MODEL_COLOR_PRESETS[0]["defaultColor"],
     # ---- Bed ----
     # Whether to show the print bed
     "showBed": True,

@@ -27,6 +27,8 @@ export interface Layer {
   filePositions: Uint32Array
   durations: Float32Array
   objectIds: Int32Array | null
+  travelVertices: Float32Array
+  travelSegmentIndices: Uint32Array
 }
 
 /** Box the parsed gcode fits in */
@@ -150,10 +152,12 @@ function hexStringToVividColor (hexString: string): RgbColor {
 /** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
 const LAYER_EPSILON_MM = 0.04
 
-/** A layer being filled with segments */
+/** A layer being filled with segments and with the travels leading to them */
 class OpenLayer {
   /** Initial size of segment buffers */
   private static readonly INITIAL_BUFFERS_CAPACITY = 1024
+  /** Initial size of travel buffers */
+  private static readonly INITIAL_TRAVEL_BUFFERS_CAPACITY = 128
 
   private vertices = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 6)
   private colors = new Uint8ClampedArray(OpenLayer.INITIAL_BUFFERS_CAPACITY * 6)
@@ -162,6 +166,11 @@ class OpenLayer {
   private objectIds: Int32Array | null = null
   private capacity = OpenLayer.INITIAL_BUFFERS_CAPACITY
   private segments = 0
+
+  private travelVertices = new Float32Array(OpenLayer.INITIAL_TRAVEL_BUFFERS_CAPACITY * 6)
+  private travelSegmentIndices = new Uint32Array(OpenLayer.INITIAL_TRAVEL_BUFFERS_CAPACITY)
+  private travelCapacity = OpenLayer.INITIAL_TRAVEL_BUFFERS_CAPACITY
+  private travels = 0
 
   constructor (readonly z: number) {}
 
@@ -175,8 +184,8 @@ class OpenLayer {
    * @param extrusionSeconds - Estimated time extruding the segment
    * @param objectId - Id of the object the segment belongs to, -1 for none
    */
-  add (start: ScenePoint, end: ScenePoint, color: RgbColor, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number): void {
-    if (this.segments === this.capacity) this.grow()
+  addSegment (start: ScenePoint, end: ScenePoint, color: RgbColor, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number): void {
+    if (this.segments === this.capacity) this.growSegments()
 
     const vertex = this.segments * 6
     this.vertices[vertex] = start.x
@@ -207,8 +216,21 @@ class OpenLayer {
     this.segments++
   }
 
+  /**
+   * Appends the travels leading to the segment the layer takes next
+   * @param vertices - Travel endpoints as flat XYZ triplets
+   * @param travels - Travels the vertices hold
+   */
+  addTravels (vertices: Float32Array, travels: number): void {
+    while (this.travels + travels > this.travelCapacity) this.growTravels()
+
+    this.travelVertices.set(vertices.subarray(0, travels * 6), this.travels * 6)
+    this.travelSegmentIndices.fill(this.segments, this.travels, this.travels + travels)
+    this.travels += travels
+  }
+
   /** Doubles the capacity of the segment buffers */
-  private grow (): void {
+  private growSegments (): void {
     this.capacity *= 2
 
     const vertices = new Float32Array(this.capacity * 6)
@@ -234,6 +256,19 @@ class OpenLayer {
     }
   }
 
+  /** Doubles the capacity of the travel buffers */
+  private growTravels (): void {
+    this.travelCapacity *= 2
+
+    const travelVertices = new Float32Array(this.travelCapacity * 6)
+    travelVertices.set(this.travelVertices)
+    this.travelVertices = travelVertices
+
+    const travelSegmentIndices = new Uint32Array(this.travelCapacity)
+    travelSegmentIndices.set(this.travelSegmentIndices)
+    this.travelSegmentIndices = travelSegmentIndices
+  }
+
   /**
    * Finishes the layer
    * @returns The finished layer
@@ -245,20 +280,28 @@ class OpenLayer {
       colors: this.colors.slice(0, this.segments * 6),
       filePositions: this.filePositions.slice(0, this.segments),
       durations: this.durations.slice(0, this.segments * 2),
-      objectIds: this.objectIds ? this.objectIds.slice(0, this.segments) : null
+      objectIds: this.objectIds ? this.objectIds.slice(0, this.segments) : null,
+      travelVertices: this.travelVertices.slice(0, this.travels * 6),
+      travelSegmentIndices: this.travelSegmentIndices.slice(0, this.travels)
     }
   }
 }
 
 /* ---- Parser ---- */
 
-/** Scratch point reused for the scene start of each segment */
+/** Scratch point reused for the scene start of each move */
 const scratchStart: ScenePoint = { x: 0, y: 0, z: 0 }
-/** Scratch point reused for the scene end of each segment */
+/** Scratch point reused for the scene end of each move */
 const scratchEnd: ScenePoint = { x: 0, y: 0, z: 0 }
+
+/** Travel length below which the move is not drawn */
+const MIN_TRAVEL_LENGTH_MM = 0.5
 
 /** Streaming gcode parser: feed it text chunks to get colored layers of segments with file positions and time estimates */
 export class GcodeParser {
+  /** Initial size of the buffer holding the travels waiting for the segment they lead to */
+  private static readonly INITIAL_PENDING_TRAVELS_CAPACITY = 16
+
   /** Parsed layers: segment endpoints, colors, file positions and estimated durations */
   readonly layers: Layer[] = []
 
@@ -308,6 +351,10 @@ export class GcodeParser {
   private filePosition = 0
   /** Travel time accumulated since the last segment */
   private pendingTravelSeconds = 0
+  /** Endpoints of the travels made since the last segment */
+  private pendingTravelVertices = new Float32Array(GcodeParser.INITIAL_PENDING_TRAVELS_CAPACITY * 6)
+  /** Travels made since the last segment */
+  private pendingTravels = 0
   /** Whether axis moves are relative */
   private axesRelative = false
   /** Whether extrusion is relative */
@@ -423,14 +470,15 @@ export class GcodeParser {
         case 'G0':
         case 'G1': {
           const move: MachineState = { x: coord('x'), y: coord('y'), z: coord('z'), e: coord('e'), f: coord('f') }
+          const extruding = this.extrusionDelta(args, move) > 0
 
           // New layer when extrusion moves to a different Z
-          if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
+          if (extruding && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
             this.changeLayer(move)
           }
 
-          // Extrude a segment when E is present, otherwise track the travel time
-          if (args.e !== undefined) this.addSegment(this.machineState, move)
+          // Extrude a segment when the move lays down material, otherwise track the travel time
+          if (extruding) this.addSegment(this.machineState, move)
           else this.addTravel(this.machineState, move)
           this.machineState = move
           break
@@ -445,9 +493,10 @@ export class GcodeParser {
             e: coord('e'), // extruder position
             f: coord('f') // feedrate
           }
+          const extruding = this.extrusionDelta(args, move) > 0
 
           // New layer when extrusion moves to a different Z
-          if (this.extrusionDelta(args, move) > 0 && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
+          if (extruding && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
             this.changeLayer(move)
           }
 
@@ -460,7 +509,7 @@ export class GcodeParser {
           // so the next moves still start from the right point
           if (args.k !== undefined || (args.r !== undefined && !offset.i && !offset.j)) {
             console.warn('PrettyGCode: Unsupported arc', rawLine)
-            if (args.e !== undefined) this.addSegment(this.machineState, move)
+            if (extruding) this.addSegment(this.machineState, move)
             else this.addTravel(this.machineState, move)
             this.machineState = move
             break
@@ -475,7 +524,7 @@ export class GcodeParser {
           }
           const segments = interpolateArc(this.machineState, arc)
           for (let segmentIndex = 1; segmentIndex < segments.length; segmentIndex++) {
-            if (args.e !== undefined) this.addSegment(segments[segmentIndex - 1], segments[segmentIndex])
+            if (extruding) this.addSegment(segments[segmentIndex - 1], segments[segmentIndex])
             else this.addTravel(segments[segmentIndex - 1], segments[segmentIndex])
           }
           this.machineState = segments[segments.length - 1]
@@ -593,21 +642,45 @@ export class GcodeParser {
     const offset = -this.bounds.minY
     if (!Number.isFinite(offset)) return
 
-    for (const { vertices } of this.layers) {
+    for (const { vertices, travelVertices } of this.layers) {
       for (let y = 1; y < vertices.length; y += 3) vertices[y] += offset
+      for (let y = 1; y < travelVertices.length; y += 3) travelVertices[y] += offset
     }
     this.bounds.minY += offset
     this.bounds.maxY += offset
   }
 
   /**
-   * Accounts the time of a non-extruding move, charged to the gap before the next segment
+   * Adds a non-extruding move, whose time is charged to the gap before the next segment
    * @param start - Machine state at the move start
    * @param end - Machine state at the move end
    */
   private addTravel (start: MachineState, end: MachineState): void {
-    const length = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z)
-    this.pendingTravelSeconds += (length || 0) / feedrateMmPerSecond(end.f)
+    const distance = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z)
+    this.pendingTravelSeconds += (distance || Math.abs(end.e - start.e) || 0) / feedrateMmPerSecond(end.f)
+
+    // Keep the travels long enough to draw, from the first layer on
+    if (distance >= MIN_TRAVEL_LENGTH_MM && this.layersOpened > 0) {
+      // Grow the pending buffer when a gap holds more travels than it fits
+      const vertex = this.pendingTravels * 6
+      if (vertex === this.pendingTravelVertices.length) {
+        const pendingTravelVertices = new Float32Array(vertex * 2)
+        pendingTravelVertices.set(this.pendingTravelVertices)
+        this.pendingTravelVertices = pendingTravelVertices
+      }
+
+      // Turn the machine points into the points the travel runs between
+      const transform = this.beltPrinterTransform
+      const sceneStart = transform ? transform.toScenePoint(start, scratchStart) : start
+      const sceneEnd = transform ? transform.toScenePoint(end, scratchEnd) : end
+      this.pendingTravelVertices[vertex] = sceneStart.x
+      this.pendingTravelVertices[vertex + 1] = sceneStart.y
+      this.pendingTravelVertices[vertex + 2] = sceneStart.z
+      this.pendingTravelVertices[vertex + 3] = sceneEnd.x
+      this.pendingTravelVertices[vertex + 4] = sceneEnd.y
+      this.pendingTravelVertices[vertex + 5] = sceneEnd.z
+      this.pendingTravels++
+    }
   }
 
   /**
@@ -646,6 +719,12 @@ export class GcodeParser {
     const extrusionSeconds = length / feedrateMmPerSecond(end.f)
     this.pendingTravelSeconds = 0
 
+    // Attach the travels leading here to the layer
+    if (this.pendingTravels) {
+      layer.addTravels(this.pendingTravelVertices, this.pendingTravels)
+      this.pendingTravels = 0
+    }
+
     // Turn the machine points into the points the segment prints at
     const transform = this.beltPrinterTransform
     const sceneStart = transform ? transform.toScenePoint(start, scratchStart) : start
@@ -666,6 +745,6 @@ export class GcodeParser {
     scratchColor.b = this.currentColor.b * brightness
 
     // Add the segment to the layer
-    layer.add(sceneStart, sceneEnd, scratchColor, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId)
+    layer.addSegment(sceneStart, sceneEnd, scratchColor, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId)
   }
 }

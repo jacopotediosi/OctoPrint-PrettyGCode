@@ -127,36 +127,6 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
   beltPrinter.onFinishChange(() => beltPrinterGantryAngle.show(settings.beltPrinter))
   beltPrinterGantryAngle.show(settings.beltPrinter)
 
-  /* ---- Gcode model ---- */
-
-  const gcodeModelFolder = gui.addFolder('G-code model')
-
-  option(
-    gcodeModelFolder,
-    'thickLines',
-    'Thick lines',
-    'Display lines with thickness, based on nozzle size.'
-  )
-
-  const highlightIntensity = gcodeModelFolder.add(settings, 'highlightIntensity', 0, 100, 1).name('Highlight layer')
-  highlightIntensity.domElement.title = 'Set how strongly the topmost displayed layer is shaded.'
-
-  option(
-    gcodeModelFolder,
-    'showExcluded',
-    'Excluded gcode',
-    'Show gcode excluded by the Exclude Region and Cancel Object plugins, greyed out.'
-  )
-
-  const colorPresets: ColorPreset[] = JSON.parse(container.dataset.modelColorPresets ?? '[]')
-  const modelColorsModal = initModelColorsModal(settings, colorPresets, () => {
-    onChange?.()
-    app?.applySettings(['modelColorRules', 'modelDefaultColor'])
-    refreshResets()
-  })
-  const customizeColors = gcodeModelFolder.add({ customize: () => modelColorsModal.open() }, 'customize').name('Customize colors…')
-  customizeColors.domElement.title = 'Customize the colors used for the gcode model.'
-
   /* ---- Nozzle ---- */
 
   const nozzleFolder = gui.addFolder('Nozzle')
@@ -188,6 +158,49 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
   }
   nozzleStyle.onFinishChange(updateNozzleControls)
   updateNozzleControls()
+
+  /* ---- Travel moves ---- */
+
+  const travelMovesFolder = gui.addFolder('Travel moves')
+
+  const travelScope = travelMovesFolder.add(settings, 'travelScope', { Off: 'none', 'Displayed layer': 'displayedLayer', 'Whole model': 'wholeModel' }).name('Travel moves')
+  travelScope.domElement.title = 'Set where the non-extruding moves between printed lines are drawn.'
+
+  const travelColor = travelMovesFolder.addColor(settings, 'travelColor').name('Travel color')
+  travelColor.domElement.title = 'Set the color of the travel moves.'
+
+  travelScope.onFinishChange(() => travelColor.show(settings.travelScope !== 'none'))
+  travelColor.show(settings.travelScope !== 'none')
+
+  /* ---- Gcode model ---- */
+
+  const gcodeModelFolder = gui.addFolder('G-code model')
+
+  option(
+    gcodeModelFolder,
+    'thickLines',
+    'Thick lines',
+    'Display lines with thickness, based on nozzle size.'
+  )
+
+  const highlightIntensity = gcodeModelFolder.add(settings, 'highlightIntensity', 0, 100, 1).name('Highlight layer')
+  highlightIntensity.domElement.title = 'Set how strongly the topmost displayed layer is shaded.'
+
+  option(
+    gcodeModelFolder,
+    'showExcluded',
+    'Excluded gcode',
+    'Show gcode excluded by the Exclude Region and Cancel Object plugins, greyed out.'
+  )
+
+  const colorPresets: ColorPreset[] = JSON.parse(container.dataset.modelColorPresets ?? '[]')
+  const modelColorsModal = initModelColorsModal(settings, colorPresets, () => {
+    onChange?.()
+    app?.applySettings(['modelColorRules', 'modelDefaultColor'])
+    refreshResets()
+  })
+  const customizeColors = gcodeModelFolder.add({ customize: () => modelColorsModal.open() }, 'customize').name('Customize colors…')
+  customizeColors.domElement.title = 'Customize the colors used for the gcode model.'
 
   /* ---- Bed ---- */
 
@@ -294,6 +307,7 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
       gui.controllersRecursive().forEach((controller) => controller.updateDisplay())
       beltPrinterGantryAngle.show(settings.beltPrinter)
       updateNozzleControls()
+      travelColor.show(settings.travelScope !== 'none')
       mirror.show(settings.showBed)
       refreshResets()
     }
