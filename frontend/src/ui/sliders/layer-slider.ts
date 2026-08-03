@@ -7,6 +7,40 @@ let shownLayer = -1
 let maxLayer = -1
 
 /**
+ * Spells out how long something takes, in the largest units it fills
+ * @param seconds - Duration to spell out
+ * @returns The duration as text
+ */
+function secondsToDurationText (seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`
+
+  const minutes = Math.round(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (days) return `${days}d ${hours % 24}h`
+  if (hours) return `${hours}h ${minutes % 60}m`
+  return `${minutes}m`
+}
+
+/**
+ * Reads the clock a number of seconds from now, on a 24 hour dial
+ * @param seconds - Seconds from now
+ * @returns The time as text, carrying the date when it falls on another day
+ */
+function secondsFromNowToClockText (seconds: number): string {
+  const futureTime = new Date(Date.now() + seconds * 1000)
+  const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+
+  if (futureTime.toDateString() !== new Date().toDateString()) {
+    options.day = '2-digit'
+    options.month = '2-digit'
+  }
+
+  return futureTime.toLocaleString([], options)
+}
+
+/**
  * Creates the layer slider
  * @param app - Application instance
  */
@@ -36,7 +70,14 @@ export function initLayerSlider (app: PrettyGCodeApp): void {
     orientation: 'vertical',
     reversed: true,
     selection: 'after',
-    formatter: () => `${app.settings.beltPrinter ? 'Belt' : 'Z'}: ${app.currentLayerZ}`,
+    formatter: () => {
+      const height = `${app.settings.beltPrinter ? 'Belt' : 'Z'}: ${app.currentLayerZ}`
+
+      const seconds = app.secondsUntilLayer(app.currentLayerNumber)
+      if (seconds == null) return height
+
+      return [height, `in ${secondsToDurationText(seconds)} (~${secondsFromNowToClockText(seconds)})`].join('\n')
+    },
     min: 0,
     max: 100,
     value: 100

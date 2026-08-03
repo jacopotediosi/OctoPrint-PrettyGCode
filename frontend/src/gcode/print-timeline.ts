@@ -278,10 +278,7 @@ export class PrintTimeline {
     if (!this.drawnLayers.length) return null
 
     // How much of the print has been sent to the printer so far
-    const segmentsRead = this.segmentsReadAt(filePosition)
-    this.targetTime = segmentsRead < this.totalSegments
-      ? this.segmentStartTimes[segmentsRead]
-      : this.endTimeAt(this.totalSegments - 1)
+    this.targetTime = this.timeAfterSegments(this.segmentsReadAt(filePosition))
 
     // Follow that point smoothly: the nozzle stops when nothing new arrives and speeds up
     // after a burst of commands; it jumps only when the point is behind it or very far ahead
@@ -293,6 +290,34 @@ export class PrintTimeline {
     const spot = this.locateTime(this.nozzleTime)
     this.updateNozzlePosition(spot)
     return spot
+  }
+
+  /**
+   * Gets the estimated time the print has got through at a file position
+   * @param filePosition - Bytes of the file sent to the printer
+   * @returns The estimated seconds
+   */
+  estimatedSecondsAt (filePosition: number): number {
+    return this.timeAfterSegments(this.segmentsReadAt(filePosition))
+  }
+
+  /**
+   * Gets the estimated time the print has got through when a layer starts
+   * @param layerNumber - 1-based layer number
+   * @returns The estimated seconds
+   */
+  estimatedSecondsAtLayer (layerNumber: number): number {
+    return this.timeAfterSegments(this.revealIndex(layerNumber, 0))
+  }
+
+  /**
+   * Gets the timeline coordinate reached once a number of segments has been drawn
+   * @param segments - Drawn segments passed
+   * @returns The coordinate in seconds
+   */
+  private timeAfterSegments (segments: number): number {
+    if (!this.totalSegments) return 0
+    return segments < this.totalSegments ? this.segmentStartTimes[segments] : this.endTimeAt(this.totalSegments - 1)
   }
 
   /**

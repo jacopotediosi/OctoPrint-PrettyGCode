@@ -584,6 +584,9 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     left: auto !important;
     margin: 0 3px 0 0;
 }
+#pg-layer-slider-ui .tooltip-inner {
+    white-space: pre;
+}
 #pg-layer-slider-ui .tooltip-arrow {
     right: 0;
     left: auto;

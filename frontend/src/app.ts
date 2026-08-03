@@ -1,6 +1,7 @@
 import { Settings, type SettingKey, type SettingValues } from './settings'
 import { Viewer } from './viewer/viewer'
 import { loadGcodeFile, cancelGcodeLoad } from './gcode/loader'
+import { ObservedPrintSpeed } from './gcode/observed-print-speed'
 import { PrintTimeline } from './gcode/print-timeline'
 import { PrintExclusions } from './gcode/exclusions'
 import { GcodeModel } from './gcode/gcode-model'
@@ -31,7 +32,7 @@ interface PrinterDataPayload {
   logs: string[]
   job: { file: { path: string, date: number, size: number } }
   state: PrinterState
-  progress: { filepos: number }
+  progress: { filepos: number, printTime: number }
 }
 
 /** Selector of the plugin tab */
@@ -69,6 +70,8 @@ export class PrettyGCodeApp {
   private readonly exclusions = new PrintExclusions(this.settings)
   /** Print timeline of the loaded gcode */
   private readonly printTimeline = new PrintTimeline(this.exclusions)
+  /** Speed the running print is going at */
+  private readonly observedPrintSpeed = new ObservedPrintSpeed()
   /** The rendered gcode model */
   private readonly gcodeModel = new GcodeModel(this.settings, () => this.nozzleDiameter, this.printTimeline, this.exclusions, this.viewer.mirrorBoundsPlanes)
 
@@ -240,6 +243,11 @@ export class PrettyGCodeApp {
     // Live printer state and progress
     this.currentPrinterState = data.state
     this.currentFilePosition = data.progress.filepos
+
+    // Speed of the job the printer is on
+    if (data.state.flags.printing || data.state.flags.paused) {
+      this.observedPrintSpeed.track(data.progress.printTime, this.printTimeline.estimatedSecondsAt(this.currentFilePosition))
+    }
   }
 
   /* ---- Gcode loading ---- */
@@ -402,6 +410,22 @@ export class PrettyGCodeApp {
   /** Machine Z of the current layer */
   get currentLayerZ (): number {
     return this.parsedGcode?.layers[this._currentLayerNumber - 1]?.z ?? 0
+  }
+
+  /**
+   * Gets how long the running print still takes to reach a layer
+   * @param layerNumber - 1-based layer number
+   * @returns The seconds left, or null when the print is not running, the gcode carries no slicer
+   * time marks, or the layer is already behind
+   */
+  secondsUntilLayer (layerNumber: number): number | null {
+    if (!this.currentPrinterState?.flags.printing || !this.parsedGcode?.slicerTimeMarks) return null
+
+    const reachedSeconds = this.printTimeline.estimatedSecondsAt(this.currentFilePosition)
+    const layerSeconds = this.printTimeline.estimatedSecondsAtLayer(layerNumber)
+    if (layerSeconds <= reachedSeconds) return null
+
+    return this.observedPrintSpeed.toRealSeconds(layerSeconds - reachedSeconds)
   }
 
   /**
