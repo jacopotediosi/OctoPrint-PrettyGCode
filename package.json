@@ -15,7 +15,7 @@
         "camera-controls": "3.1.2",
         "lil-gui": "0.21.0",
         "three": "0.185.1",
-        "three-viewport-gizmo": "git+https://github.com/Fennec-hub/three-viewport-gizmo.git#d1e74cb4f8e32eada81e6ac3a1da16e334b8ff99"
+        "three-viewport-gizmo": "github:Fennec-hub/three-viewport-gizmo#d1e74cb4f8e32eada81e6ac3a1da16e334b8ff99"
     },
     "devDependencies": {
         "@types/jquery": "^4.0.1",
