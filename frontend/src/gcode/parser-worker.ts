@@ -53,6 +53,7 @@ async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode>
     layers: parser.layers,
     bounds: parser.bounds,
     slicerNozzleDiameter: parser.slicerNozzleDiameter,
+    slicerTimeMarks: parser.slicerTimeMarks,
     objectNames: parser.objectNames
   } satisfies ParsedGcode
 }
@@ -67,6 +68,7 @@ self.onmessage = async ({ data }) => {
       buffers.push(layer.vertices.buffer, layer.colors.buffer, layer.filePositions.buffer, layer.durations.buffer)
       if (layer.objectIds) buffers.push(layer.objectIds.buffer)
     }
+    if (gcode.slicerTimeMarks) buffers.push(gcode.slicerTimeMarks.filePositions.buffer, gcode.slicerTimeMarks.elapsedSeconds.buffer)
 
     self.postMessage({ gcode }, buffers)
   } catch (error) {

@@ -295,7 +295,7 @@ export class PrettyGCodeApp {
       this.exclusions.setGcodeObjectNames(this.parsedGcode.objectNames)
 
       // Index the timeline and build the model
-      this.printTimeline.index(this.parsedGcode.layers)
+      this.printTimeline.index(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
       this.gcodeModel.build(this.parsedGcode.layers)
 
       // Apply the gcode bounds
@@ -321,7 +321,7 @@ export class PrettyGCodeApp {
   /** Empties the 3D view of the loaded gcode */
   private unloadGcode (): void {
     this.parsedGcode = null
-    this.printTimeline.index([])
+    this.printTimeline.index([], null)
     this.gcodeModel.build([])
     updateLayerSliderMax(this)
     updateSegmentSliderMax(this)
@@ -339,7 +339,7 @@ export class PrettyGCodeApp {
   private updateExclusions (): void {
     if (!this.viewInitialized || !this.parsedGcode) return
 
-    this.printTimeline.index(this.parsedGcode.layers)
+    this.printTimeline.index(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
     this.gcodeModel.rebuild()
     this.updateLayerHighlight()
   }

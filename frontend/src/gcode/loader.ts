@@ -29,7 +29,7 @@ export async function loadGcodeFile (jobPath: string, objectTag: string | undefi
   cancelGcodeLoad()
 
   // If there is no job path, return an empty result
-  if (!jobPath) return { layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, objectNames: [] } satisfies ParsedGcode
+  if (!jobPath) return { layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, slicerTimeMarks: null, objectNames: [] } satisfies ParsedGcode
 
   // The worker resolves relative URLs against its own script, so the download URL is made absolute here
   const fileUrl = new URL(OctoPrint.files.downloadPath('local', jobPath), location.href).href

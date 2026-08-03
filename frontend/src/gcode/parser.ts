@@ -1,5 +1,6 @@
 import { arcOffsetFromRadius, interpolateArc } from './arc-interpolation'
 import { BeltPrinterTransform } from './belt-printer-transform'
+import { SlicerTimeMarksCollector, type SlicerTimeMarks } from './slicer-time-marks'
 import type { ParserColors } from './model-colors'
 
 /* ---- Parse result ---- */
@@ -12,6 +13,8 @@ export interface ParsedGcode {
   bounds: GcodeBounds
   /** Nozzle diameter the slicer states, if any */
   slicerNozzleDiameter: number | null
+  /** Print times the slicer states along the file, if any */
+  slicerTimeMarks: SlicerTimeMarks | null
   /** Names of the objects marked in the gcode, by object id */
   objectNames: string[]
 }
@@ -88,6 +91,9 @@ const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
  * - ; feature <label>  Simplify3D
  */
 const FEATURE_TYPE_COMMENT = /;\s*(type:|feature[ :])/i
+
+/** Prefix, lowercased, of the comment stating the print time elapsed so far */
+const TIME_ELAPSED_COMMENT = ';time_elapsed:'
 
 /* ---- Segment colors ---- */
 
@@ -262,6 +268,9 @@ export class GcodeParser {
   /** Nozzle diameter the slicer states, if any */
   slicerNozzleDiameter: number | null = null
 
+  /** Print times the slicer states along the file, if any */
+  slicerTimeMarks: SlicerTimeMarks | null = null
+
   /** Names of the objects marked in the gcode, by object id */
   readonly objectNames: string[] = []
 
@@ -273,6 +282,9 @@ export class GcodeParser {
 
   /** Transform of the belt printer the gcode is meant for, null for non-belt printers */
   private readonly beltPrinterTransform: BeltPrinterTransform | null
+
+  /** Collector of the print times the slicer states along the file */
+  private readonly slicerTimeMarksCollector = new SlicerTimeMarksCollector()
 
   /** Current machine state */
   private machineState: MachineState = INITIAL_MACHINE_STATE
@@ -365,6 +377,11 @@ export class GcodeParser {
         if (this.slicerNozzleDiameter == null) {
           const nozzleMatch = commentLower.match(NOZZLE_DIAMETER_COMMENT)
           if (nozzleMatch) this.slicerNozzleDiameter = parseFloat(nozzleMatch[1])
+        }
+
+        // Take the elapsed print time the slicer states
+        if (commentLower.startsWith(TIME_ELAPSED_COMMENT, commentStart)) {
+          this.slicerTimeMarksCollector.addElapsed(this.filePosition, parseFloat(rawLine.slice(commentStart + TIME_ELAPSED_COMMENT.length)))
         }
       }
 
@@ -489,6 +506,10 @@ export class GcodeParser {
           this.axesRelative = true
           if (this.g90InfluencesExtruder) this.extrusionRelative = true
           break
+          // Remaining print time the slicer states
+        case 'M73':
+          if (args.r !== undefined) this.slicerTimeMarksCollector.addRemaining(this.filePosition, args.r * 60)
+          break
           // Absolute extrusion
         case 'M82':
           this.extrusionRelative = false
@@ -563,6 +584,7 @@ export class GcodeParser {
   /** Finishes parsing */
   finish (): void {
     this.sealLayer()
+    this.slicerTimeMarks = this.slicerTimeMarksCollector.getMarks()
     if (this.beltPrinterTransform) this.slidePrintToBeltOrigin()
   }
 

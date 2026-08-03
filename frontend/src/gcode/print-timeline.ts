@@ -1,6 +1,7 @@
 import * as THREE from '../three-exports'
 import type { Layer } from './parser'
 import type { PrintExclusions } from './exclusions'
+import type { SlicerTimeMarks } from './slicer-time-marks'
 
 /** A non-empty layer in print order, carrying its offset into the global segment numbering */
 interface DrawnLayer {
@@ -12,6 +13,14 @@ interface DrawnLayer {
   filePositions: Uint32Array
   durations: Float32Array
   excluded: Uint8Array | null
+}
+
+/** How the estimated durations are reshaped to run at the times a slicer states */
+interface SlicerMarkCalibration {
+  /** Factor applied to the durations running up to each mark */
+  stretchFactors: Float64Array
+  /** Seconds spent standing still at each mark */
+  pauseSeconds: Float64Array
 }
 
 /** A point along the timeline: a segment (or the travel gap before it) and the fraction into it */
@@ -36,8 +45,13 @@ export class PrintTimeline {
   /** Total drawn segments across all layers */
   private totalSegments = 0
 
-  /** Cumulative estimated time at each segment's start, travel gaps included */
+  /** Cumulative print time at each segment's start, travel gaps included */
   private segmentStartTimes = new Float64Array(0)
+
+  /** Print times the slicer states along the file, null when it states none */
+  private slicerTimeMarks: SlicerTimeMarks | null = null
+  /** Factor applied to the durations running up to each slicer time mark */
+  private stretchFactors: Float64Array = Float64Array.of(1)
 
   /** Timeline coordinate the nozzle has been eased to */
   private nozzleTime = 0
@@ -61,8 +75,9 @@ export class PrintTimeline {
   /**
    * Indexes parsed layers into a new timeline
    * @param layers - Parsed gcode layers
+   * @param slicerTimeMarks - Print times the slicer states along the file, null when it states none
    */
-  index (layers: Layer[]): void {
+  index (layers: Layer[], slicerTimeMarks: SlicerTimeMarks | null): void {
     // Flatten the drawn layers into print order, tracking each one's running segment offset
     this.drawnLayers = []
     let base = 0
@@ -74,22 +89,38 @@ export class PrintTimeline {
     })
     this.totalSegments = base
 
+    // Reshaping that brings the estimated durations onto the times the slicer states
+    const { stretchFactors, pauseSeconds } = slicerTimeMarks
+      ? this.slicerMarkCalibration(slicerTimeMarks)
+      : { stretchFactors: Float64Array.of(1), pauseSeconds: Float64Array.of(0) }
+    const markFilePositions = slicerTimeMarks?.filePositions ?? new Uint32Array(0)
+    this.slicerTimeMarks = slicerTimeMarks
+    this.stretchFactors = stretchFactors
+
     // Timeline coordinate of every segment, counting the travel gaps between them, so the
     // nozzle can be eased along the whole path at each move's own pace
     const starts = new Float64Array(this.totalSegments)
     let time = 0
     let globalIndex = 0
+    let markIndex = 0
     this.drawnLayers.forEach((layer) => {
       const durations = layer.durations
+      const filePositions = layer.filePositions
       const excluded = layer.excluded
       for (let offset = 0, segment = 0; offset < durations.length; offset += 2, segment++) {
+        while (markIndex < markFilePositions.length && markFilePositions[markIndex] <= filePositions[segment]) {
+          time += pauseSeconds[markIndex]
+          markIndex++
+        }
+        const stretchFactor = stretchFactors[markIndex]
+
         // Excluded segments take no time
         if (excluded && excluded[segment]) {
           starts[globalIndex] = time
         } else {
-          time += durations[offset]
+          time += durations[offset] * stretchFactor
           starts[globalIndex] = time
-          time += durations[offset + 1]
+          time += durations[offset + 1] * stretchFactor
         }
         globalIndex++
       }
@@ -99,6 +130,66 @@ export class PrintTimeline {
     // Start the nozzle from scratch on the new timeline
     this.nozzleTime = 0
     this.targetTime = 0
+  }
+
+  /**
+   * Measures the estimated time the print takes to reach each slicer time mark
+   * @param markFilePositions - Byte offsets the marks sit at
+   * @returns The estimated seconds at each mark
+   */
+  private estimatedSecondsAtSlicerMarks (markFilePositions: Uint32Array): Float64Array {
+    const estimatedSecondsAtMarks = new Float64Array(markFilePositions.length)
+    let estimatedSeconds = 0
+    let markIndex = 0
+
+    // Time reached at every mark passed
+    this.drawnLayers.forEach((layer) => {
+      const durations = layer.durations
+      const filePositions = layer.filePositions
+      for (let offset = 0, segment = 0; offset < durations.length; offset += 2, segment++) {
+        while (markIndex < markFilePositions.length && markFilePositions[markIndex] <= filePositions[segment]) {
+          estimatedSecondsAtMarks[markIndex++] = estimatedSeconds
+        }
+        estimatedSeconds += durations[offset] + durations[offset + 1]
+      }
+    })
+
+    // Marks past the last drawn segment
+    while (markIndex < markFilePositions.length) estimatedSecondsAtMarks[markIndex++] = estimatedSeconds
+
+    return estimatedSecondsAtMarks
+  }
+
+  /**
+   * Measures how the estimated durations have to be reshaped to match the slicer
+   * @param marks - Print times the slicer states along the file
+   * @returns The reshaping of the durations running up to each mark, and of the ones past the last
+   */
+  private slicerMarkCalibration (marks: SlicerTimeMarks): SlicerMarkCalibration {
+    const markFilePositions = marks.filePositions
+    const markElapsedSeconds = marks.elapsedSeconds
+    const estimatedSecondsAtMarks = this.estimatedSecondsAtSlicerMarks(markFilePositions)
+
+    // Pace of every stretch between two marks
+    const stretchFactors = new Float64Array(markFilePositions.length + 1)
+    const pauseSeconds = new Float64Array(markFilePositions.length + 1)
+    let stretchFactor = 1
+    for (let markIndex = 1; markIndex < markFilePositions.length; markIndex++) {
+      const estimatedSeconds = estimatedSecondsAtMarks[markIndex] - estimatedSecondsAtMarks[markIndex - 1]
+      const statedSeconds = markElapsedSeconds[markIndex] - markElapsedSeconds[markIndex - 1]
+
+      // Stretches drawing nothing, such as the heat up opening the print, stand still instead
+      if (estimatedSeconds > 0) stretchFactor = statedSeconds / estimatedSeconds
+      else pauseSeconds[markIndex] = statedSeconds
+
+      stretchFactors[markIndex] = stretchFactor
+    }
+
+    // Stretches outside the marks keep the nearest pace
+    stretchFactors[0] = stretchFactors[1]
+    stretchFactors[markFilePositions.length] = stretchFactor
+
+    return { stretchFactors, pauseSeconds }
   }
 
   /* ---- Reveal positions ---- */
@@ -281,9 +372,31 @@ export class PrintTimeline {
     const { layer, localIndex } = this.segmentAt(globalIndex)!
 
     // Excluded segments take no time
-    const extrusion = layer.excluded?.[localIndex] ? 0 : layer.durations[localIndex * 2 + 1]
+    const extrusion = layer.excluded?.[localIndex]
+      ? 0
+      : layer.durations[localIndex * 2 + 1] * this.stretchFactorAt(layer.filePositions[localIndex])
 
     return this.segmentStartTimes[globalIndex] + extrusion
+  }
+
+  /**
+   * Gets the factor the durations at a file position are stretched by
+   * @param filePosition - Byte offset in the file
+   * @returns The factor
+   */
+  private stretchFactorAt (filePosition: number): number {
+    const markFilePositions = this.slicerTimeMarks?.filePositions
+    if (!markFilePositions) return 1
+
+    // Marks the file position has passed (binary search)
+    let lo = 0; let hi = markFilePositions.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (markFilePositions[mid] <= filePosition) lo = mid + 1
+      else hi = mid
+    }
+
+    return this.stretchFactors[lo]
   }
 
   /* ---- Nozzle position ---- */
