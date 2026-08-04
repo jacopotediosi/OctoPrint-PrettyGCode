@@ -245,8 +245,10 @@ export class PrettyGCodeApp {
     this.currentFilePosition = data.progress.filepos
 
     // Speed of the job the printer is on
-    if (data.state.flags.printing || data.state.flags.paused) {
+    if (data.state.flags.printing) {
       this.observedPrintSpeed.track(data.progress.printTime, this.printTimeline.estimatedSecondsAt(this.currentFilePosition))
+    } else {
+      this.observedPrintSpeed.restart()
     }
   }
 
@@ -304,6 +306,7 @@ export class PrettyGCodeApp {
 
       // Index the timeline and build the model
       this.printTimeline.index(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
+      this.observedPrintSpeed.restart()
       this.gcodeModel.build(this.parsedGcode.layers)
 
       // Apply the gcode bounds
@@ -330,6 +333,7 @@ export class PrettyGCodeApp {
   private unloadGcode (): void {
     this.parsedGcode = null
     this.printTimeline.index([], null)
+    this.observedPrintSpeed.restart()
     this.gcodeModel.build([])
     updateLayerSliderMax(this)
     updateSegmentSliderMax(this)
@@ -348,6 +352,7 @@ export class PrettyGCodeApp {
     if (!this.viewInitialized || !this.parsedGcode) return
 
     this.printTimeline.index(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
+    this.observedPrintSpeed.restart()
     this.gcodeModel.rebuild()
     this.updateLayerHighlight()
   }
@@ -415,10 +420,10 @@ export class PrettyGCodeApp {
   /**
    * Gets how long the running print still takes to reach a layer
    * @param layerNumber - 1-based layer number
-   * @returns The seconds left, or null when the print is not running, the gcode carries no slicer
-   * time marks, or the layer is already behind
+   * @returns The seconds left and whether the measurement behind them has stabilized, or null when
+   * the print is not running, the gcode carries no slicer time marks, or the layer is already behind
    */
-  secondsUntilLayer (layerNumber: number): number | null {
+  secondsUntilLayer (layerNumber: number): { seconds: number, stabilized: boolean } | null {
     if (!this.currentPrinterState?.flags.printing || !this.parsedGcode?.slicerTimeMarks) return null
 
     const reachedSeconds = this.printTimeline.estimatedSecondsAt(this.currentFilePosition)

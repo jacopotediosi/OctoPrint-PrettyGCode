@@ -73,10 +73,15 @@ export function initLayerSlider (app: PrettyGCodeApp): void {
     formatter: () => {
       const height = `${app.settings.beltPrinter ? 'Belt' : 'Z'}: ${app.currentLayerZ}`
 
-      const seconds = app.secondsUntilLayer(app.currentLayerNumber)
-      if (seconds == null) return height
+      const untilLayer = app.secondsUntilLayer(app.currentLayerNumber)
+      if (!untilLayer) return height
 
-      return [height, `in ${secondsToDurationText(seconds)} (~${secondsFromNowToClockText(seconds)})`].join('\n')
+      const { seconds, stabilized } = untilLayer
+      const left = stabilized
+        ? `in ${secondsToDurationText(seconds)} (~${secondsFromNowToClockText(seconds)})`
+        : `in ${formatFuzzyPrintTime(seconds)} (still stabilizing)`
+
+      return [height, left].join('\n')
     },
     min: 0,
     max: 100,

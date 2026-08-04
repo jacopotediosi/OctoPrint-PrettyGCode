@@ -6,6 +6,9 @@ declare const OctoPrint: any
 /** Knockout */
 declare const ko: any
 
+/** OctoPrint helper turning a duration into a rough human readable time */
+declare function formatFuzzyPrintTime (seconds: number): string
+
 /** OctoPrint helper turning a byte count into a human readable size */
 declare function formatSize (bytes: number): string
 
