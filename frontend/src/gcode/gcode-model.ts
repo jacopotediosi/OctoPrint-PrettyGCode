@@ -10,17 +10,17 @@ import type { PrintTimeline, TimelineSpot } from './print-timeline'
 /** Part of the print the travel moves are drawn for */
 export type TravelScope = 'none' | 'displayedLayer' | 'wholeModel'
 
-/** Metadata a rendered layer part carries */
-interface LayerPartMetadata {
+/** Metadata a rendered gcode line carries */
+interface GcodeLineMetadata {
   /** 1-based layer number */
   layerNumber: number
   /** Global segment index the layer starts at */
   globalBase: number
-  /** Segments the part draws */
-  numSegments: number
-  /** Indices in the layer of the drawn segments, or null for the whole layer */
+  /** Moves the line draws */
+  numMoves: number
+  /** Segment of the layer each drawn move waits for, or null for the whole layer */
   segmentIndices: Uint32Array | null
-  /** Whether the part draws the layer's mirror */
+  /** Whether the line draws the layer's mirror */
   mirror?: boolean
 }
 
@@ -37,11 +37,11 @@ const TRAVEL_PREFIX = 'travel#'
 const isLayerObject = (child: THREE.Object3D): child is GcodeLine => child.name.startsWith(LAYER_PREFIX)
 
 /**
- * Reads the metadata a layer line object carries
- * @param line - Layer line object
+ * Reads the metadata a gcode line carries
+ * @param line - Gcode line
  * @returns Its metadata
  */
-const layerPartMetadata = (line: GcodeLine): LayerPartMetadata => line.userData as LayerPartMetadata
+const gcodeLineMetadata = (line: GcodeLine): GcodeLineMetadata => line.userData as GcodeLineMetadata
 
 /** Oversize factor of the drawn lines, to avoid gaps */
 const LINE_THICKNESS_FACTOR = 1.1
@@ -299,10 +299,10 @@ export class GcodeModel {
     // Skip empty parts
     if (vertices.length <= 2) return
 
-    const metadata: LayerPartMetadata = {
+    const metadata: GcodeLineMetadata = {
       layerNumber,
       globalBase,
-      numSegments: vertices.length / 6,
+      numMoves: vertices.length / 6,
       segmentIndices
     }
 
@@ -319,7 +319,7 @@ export class GcodeModel {
         : new THREE.LineSegments(line.geometry, this.mirrorThinMaterial)
       mirror.matrixAutoUpdate = false
       mirror.name = LAYER_PREFIX + layerNumber
-      mirror.userData = { ...metadata, mirror: true } satisfies LayerPartMetadata
+      mirror.userData = { ...metadata, mirror: true } satisfies GcodeLineMetadata
       this.mirrorGroup.add(mirror)
     }
   }
@@ -397,9 +397,9 @@ export class GcodeModel {
     line.userData = {
       layerNumber,
       globalBase,
-      numSegments: travelSegmentIndices.length,
+      numMoves: travelSegmentIndices.length,
       segmentIndices: travelSegmentIndices
-    } satisfies LayerPartMetadata
+    } satisfies GcodeLineMetadata
     this.travelGroup.add(line)
   }
 
@@ -422,7 +422,7 @@ export class GcodeModel {
 
     this.linesGroup.traverse((child) => {
       if (!isLayerObject(child)) return
-      const metadata = layerPartMetadata(child)
+      const metadata = gcodeLineMetadata(child)
 
       // The mirror keeps its own bed-clipped material
       if (metadata.mirror) return
@@ -473,13 +473,13 @@ export class GcodeModel {
 
     this.linesGroup.traverse((child) => {
       if (!isLayerObject(child)) return
-      const count = this.partRevealCount(child, index)
+      const count = this.revealedMoveCount(child, index)
       const visible = count > 0
       if (child.visible !== visible) {
         child.visible = visible
         needUpdate = true
       }
-      if (visible && this.setRevealCount(child, count)) needUpdate = true
+      if (visible && this.setRevealedMoveCount(child, count)) needUpdate = true
     })
 
     if (this.revealTravelsUpTo(index)) needUpdate = true
@@ -499,35 +499,35 @@ export class GcodeModel {
     let needUpdate = false
 
     for (const child of this.travelGroup.children as THREE.LineSegments[]) {
-      const count = this.partRevealCount(child, index)
-      const visible = count > 0 && (wholeModel || layerPartMetadata(child).layerNumber === displayedLayer)
+      const count = this.revealedMoveCount(child, index + 1)
+      const visible = count > 0 && (wholeModel || gcodeLineMetadata(child).layerNumber === displayedLayer)
       if (child.visible !== visible) {
         child.visible = visible
         needUpdate = true
       }
-      if (visible && this.setRevealCount(child, count)) needUpdate = true
+      if (visible && this.setRevealedMoveCount(child, count)) needUpdate = true
     }
 
     return needUpdate
   }
 
   /**
-   * Counts how many of a part's segments a reveal position has passed
-   * @param child - Layer line object
+   * Counts how many of a line's moves a reveal position has passed
+   * @param line - Gcode line
    * @param revealed - Global index of the reveal position
-   * @returns The number of segments passed
+   * @returns The number of moves passed
    */
-  private partRevealCount (child: GcodeLine, revealed: number): number {
-    const { globalBase, numSegments, segmentIndices } = layerPartMetadata(child)
+  private revealedMoveCount (line: GcodeLine, revealed: number): number {
+    const { globalBase, numMoves, segmentIndices } = gcodeLineMetadata(line)
 
     // How many of the layer's segments the reveal has passed
     const revealedInLayer = revealed - globalBase
 
     // A whole layer is drawn up to the reveal, capped to its own size
-    if (!segmentIndices) return Math.max(0, Math.min(numSegments, revealedInLayer))
+    if (!segmentIndices) return Math.max(0, Math.min(numMoves, revealedInLayer))
 
-    // A split part counts its segments the reveal has passed (binary search)
-    let lo = 0; let hi = numSegments
+    // Otherwise count the moves whose segment the reveal has passed (binary search)
+    let lo = 0; let hi = numMoves
     while (lo < hi) {
       const mid = (lo + hi) >> 1
       if (segmentIndices[mid] < revealedInLayer) lo = mid + 1
@@ -537,19 +537,19 @@ export class GcodeModel {
   }
 
   /**
-   * Limits how many of a layer's segments are drawn
-   * @param child - Layer line object
-   * @param count - Segments to draw
+   * Limits how many of a line's moves are drawn
+   * @param line - Gcode line
+   * @param count - Moves to draw
    * @returns True if the count changed
    */
-  private setRevealCount (child: GcodeLine, count: number): boolean {
-    // Thick lines are instanced; thin ones aren't, so limit their drawn vertex range (2 per segment)
-    if (isThickLine(child)) {
-      if (child.geometry.instanceCount === count) return false
-      child.geometry.instanceCount = count
+  private setRevealedMoveCount (line: GcodeLine, count: number): boolean {
+    // Thick lines are instanced; thin ones aren't, so limit their drawn vertex range (2 per move)
+    if (isThickLine(line)) {
+      if (line.geometry.instanceCount === count) return false
+      line.geometry.instanceCount = count
     } else {
-      if (child.geometry.drawRange.count === count * 2) return false
-      child.geometry.setDrawRange(0, count * 2)
+      if (line.geometry.drawRange.count === count * 2) return false
+      line.geometry.setDrawRange(0, count * 2)
     }
     return true
   }
