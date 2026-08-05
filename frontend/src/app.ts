@@ -1,10 +1,11 @@
+import * as THREE from './three-exports'
 import { Settings, type SettingKey, type SettingValues } from './settings'
 import { Viewer } from './viewer/viewer'
-import { loadGcodeFile, cancelGcodeLoad } from './gcode/loader'
-import { ObservedPrintSpeed } from './gcode/observed-print-speed'
-import { PrintTimeline } from './gcode/print-timeline'
+import { loadGcodeFile, cancelGcodeLoad } from './gcode/parsing/loader'
+import { ObservedPrintSpeed } from './gcode/timeline/observed-print-speed'
+import { PrintTimeline } from './gcode/timeline/print-timeline'
 import { PrintExclusions } from './gcode/exclusions'
-import { GcodeModel } from './gcode/gcode-model'
+import { GcodeModel } from './gcode/rendering/gcode-model'
 import { initViewSettingsPanel, type ViewSettingsPanel } from './ui/view-settings/view-settings-panel'
 import { saveDefaultViewSettings, updateDefaultViewSettingsPanel } from './ui/view-settings/default-view-settings-panel'
 import { initOverlayWindows } from './ui/overlays/overlay-windows'
@@ -16,11 +17,10 @@ import { initToggleButtons } from './ui/toggle-buttons'
 import { setStatusBarText, applyStatusBarVisibility } from './ui/status-bar'
 import { showLoadingScreen, hideLoadingScreen } from './ui/notices/loading-screen'
 import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/notices/large-file-confirmation'
-import type { ParsedGcode } from './gcode/parser'
+import type { ParsedGcode } from './gcode/parsing/parser'
 import type { ParserColors } from './gcode/model-colors'
 import type { BedVolume } from './viewer/bed'
 import type { PrintViewUpdate } from './viewer/viewer'
-import type { Vector3 } from 'three'
 
 /** Printer state reported by OctoPrint */
 interface PrinterState {
@@ -36,9 +36,13 @@ interface PrinterDataPayload {
 }
 
 /** Selector of the plugin tab */
-const PG_TAB = '#tab_plugin_prettygcode'
+export const PG_TAB = '#tab_plugin_prettygcode'
 /** Selector of the plugin settings tab */
 const PG_SETTINGS_TAB = '#settings_plugin_prettygcode'
+/** Selector of the OctoPrint page container */
+export const PAGE_CONTAINER = '.page-container'
+/** Class marking the page as filled by the plugin view */
+export const MAXIMIZED_CLASS = 'pg-maximized'
 
 /** Nozzle diameter in mm assumed when the printer profile does not state one */
 const DEFAULT_NOZZLE_DIAMETER_MM = 0.4
@@ -65,7 +69,7 @@ export class PrettyGCodeApp {
   private viewSettingsPanel!: ViewSettingsPanel
 
   /** The 3D view */
-  private readonly viewer = new Viewer(this.settings, () => this.bedVolume, (deltaSeconds) => this.updatePrintView(deltaSeconds))
+  private readonly viewer = new Viewer(this.settings, () => this.bedVolume, () => this.nozzleDiameter, (deltaSeconds) => this.updatePrintView(deltaSeconds))
   /** Print exclusions of the loaded gcode */
   private readonly exclusions = new PrintExclusions(this.settings)
   /** Print timeline of the loaded gcode */
@@ -140,8 +144,8 @@ export class PrettyGCodeApp {
 
         // 3D view and gcode
         this.viewer.init()
-        this.viewer.scene.add(this.gcodeModel.linesGroup)
-        this.viewer.scene.add(this.exclusions.regionMarkersGroup)
+        this.viewer.add(this.gcodeModel.linesGroup)
+        this.viewer.add(this.exclusions.regionMarkersGroup)
         this.loadGcode(this.currentJobPath)
         this.fetchExclusions()
 
@@ -305,7 +309,7 @@ export class PrettyGCodeApp {
       this.exclusions.setGcodeObjectNames(this.parsedGcode.objectNames)
 
       // Index the timeline and build the model
-      this.printTimeline.index(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
+      this.printTimeline.build(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
       this.observedPrintSpeed.restart()
       this.gcodeModel.build(this.parsedGcode.layers)
 
@@ -332,7 +336,7 @@ export class PrettyGCodeApp {
   /** Empties the 3D view of the loaded gcode */
   private unloadGcode (): void {
     this.parsedGcode = null
-    this.printTimeline.index([], null)
+    this.printTimeline.build([], null)
     this.observedPrintSpeed.restart()
     this.gcodeModel.build([])
     updateLayerSliderMax(this)
@@ -351,7 +355,7 @@ export class PrettyGCodeApp {
   private updateExclusions (): void {
     if (!this.viewInitialized || !this.parsedGcode) return
 
-    this.printTimeline.index(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
+    this.printTimeline.build(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
     this.observedPrintSpeed.restart()
     this.gcodeModel.rebuild()
     this.updateLayerHighlight()
@@ -362,14 +366,14 @@ export class PrettyGCodeApp {
   /**
    * Advances the displayed print progress for a new frame
    * @param deltaSeconds - Seconds elapsed since the previous call
-   * @returns Whether the scene changed, the nozzle position to show, if any, and the nozzle diameter
+   * @returns Whether the scene changed and the nozzle position to show, if any
    */
   private updatePrintView (deltaSeconds: number): PrintViewUpdate {
     const state = this.currentPrinterState
     const tracking = state && !this.manualSliding && (state.flags.printing || state.flags.paused)
 
     let needRender = false
-    let nozzlePosition: Vector3 | null = null
+    let nozzlePosition: THREE.Vector3 | null = null
     let revealedLayer: number | null = null
 
     if (tracking) {
@@ -392,7 +396,7 @@ export class PrettyGCodeApp {
     // Highlight the revealed layer
     if (revealedLayer != null) this.gcodeModel.highlightLayer(revealedLayer)
 
-    return { needRender, nozzlePosition, nozzleDiameter: this.nozzleDiameter }
+    return { needRender, nozzlePosition }
   }
 
   /* ---- UI events ---- */
@@ -514,7 +518,7 @@ export class PrettyGCodeApp {
       $('html').toggleClass('pg-dark', this.settings.darkMode)
       this.viewer.applyBackground(this.settings.darkMode)
       this.viewer.applyViewCubeTheme(this.settings.darkMode)
-      this.viewer.updateBedMesh()
+      this.viewer.rebuildBed()
     }
     if (anyOf('antialias')) this.viewer.applyAntialias(this.settings.antialias)
 
@@ -527,13 +531,13 @@ export class PrettyGCodeApp {
     }
 
     if (anyOf('travelScope', 'travelColor')) {
-      this.gcodeModel.updateTravelLines()
+      this.gcodeModel.rebuildTravelLines()
       this.viewer.requestRender()
     }
 
     if (anyOf('showBed')) this.viewer.applyBedVisibility(this.settings.showBed)
     if (anyOf('showExclusionMarker')) {
-      this.exclusions.regionMarkersGroup.visible = this.settings.showExclusionMarker
+      this.exclusions.applyRegionMarkersVisibility(this.settings.showExclusionMarker)
       this.viewer.requestRender()
     }
 
@@ -561,7 +565,7 @@ export class PrettyGCodeApp {
     this.viewer.requestRender()
   }
 
-  /** Shows or hides the overlay windows to match the current settings */
+  /** Shows or hides the view's controls and windows to match the current settings */
   updateWindowStates (): void {
     applyStatusBarVisibility(this.settings.showStatusBar)
 
@@ -592,7 +596,7 @@ export class PrettyGCodeApp {
     this.updateBedVolume()
     this.updateProfileNozzleDiameter()
     this.gcodeModel.updateLineWidth()
-    this.viewer.updateBedMesh()
+    this.viewer.rebuildBed()
     this.viewer.resetCameraTarget()
     this.viewer.requestRender()
   }

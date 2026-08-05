@@ -116,7 +116,7 @@ export class ViewCube {
    * @param camera - The active camera
    * @param renderer - Renderer drawing the 3D view
    */
-  update (camera: THREE.PerspectiveCamera | THREE.OrthographicCamera, renderer: THREE.WebGLRenderer): void {
+  attachTo (camera: THREE.PerspectiveCamera | THREE.OrthographicCamera, renderer: THREE.WebGLRenderer): void {
     this.gizmo.camera = camera
     this.gizmo.renderer = renderer
     this.gizmo.update()

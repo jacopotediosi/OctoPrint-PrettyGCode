@@ -1,4 +1,4 @@
-import type { MachineState, ScenePoint } from './parser'
+import type { MachineState, ScenePoint } from '../parsing/parser'
 
 /**
  * Coordinate transform of a belt printer: its head hangs from a gantry tilted over a moving belt, so
@@ -14,7 +14,7 @@ export class BeltPrinterTransform {
   /**
    * @param gantryAngle - Angle between the belt and the printer gantry, in degrees
    */
-  constructor (gantryAngle: number) {
+  constructor (readonly gantryAngle: number) {
     const radians = gantryAngle * Math.PI / 180
     this.cosGantryAngle = Math.cos(radians)
     this.sinGantryAngle = Math.sin(radians)

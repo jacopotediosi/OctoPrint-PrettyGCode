@@ -150,14 +150,14 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     'Reflect the surrounding scene on the nozzle 3D model.'
   )
 
-  const updateNozzleControls = (): void => {
+  const refreshNozzleControls = (): void => {
     nozzleSize.show(settings.nozzleStyle !== 'none')
     nozzleColor.show(settings.nozzleStyle !== 'none')
     nozzleTransparency.show(settings.nozzleStyle !== 'none')
     nozzleReflection.show(settings.nozzleStyle === 'model')
   }
-  nozzleStyle.onFinishChange(updateNozzleControls)
-  updateNozzleControls()
+  nozzleStyle.onFinishChange(refreshNozzleControls)
+  refreshNozzleControls()
 
   /* ---- Travel moves ---- */
 
@@ -306,7 +306,7 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     refresh: () => {
       gui.controllersRecursive().forEach((controller) => controller.updateDisplay())
       beltPrinterGantryAngle.show(settings.beltPrinter)
-      updateNozzleControls()
+      refreshNozzleControls()
       travelColor.show(settings.travelScope !== 'none')
       mirror.show(settings.showBed)
       refreshResets()

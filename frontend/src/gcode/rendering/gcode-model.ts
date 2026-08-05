@@ -1,11 +1,11 @@
-import * as THREE from '../three-exports'
+import * as THREE from '../../three-exports'
 import { isThickLine, isThickMaterial, makeThickMaterial, makeThinMaterial } from './line-materials'
 import { TipLine } from './tip-line'
 import type { GcodeLine, GcodeLineMaterial } from './line-materials'
-import type { Settings } from '../settings'
-import type { Layer } from './parser'
-import type { PrintExclusions } from './exclusions'
-import type { PrintTimeline, TimelineSpot } from './print-timeline'
+import type { Settings } from '../../settings'
+import type { Layer } from '../parsing/parser'
+import type { PrintExclusions } from '../exclusions'
+import type { PrintTimeline, TimelineSpot } from '../timeline/print-timeline'
 
 /** Part of the print the travel moves are drawn for */
 export type TravelScope = 'none' | 'displayedLayer' | 'wholeModel'
@@ -93,7 +93,7 @@ export class GcodeModel {
   /** Layers the model was last built from */
   private layers: Layer[] = []
 
-  /** Global segment index of the reveal position the model is showing */
+  /** Global segment index the model is revealed up to */
   private revealedIndex = -1
 
   /** Layer the highlight is on, or 0 when no layer is highlighted */
@@ -188,7 +188,7 @@ export class GcodeModel {
   /* ---- Object building ---- */
 
   /**
-   * Builds the model's line objects from parsed layers
+   * (Re)builds the model's line objects from parsed layers
    * @param layers - Parsed gcode layers
    */
   build (layers: Layer[]): void {
@@ -209,7 +209,7 @@ export class GcodeModel {
       this.addLayerLines(layers[layerNumber - 1], layerNumber, globalBase)
     }
 
-    this.updateTravelLines()
+    this.rebuildTravelLines()
 
     this.tipLine.build(this.highlightMaterial)
   }
@@ -342,7 +342,7 @@ export class GcodeModel {
   }
 
   /** (Re)builds the travel lines from the current travel settings */
-  updateTravelLines (): void {
+  rebuildTravelLines (): void {
     for (const child of this.travelGroup.children) (child as THREE.LineSegments).geometry.dispose()
     this.travelGroup.clear()
 
@@ -433,18 +433,18 @@ export class GcodeModel {
   }
 
   /**
-   * Shows a layer up to a within-layer position, hiding the layers above
+   * Reveals a layer up to a within-layer position, hiding the layers above
    * @param layerNumber - 1-based topmost layer to show
-   * @param segmentsShown - Segments of that layer to reveal
+   * @param revealedSegments - Segments of that layer to reveal
    * @returns True if anything changed
    */
-  syncToLayerSegment (layerNumber: number, segmentsShown: number): boolean {
+  syncToLayerSegment (layerNumber: number, revealedSegments: number): boolean {
     let needUpdate = false
 
     // Hide the growing tip while sliding layer/segments manually
     if (this.tipLine.hide()) needUpdate = true
 
-    if (this.revealUpTo(this.timeline.revealIndex(layerNumber, segmentsShown))) needUpdate = true
+    if (this.revealUpTo(this.timeline.revealIndex(layerNumber, revealedSegments))) needUpdate = true
 
     return needUpdate
   }

@@ -152,19 +152,17 @@ export class Bed {
     // Refresh the planes clipping the bed reflection, when it is shown
     if (!mirrorShown) return
 
-    const lowerleft = bedVolume.origin === 'lowerleft'
-    const xMin = lowerleft ? 0 : -bedVolume.width / 2
-    const xMax = lowerleft ? bedVolume.width : bedVolume.width / 2
-    const yMin = lowerleft ? 0 : -bedVolume.depth / 2
-    const yMax = lowerleft ? bedVolume.depth : bedVolume.depth / 2
+    const { x: centerX, y: centerY } = bedCenter(bedVolume)
+    const halfWidth = bedVolume.width / 2
+    const halfDepth = bedVolume.depth / 2
 
     const corners = [
-      new THREE.Vector3(xMin, yMin, 0),
-      new THREE.Vector3(xMax, yMin, 0),
-      new THREE.Vector3(xMax, yMax, 0),
-      new THREE.Vector3(xMin, yMax, 0)
+      new THREE.Vector3(centerX - halfWidth, centerY - halfDepth, 0),
+      new THREE.Vector3(centerX + halfWidth, centerY - halfDepth, 0),
+      new THREE.Vector3(centerX + halfWidth, centerY + halfDepth, 0),
+      new THREE.Vector3(centerX - halfWidth, centerY + halfDepth, 0)
     ]
-    const center = new THREE.Vector3((xMin + xMax) / 2, (yMin + yMax) / 2, 0)
+    const center = new THREE.Vector3(centerX, centerY, 0)
     const cameraPosition = camera.position
     const viewDirection = camera.getWorldDirection(new THREE.Vector3())
 

@@ -1,6 +1,6 @@
 import { emptyBounds } from './parser'
 import type { ParsedGcode } from './parser'
-import type { ParserColors } from './model-colors'
+import type { ParserColors } from '../model-colors'
 import type { GcodeParseReply, GcodeParseRequest } from './parser-worker'
 
 /** URL of the gcode parser worker */

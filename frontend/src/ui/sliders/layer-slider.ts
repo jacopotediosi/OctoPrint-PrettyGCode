@@ -1,8 +1,8 @@
 import type { PrettyGCodeApp } from '../../app'
 import { bindStepButton } from './slider-step-button'
 
-/** Layer the slider is showing */
-let shownLayer = -1
+/** Revealed layer the slider is showing */
+let revealedLayer = -1
 /** Highest layer the slider can reach */
 let maxLayer = -1
 
@@ -143,8 +143,8 @@ export function updateLayerSliderMax (app: PrettyGCodeApp): void {
  */
 export function setLayerSliderValue (app: PrettyGCodeApp, layer: number): void {
   if (!$('#pg-layer-slider').length) return
-  if (layer === shownLayer && app.layerCount === maxLayer) return
-  shownLayer = layer
+  if (layer === revealedLayer && app.layerCount === maxLayer) return
+  revealedLayer = layer
   maxLayer = app.layerCount
 
   $('#pg-layer-slider').slider('setValue', layer)

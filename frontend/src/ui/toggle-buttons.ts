@@ -1,4 +1,4 @@
-import type { PrettyGCodeApp } from '../app'
+import { MAXIMIZED_CLASS, PAGE_CONTAINER, type PrettyGCodeApp } from '../app'
 
 /** Settings keys of the toggleable windows */
 type WindowKey = 'showState' | 'showFiles' | 'showWebcam' | 'showDashboard'
@@ -33,7 +33,7 @@ export function initToggleButtons (app: PrettyGCodeApp): void {
   $('.pg-toggle-view-settings').on('click', () => $('#pg-view-settings').toggleClass('pg-hidden'))
 
   // Restore the maximized layout from the URL (bookmarked/embedded maximized view)
-  if (new URLSearchParams(location.search).get('maximized')) $('.page-container').addClass('pg-maximized')
+  if (new URLSearchParams(location.search).get('maximized')) $(PAGE_CONTAINER).addClass(MAXIMIZED_CLASS)
 
   $('.pg-toggle-maximized').on('click', () => {
     if (document.fullscreenElement) {
@@ -42,7 +42,7 @@ export function initToggleButtons (app: PrettyGCodeApp): void {
     }
 
     // Update maximized parameter in URL
-    const maximized = $('.page-container').toggleClass('pg-maximized').hasClass('pg-maximized')
+    const maximized = $(PAGE_CONTAINER).toggleClass(MAXIMIZED_CLASS).hasClass(MAXIMIZED_CLASS)
     const url = new URL(window.location.href)
     if (maximized) url.searchParams.set('maximized', '1')
     else url.searchParams.delete('maximized')
@@ -56,9 +56,9 @@ export function initToggleButtons (app: PrettyGCodeApp): void {
       document.exitFullscreen()
     } else {
       // Remember the maximized state from before entering fullscreen, to restore it on exit
-      wasMaximized = $('.page-container').hasClass('pg-maximized')
+      wasMaximized = $(PAGE_CONTAINER).hasClass(MAXIMIZED_CLASS)
 
-      $('.page-container').addClass('pg-maximized')
+      $(PAGE_CONTAINER).addClass(MAXIMIZED_CLASS)
       document.documentElement.requestFullscreen()
 
       app.updateWindowStates()
@@ -67,7 +67,7 @@ export function initToggleButtons (app: PrettyGCodeApp): void {
   $(document).on('fullscreenchange', () => {
     if (!document.fullscreenElement) {
       // Leaving fullscreen restores the maximized state from before entering it
-      $('.page-container').toggleClass('pg-maximized', wasMaximized)
+      $(PAGE_CONTAINER).toggleClass(MAXIMIZED_CLASS, wasMaximized)
       app.updateWindowStates()
     }
   })

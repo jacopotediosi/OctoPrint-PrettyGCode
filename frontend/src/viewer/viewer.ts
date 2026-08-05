@@ -1,9 +1,8 @@
 import * as THREE from '../three-exports'
-import { Vector2 } from 'three'
 import { Bed } from './bed'
 import { Camera } from './camera'
 import { Nozzle } from './nozzle'
-import type { GcodeBounds } from '../gcode/parser'
+import type { GcodeBounds } from '../gcode/parsing/parser'
 import type { BedVolume } from './bed'
 import type { NavigationModeKey, ProjectionMode } from './navigation'
 import type { Settings } from '../settings'
@@ -13,11 +12,10 @@ const LIGHT_BACKGROUND = 0xe9e9e9
 /** Dark theme background color */
 const DARK_BACKGROUND = 0x000000
 
-/** Per-frame print view outcome: whether the scene changed, the nozzle position to show and the nozzle diameter */
+/** Per-frame print view outcome: whether the scene changed and the nozzle position to show */
 export interface PrintViewUpdate {
   needRender: boolean
   nozzlePosition: THREE.Vector3 | null
-  nozzleDiameter: number
 }
 
 /** The plugin's 3D view: renders the bed, the gcode model and the nozzle */
@@ -53,7 +51,7 @@ export class Viewer {
   })
 
   /** The 3D scene */
-  readonly scene = new THREE.Scene()
+  private readonly scene = new THREE.Scene()
 
   /** Callback advancing the print view each frame */
   private readonly onFrame: (deltaSeconds: number) => PrintViewUpdate
@@ -73,6 +71,8 @@ export class Viewer {
 
   /** Getter of the current print bed geometry */
   private readonly getBedVolume: () => BedVolume
+  /** Getter of the current nozzle diameter in mm */
+  private readonly getNozzleDiameter: () => number
 
   /** Planes clipping the gcode reflection to where the line of sight crosses the bed */
   readonly mirrorBoundsPlanes = [new THREE.Plane(), new THREE.Plane(), new THREE.Plane(), new THREE.Plane()]
@@ -82,11 +82,13 @@ export class Viewer {
   /**
    * @param settings - Plugin frontend settings
    * @param getBedVolume - Getter of the current print bed geometry
+   * @param getNozzleDiameter - Getter of the current nozzle diameter in mm
    * @param onFrame - Callback advancing the print view each frame, run before rendering
    */
-  constructor (settings: Settings, getBedVolume: () => BedVolume, onFrame: (deltaSeconds: number) => PrintViewUpdate) {
+  constructor (settings: Settings, getBedVolume: () => BedVolume, getNozzleDiameter: () => number, onFrame: (deltaSeconds: number) => PrintViewUpdate) {
     this.settings = settings
     this.getBedVolume = getBedVolume
+    this.getNozzleDiameter = getNozzleDiameter
     this.onFrame = onFrame
     this.bed = new Bed(settings, this.scene, this.mirrorBoundsPlanes, () => this.requestRender())
     this.nozzle = new Nozzle(settings, this.scene, () => this.requestRender())
@@ -106,7 +108,7 @@ export class Viewer {
     this.camera = new Camera(settings, this.renderer, bedVolume, () => this.requestRender())
 
     // Bed (grid)
-    this.updateBedMesh()
+    this.rebuildBed()
 
     // Nozzle marker
     this.nozzle.load()
@@ -170,7 +172,7 @@ export class Viewer {
     if (printView.needRender) needRender = true
 
     // Update the nozzle
-    if (this.nozzle.update(printView.nozzlePosition, printView.nozzleDiameter, this.renderer, needRender)) needRender = true
+    if (this.nozzle.update(printView.nozzlePosition, this.getNozzleDiameter(), this.renderer, needRender)) needRender = true
 
     // Update the camera
     if (this.camera.update(deltaSeconds)) needRender = true
@@ -210,7 +212,7 @@ export class Viewer {
     const height = this.canvasHeight
 
     // Skip if already at the display size
-    const current = this.renderer.getSize(new Vector2())
+    const current = this.renderer.getSize(new THREE.Vector2())
     if (current.width === width && current.height === height) return false
 
     // Resize canvas
@@ -224,8 +226,16 @@ export class Viewer {
 
   /* ---- Scene and camera ---- */
 
+  /**
+   * Adds an object to the 3D scene
+   * @param object - Object to add
+   */
+  add (object: THREE.Object3D): void {
+    this.scene.add(object)
+  }
+
   /** (Re)builds the bed and adapts the camera to the current bed geometry */
-  updateBedMesh (): void {
+  rebuildBed (): void {
     if (!this.camera) return
 
     const bedVolume = this.getBedVolume()
@@ -269,8 +279,8 @@ export class Viewer {
   /* ---- Apply settings ---- */
 
   /**
-   * Applies the light or dark background to the scene
-   * @param darkMode - True for the dark background
+   * Repaints the scene background in the light or dark theme
+   * @param darkMode - True for the dark theme
    */
   applyBackground (darkMode: boolean): void {
     this.scene.background = new THREE.Color(darkMode ? DARK_BACKGROUND : LIGHT_BACKGROUND)

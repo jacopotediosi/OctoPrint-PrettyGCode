@@ -1,6 +1,6 @@
 import type { NavigationModeKey, ProjectionMode } from './viewer/navigation'
 import type { NozzleStyle } from './viewer/nozzle'
-import type { TravelScope } from './gcode/gcode-model'
+import type { TravelScope } from './gcode/rendering/gcode-model'
 import type { ColorRule } from './gcode/model-colors'
 
 /** localStorage key holding the settings */

@@ -4,7 +4,7 @@ import { Vector2, Vector3, Vector4, Quaternion, Matrix4, Spherical, Box3, Sphere
 import { bedCenter } from './bed'
 import { ViewCube } from './view-cube'
 import { NAVIGATION_MODES } from './navigation'
-import type { GcodeBounds } from '../gcode/parser'
+import type { GcodeBounds } from '../gcode/parsing/parser'
 import type { BedVolume } from './bed'
 import type { MouseBinding, MouseButton, NavigationMode, NavigationModeKey, ProjectionMode } from './navigation'
 import type { Settings } from '../settings'
@@ -121,7 +121,7 @@ export class Camera {
     this.renderer = renderer
     this.controls.disconnect()
     this.controls.connect(renderer.domElement)
-    this.viewCube.update(this.activeCamera, renderer)
+    this.viewCube.attachTo(this.activeCamera, renderer)
   }
 
   /* ---- Render loop ---- */
@@ -139,14 +139,14 @@ export class Camera {
     }
 
     // Cap any pending dolly at the zoom-out limit
-    if (this.activeCamera === this.perspectiveCamera && this.controls.getSpherical(new Spherical()).radius > this.controls.maxDistance) {
+    if (this.activeCamera === this.perspectiveCamera && this.controls.getSpherical(new THREE.Spherical()).radius > this.controls.maxDistance) {
       this.controls.dollyTo(this.controls.maxDistance, true)
     }
 
     // Slow the zoom near the gcode
     if (this.activeCamera === this.perspectiveCamera && !this.gcodeBounds.isEmpty()) {
-      const position = this.controls.getPosition(new Vector3())
-      const size = this.gcodeBounds.getSize(new Vector3())
+      const position = this.controls.getPosition(new THREE.Vector3())
+      const size = this.gcodeBounds.getSize(new THREE.Vector3())
       const gcodeSpan = Math.max(1, size.x, size.y, size.z)
       const gcodeDistance = this.gcodeBounds.distanceToPoint(position)
       this.controls.dollySpeed = MIN_ZOOM_SPEED + (1 - MIN_ZOOM_SPEED) * Math.min(1, gcodeDistance / gcodeSpan)
@@ -181,12 +181,12 @@ export class Camera {
     this.orthographicCamera.right = ORTHOGRAPHIC_VIEW_HEIGHT_MM * aspect / 2
     this.orthographicCamera.updateProjectionMatrix()
     this.controls.setViewport(0, 0, width, height)
-    this.viewCube.update(this.activeCamera, this.renderer)
+    this.viewCube.attachTo(this.activeCamera, this.renderer)
   }
 
   /** Draws the view cube over the 3D view */
   renderViewCube (): void {
-    this.viewCube.render(this.controls.getTarget(new Vector3()))
+    this.viewCube.render(this.controls.getTarget(new THREE.Vector3()))
   }
 
   /**
@@ -217,8 +217,8 @@ export class Camera {
 
     if (this.settings.beltPrinter) {
       // The print along the belt, which runs on with no end of its own to frame
-      const printCenter = this.gcodeBounds.getCenter(new Vector3())
-      const printSize = this.gcodeBounds.getSize(new Vector3())
+      const printCenter = this.gcodeBounds.getCenter(new THREE.Vector3())
+      const printSize = this.gcodeBounds.getSize(new THREE.Vector3())
       return { centerX: center.x, centerY: printCenter.y, depth: printSize.y, width: bedVolume.width }
     } else {
       // The whole bed
@@ -232,15 +232,15 @@ export class Camera {
    */
   applyBedVolume (bedVolume: BedVolume): void {
     const area = this.framedArea(bedVolume)
-    const gcodeSize = this.gcodeBounds.getSize(new Vector3())
+    const gcodeSize = this.gcodeBounds.getSize(new THREE.Vector3())
     const maxSceneDimension = Math.max(100, area.width, area.depth, bedVolume.height, gcodeSize.x, gcodeSize.y, gcodeSize.z)
 
     // Cap the zoom-out
     this.controls.maxDistance = MAX_ZOOM_OUT_FACTOR * maxSceneDimension
     this.controls.minZoom = this.toOrthographicZoom(this.controls.maxDistance)
-    this.controls.setBoundary(new Box3(
-      new Vector3(area.centerX - 2 * maxSceneDimension, area.centerY - 2 * maxSceneDimension, -2 * maxSceneDimension),
-      new Vector3(area.centerX + 2 * maxSceneDimension, area.centerY + 2 * maxSceneDimension, 2 * maxSceneDimension)
+    this.controls.setBoundary(new THREE.Box3(
+      new THREE.Vector3(area.centerX - 2 * maxSceneDimension, area.centerY - 2 * maxSceneDimension, -2 * maxSceneDimension),
+      new THREE.Vector3(area.centerX + 2 * maxSceneDimension, area.centerY + 2 * maxSceneDimension, 2 * maxSceneDimension)
     ))
 
     // Cameras only render between their near and far planes: put the far planes
@@ -394,7 +394,7 @@ export class Camera {
       this.controls.zoomTo(1, false)
     }
     this.applyMouseBindings()
-    this.viewCube.update(camera, this.renderer)
+    this.viewCube.attachTo(camera, this.renderer)
     this.requestRender()
   }
 }

@@ -1,4 +1,5 @@
 import { clampOverlayHeight, defaultOverlayHeight, makeResizable } from './overlay-windows'
+import { MAXIMIZED_CLASS, PAGE_CONTAINER, PG_TAB } from '../../app'
 import type { Overlay } from './overlay-windows'
 import type { Settings } from '../../settings'
 
@@ -113,7 +114,7 @@ export function updateWebcamOverlay (settings: Settings): void {
 
   // Dock only while the overlay is actually visible: our tab selected, maximized, and the setting enabled
   const visible = webcamContainersAvailable && settings.showWebcam &&
-    OctoPrint.coreui.selectedTab === '#tab_plugin_prettygcode' && $('.page-container').hasClass('pg-maximized')
+    OctoPrint.coreui.selectedTab === PG_TAB && $(PAGE_CONTAINER).hasClass(MAXIMIZED_CLASS)
   if (visible) dockWebcam()
   else undockWebcam()
 }
@@ -123,11 +124,11 @@ export function updateWebcamOverlay (settings: Settings): void {
  * @param settings - Plugin frontend settings
  */
 export function initWebcamOverlay (settings: Settings): void {
+  $('.pg-view').append('<div id="pg-webcam"><div class="pg-resize-handle pg-resize-top"></div><div class="pg-resize-handle pg-resize-left"></div></div>')
+
+  const $webcam = $('#pg-webcam')
   const webcamOverlay: Overlay = {
-    measure () {
-      const rect = $('#pg-webcam')[0].getBoundingClientRect()
-      return { width: rect.width, height: rect.height }
-    },
+    $element: $webcam,
     apply (height: number) {
       settings.webcamHeight = Math.round(clampOverlayHeight(height))
       applyWebcamHeight(settings.webcamHeight)
@@ -135,13 +136,12 @@ export function initWebcamOverlay (settings: Settings): void {
     persist: () => settings.save()
   }
 
-  $('.pg-view').append('<div id="pg-webcam"><div class="pg-resize-handle pg-resize-top"></div><div class="pg-resize-handle pg-resize-left"></div></div>')
   applyWebcamHeight(settings.webcamHeight || defaultOverlayHeight())
-  makeResizable($('#pg-webcam .pg-resize-top'), webcamOverlay, 'y', -1)
-  makeResizable($('#pg-webcam .pg-resize-left'), webcamOverlay, 'x', -1)
+  makeResizable($webcam.children('.pg-resize-top'), webcamOverlay, 'y', -1)
+  makeResizable($webcam.children('.pg-resize-left'), webcamOverlay, 'x', -1)
 
   // The stream sizes in after loading: keep the height in step with the target height
   // Resize on the next frame so the observer does not react to its own changes
   const contentObserver = new ResizeObserver(() => requestAnimationFrame(() => applyWebcamHeight(settings.webcamHeight || defaultOverlayHeight())))
-  contentObserver.observe($('#pg-webcam')[0])
+  contentObserver.observe($webcam[0])
 }

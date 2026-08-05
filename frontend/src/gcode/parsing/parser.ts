@@ -1,7 +1,7 @@
 import { arcOffsetFromRadius, interpolateArc } from './arc-interpolation'
-import { BeltPrinterTransform } from './belt-printer-transform'
+import { BeltPrinterTransform } from '../printer-transform/belt-printer-transform'
 import { SlicerTimeMarksCollector, type SlicerTimeMarks } from './slicer-time-marks'
-import type { ParserColors } from './model-colors'
+import type { ParserColors } from '../model-colors'
 
 /* ---- Parse result ---- */
 
@@ -324,7 +324,7 @@ export class GcodeParser {
   private readonly g90InfluencesExtruder: boolean
 
   /** Transform of the belt printer the gcode is meant for, null for non-belt printers */
-  private readonly beltPrinterTransform: BeltPrinterTransform | null
+  private readonly printerTransform: BeltPrinterTransform | null
 
   /** Collector of the print times the slicer states along the file */
   private readonly slicerTimeMarksCollector = new SlicerTimeMarksCollector()
@@ -369,7 +369,7 @@ export class GcodeParser {
   constructor (colors: ParserColors, objectTag = 'Object', g90InfluencesExtruder = false, beltPrinterGantryAngle: number | null = null) {
     this.objectTag = objectTag.toLowerCase()
     this.g90InfluencesExtruder = g90InfluencesExtruder
-    this.beltPrinterTransform = beltPrinterGantryAngle == null ? null : new BeltPrinterTransform(beltPrinterGantryAngle)
+    this.printerTransform = beltPrinterGantryAngle == null ? null : new BeltPrinterTransform(beltPrinterGantryAngle)
 
     // Precompute the colors and lowercase the keywords, dropping the empty ones
     this.defaultColor = hexStringToVividColor(colors.defaultColor)
@@ -634,7 +634,7 @@ export class GcodeParser {
   finish (): void {
     this.sealLayer()
     this.slicerTimeMarks = this.slicerTimeMarksCollector.getMarks()
-    if (this.beltPrinterTransform) this.slidePrintToBeltOrigin()
+    if (this.printerTransform) this.slidePrintToBeltOrigin()
   }
 
   /** Slides the print along the belt so it starts at the belt origin, where the printed shape trails behind it */
@@ -670,9 +670,9 @@ export class GcodeParser {
       }
 
       // Turn the machine points into the points the travel runs between
-      const transform = this.beltPrinterTransform
-      const sceneStart = transform ? transform.toScenePoint(start, scratchStart) : start
-      const sceneEnd = transform ? transform.toScenePoint(end, scratchEnd) : end
+      const printerTransform = this.printerTransform
+      const sceneStart = printerTransform ? printerTransform.toScenePoint(start, scratchStart) : start
+      const sceneEnd = printerTransform ? printerTransform.toScenePoint(end, scratchEnd) : end
       this.pendingTravelVertices[vertex] = sceneStart.x
       this.pendingTravelVertices[vertex + 1] = sceneStart.y
       this.pendingTravelVertices[vertex + 2] = sceneStart.z
@@ -726,9 +726,9 @@ export class GcodeParser {
     }
 
     // Turn the machine points into the points the segment prints at
-    const transform = this.beltPrinterTransform
-    const sceneStart = transform ? transform.toScenePoint(start, scratchStart) : start
-    const sceneEnd = transform ? transform.toScenePoint(end, scratchEnd) : end
+    const printerTransform = this.printerTransform
+    const sceneStart = printerTransform ? printerTransform.toScenePoint(start, scratchStart) : start
+    const sceneEnd = printerTransform ? printerTransform.toScenePoint(end, scratchEnd) : end
 
     // Grow the model bounds only on moves that change position
     if (start.x !== end.x || start.y !== end.y || start.z !== end.z) {

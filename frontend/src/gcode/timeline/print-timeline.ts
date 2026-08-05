@@ -1,7 +1,7 @@
-import * as THREE from '../three-exports'
-import type { Layer } from './parser'
-import type { PrintExclusions } from './exclusions'
-import type { SlicerTimeMarks } from './slicer-time-marks'
+import * as THREE from '../../three-exports'
+import type { Layer } from '../parsing/parser'
+import type { PrintExclusions } from '../exclusions'
+import type { SlicerTimeMarks } from '../parsing/slicer-time-marks'
 
 /** A non-empty layer in print order, carrying its offset into the global segment numbering */
 interface DrawnLayer {
@@ -73,11 +73,11 @@ export class PrintTimeline {
   /* ---- Indexing ---- */
 
   /**
-   * Indexes parsed layers into a new timeline
+   * (Re)builds the timeline from parsed layers
    * @param layers - Parsed gcode layers
    * @param slicerTimeMarks - Print times the slicer states along the file, null when it states none
    */
-  index (layers: Layer[], slicerTimeMarks: SlicerTimeMarks | null): void {
+  build (layers: Layer[], slicerTimeMarks: SlicerTimeMarks | null): void {
     // Flatten the drawn layers into print order, tracking each one's running segment offset
     this.drawnLayers = []
     let base = 0
@@ -192,12 +192,30 @@ export class PrintTimeline {
     return { stretchFactors, pauseSeconds }
   }
 
+  /* ---- Drawn layer lookup ---- */
+
+  /**
+   * Finds the first drawn layer reaching a point of the print
+   * @param reaches - Callback telling whether a layer reaches that point
+   * @returns Index of that layer among the drawn ones, past the last one when none reaches it
+   */
+  private firstLayerReaching (reaches: (layer: DrawnLayer) => boolean): number {
+    const layers = this.drawnLayers
+    let lo = 0; let hi = layers.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (reaches(layers[mid])) hi = mid
+      else lo = mid + 1
+    }
+    return lo
+  }
+
   /* ---- Reveal positions ---- */
 
   /**
    * Locates a reveal position by layer and within-layer segment
    * @param index - Global index of the reveal position
-   * @returns The 1-based layer and its shown segment count
+   * @returns The 1-based layer and its revealed segments
    */
   revealPosition (index: number): { layerNumber: number, segmentNumber: number } {
     const layerNumber = this.layerNumberAt(index)
@@ -210,16 +228,8 @@ export class PrintTimeline {
    * @returns The 1-based layer number, or 0 before the first segment
    */
   private layerNumberAt (segmentIndex: number): number {
-    // First layer starting at or past the index (binary search)
-    const layers = this.drawnLayers
-    let lo = 0; let hi = layers.length
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1
-      if (layers[mid].globalBase < segmentIndex) lo = mid + 1
-      else hi = mid
-    }
-
-    return lo > 0 ? layers[lo - 1].layerNumber : 0
+    const index = this.firstLayerReaching((layer) => layer.globalBase >= segmentIndex)
+    return index > 0 ? this.drawnLayers[index - 1].layerNumber : 0
   }
 
   /**
@@ -238,23 +248,16 @@ export class PrintTimeline {
    * @returns Index of the first drawn layer reaching that number
    */
   private drawnLayerIndex (layerNumber: number): number {
-    const layers = this.drawnLayers
-    let lo = 0; let hi = layers.length
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1
-      if (layers[mid].layerNumber < layerNumber) lo = mid + 1
-      else hi = mid
-    }
-    return lo
+    return this.firstLayerReaching((layer) => layer.layerNumber >= layerNumber)
   }
 
   /**
    * Maps a within-layer position to a global reveal index
-   * @param layerNumber - 1-based topmost layer to show
-   * @param segmentsShown - Segments of that layer to include
+   * @param layerNumber - 1-based layer number
+   * @param revealedSegments - Revealed segments of that layer
    * @returns The global segment index to reveal up to
    */
-  revealIndex (layerNumber: number, segmentsShown: number): number {
+  revealIndex (layerNumber: number, revealedSegments: number): number {
     const layer = this.drawnLayers[this.drawnLayerIndex(layerNumber)]
 
     // Past the last drawn layer
@@ -263,7 +266,7 @@ export class PrintTimeline {
     // Layers with nothing drawn reveal up to where the next drawn one starts
     if (layer.layerNumber !== layerNumber) return layer.globalBase
 
-    return layer.globalBase + Math.min(segmentsShown, layer.numSegments)
+    return layer.globalBase + Math.min(revealedSegments, layer.numSegments)
   }
 
   /* ---- Print tracking ---- */
@@ -326,19 +329,11 @@ export class PrintTimeline {
    * @returns The number of drawn segments passed
    */
   private segmentsReadAt (filePosition: number): number {
-    const layers = this.drawnLayers
-
-    // First layer the read position has not passed whole (binary search)
-    let loLayer = 0; let hiLayer = layers.length
-    while (loLayer < hiLayer) {
-      const mid = (loLayer + hiLayer) >> 1
-      const positions = layers[mid].filePositions
-      if (positions[positions.length - 1] < filePosition) loLayer = mid + 1
-      else hiLayer = mid
-    }
+    // First layer the read position has not passed whole
+    const layerIndex = this.firstLayerReaching((layer) => layer.filePositions[layer.filePositions.length - 1] >= filePosition)
 
     // Past the last drawn layer
-    const layer = layers[loLayer]
+    const layer = this.drawnLayers[layerIndex]
     if (!layer) return this.totalSegments
 
     // The read position has not reached this layer
@@ -483,16 +478,9 @@ export class PrintTimeline {
    * @returns The layer and local index, or null when out of range
    */
   segmentAt (globalIndex: number): { layer: DrawnLayer, localIndex: number } | null {
-    // First layer reaching past the index (binary search)
-    const layers = this.drawnLayers
-    let lo = 0; let hi = layers.length
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1
-      if (layers[mid].globalBase + layers[mid].numSegments <= globalIndex) lo = mid + 1
-      else hi = mid
-    }
+    const index = this.firstLayerReaching((layer) => layer.globalBase + layer.numSegments > globalIndex)
 
-    const layer = layers[lo]
+    const layer = this.drawnLayers[index]
     return layer ? { layer, localIndex: globalIndex - layer.globalBase } : null
   }
 }

@@ -1,5 +1,5 @@
 import { GcodeParser, type ParsedGcode } from './parser'
-import type { ParserColors } from './model-colors'
+import type { ParserColors } from '../model-colors'
 
 /** Gcode parse request */
 export interface GcodeParseRequest {

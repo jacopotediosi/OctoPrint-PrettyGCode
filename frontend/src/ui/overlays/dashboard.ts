@@ -1,4 +1,5 @@
 import { clampOverlayHeight, defaultOverlayHeight, makeResizable } from './overlay-windows'
+import { MAXIMIZED_CLASS, PAGE_CONTAINER } from '../../app'
 import type { Overlay } from './overlay-windows'
 import type { Settings } from '../../settings'
 
@@ -22,7 +23,7 @@ function applyDashboardHeight (height: number): void {
  */
 export function updateDashboardOverlay (settings: Settings): void {
   $('#tab_plugin_dashboard').toggleClass('pg-hidden', !settings.showDashboard)
-  if (settings.showDashboard && $('.page-container').hasClass('pg-maximized')) applyDashboardHeight(settings.dashboardHeight || defaultOverlayHeight())
+  if (settings.showDashboard && $(PAGE_CONTAINER).hasClass(MAXIMIZED_CLASS)) applyDashboardHeight(settings.dashboardHeight || defaultOverlayHeight())
 }
 
 /**
@@ -34,10 +35,7 @@ export function initDashboardOverlay (settings: Settings): void {
   if (!$dashboard.length) return
 
   const dashboardOverlay: Overlay = {
-    measure () {
-      const rect = $dashboard[0].getBoundingClientRect()
-      return { width: rect.width, height: rect.height }
-    },
+    $element: $dashboard,
     apply (height: number) {
       settings.dashboardHeight = Math.round(clampOverlayHeight(height))
       applyDashboardHeight(settings.dashboardHeight)

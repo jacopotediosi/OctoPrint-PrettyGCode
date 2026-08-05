@@ -1,5 +1,4 @@
 import * as THREE from '../three-exports'
-import type { Vector3 } from 'three'
 import type { Settings } from '../settings'
 
 /** Markers available for the nozzle position */
@@ -94,7 +93,7 @@ export class Nozzle {
    * @param sceneChanged - True if the scene already changed this frame
    * @returns True if the nozzle changed the scene
    */
-  update (position: Vector3 | null, nozzleDiameter: number, renderer: THREE.WebGLRenderer, sceneChanged: boolean): boolean {
+  update (position: THREE.Vector3 | null, nozzleDiameter: number, renderer: THREE.WebGLRenderer, sceneChanged: boolean): boolean {
     const settings = this.settings
     const style = settings.nozzleStyle
     let needRender = false
