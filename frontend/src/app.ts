@@ -615,15 +615,6 @@ export class PrettyGCodeApp {
     if (!currentProfileData || !currentProfileData.volume) return
 
     const volume = currentProfileData.volume
-
-    const dims: Omit<BedVolume, 'origin'> = typeof volume.custom_box === 'function'
-      ? { width: volume.width(), height: volume.height(), depth: volume.depth() }
-      : {
-          width: volume.custom_box.x_max() - volume.custom_box.x_min(),
-          height: volume.custom_box.z_max() - volume.custom_box.z_min(),
-          depth: volume.custom_box.y_max() - volume.custom_box.y_min()
-        }
-
-    this.bedVolume = { ...dims, origin: volume.origin() }
+    this.bedVolume = { depth: volume.depth(), height: volume.height(), origin: volume.origin(), width: volume.width() }
   }
 }
