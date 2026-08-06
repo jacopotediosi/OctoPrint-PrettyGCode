@@ -327,9 +327,9 @@ export class PrettyGCodeApp {
       }
       this.viewer.requestRender()
     } catch (error) {
-      console.error('PrettyGCode: gcode load failed', error)
+      if (sequence === this.loadSequence) console.error('PrettyGCode: gcode load failed', error)
     } finally {
-      hideLoadingScreen()
+      if (sequence === this.loadSequence) hideLoadingScreen()
     }
   }
 

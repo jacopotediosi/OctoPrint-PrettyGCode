@@ -6,13 +6,13 @@ import type { GcodeParseReply, GcodeParseRequest } from './parser-worker'
 /** URL of the gcode parser worker */
 const PARSER_WORKER_URL = PLUGIN_BASEURL + 'prettygcode/static/js/pg-gcode-parser-worker.bundle.js'
 
-/** Worker parsing the gcode of the load in flight, if any */
-let activeWorker: Worker | null = null
+/** Stops the load in flight, making it fail */
+let stopActiveLoad: (() => void) | null = null
 
 /** Drops the gcode load in flight, if any */
 export function cancelGcodeLoad (): void {
-  activeWorker?.terminate()
-  activeWorker = null
+  stopActiveLoad?.()
+  stopActiveLoad = null
 }
 
 /**
@@ -36,7 +36,6 @@ export async function loadGcodeFile (jobPath: string, objectTag: string | undefi
 
   // Create the parser worker
   const worker = new Worker(PARSER_WORKER_URL)
-  activeWorker = worker
 
   try {
     // Send the request to the worker
@@ -44,6 +43,7 @@ export async function loadGcodeFile (jobPath: string, objectTag: string | undefi
     const reply = await new Promise<GcodeParseReply>((resolve, reject) => {
       worker.onmessage = ({ data }) => resolve(data)
       worker.onerror = ({ message }) => reject(new Error(message))
+      stopActiveLoad = () => reject(new Error('Gcode load superseded'))
       worker.postMessage(request)
     })
     if (!reply.gcode) throw new Error(reply.error)
@@ -53,6 +53,5 @@ export async function loadGcodeFile (jobPath: string, objectTag: string | undefi
   } finally {
     // Free the worker as soon as the load ends
     worker.terminate()
-    activeWorker = null
   }
 }
