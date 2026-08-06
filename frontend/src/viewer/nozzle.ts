@@ -1,5 +1,4 @@
 import * as THREE from '../three-exports'
-import type { Vector3 } from 'three'
 import type { Settings } from '../settings'
 
 /** Markers available for the nozzle position */
@@ -94,7 +93,7 @@ export class Nozzle {
    * @param sceneChanged - True if the scene already changed this frame
    * @returns True if the nozzle changed the scene
    */
-  update (position: Vector3 | null, nozzleDiameter: number, renderer: THREE.WebGLRenderer, sceneChanged: boolean): boolean {
+  update (position: THREE.Vector3 | null, nozzleDiameter: number, renderer: THREE.WebGLRenderer, sceneChanged: boolean): boolean {
     const settings = this.settings
     const style = settings.nozzleStyle
     let needRender = false
@@ -110,15 +109,19 @@ export class Nozzle {
       }
     }
 
-    // Size the markers to match the size setting
+    // Size the dot to match the size setting
     const dotDiameter = nozzleDiameter * DOT_BASE_DIAMETERS * settings.nozzleSize / 100
     if (this.dot.scale.x !== dotDiameter) {
       this.dot.scale.setScalar(dotDiameter)
       needRender = true
     }
+
+    // Size the model and stand it perpendicular to the layers, which a belt printer tilts with its gantry
     const modelScale = MODEL_BASE_SCALE * settings.nozzleSize / 100
-    if (this.model && this.model.scale.x !== modelScale) {
+    const modelTilt = Math.PI / 2 + (settings.beltPrinter ? THREE.MathUtils.degToRad(settings.beltPrinterGantryAngle) : 0)
+    if (this.model && (this.model.scale.x !== modelScale || this.model.rotation.x !== modelTilt)) {
       this.model.scale.setScalar(modelScale)
+      this.model.rotation.x = modelTilt
       new THREE.Box3().setFromObject(this.model).getCenter(this.modelCenterOffset).sub(this.model.position)
       needRender = true
     }

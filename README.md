@@ -7,9 +7,10 @@ This plugin adds a 3D G-code visualizer tab in Octoprint. It displays colored li
 ## Features
 
 ### 3D Visualization
-- Interactive 3D G-code visualizer, with camera view presets and perspective/orthographic projection
+- Interactive 3D G-code visualizer, with a view cube to orient the camera and perspective/orthographic projection
 - Paths colored by slicer feature (perimeters, infill, support, skirt...), with built-in presets for popular slicers, or your own custom colors
 - Layer and segment sliders to scrub through the model
+- Belt printers are supported too, with a customizable gantry angle
 
 ### Print monitoring
 - While printing, the view syncs to the print job with an animated nozzle
@@ -30,6 +31,11 @@ This plugin adds a 3D G-code visualizer tab in Octoprint. It displays colored li
 PrettyGCode does its best to simulate the nozzle position during a print, but it's only an estimate with no guarantee of accuracy: OctoPrint has no real way of knowing where the print head actually is. Please note also that a short delay behind the printer is expected and unavoidable.
 
 If, however, the sync looks completely off during a print, please [open a bug report](#how-to-report-bugs) and attach the file you were printing.
+
+### Belt printers
+Turn on `Belt printer` in the view settings and set your gantry angle.
+
+In your OctoPrint printer profile, set the width to the belt width, the height to the gantry height, and the depth to a large number, e.g. 9999.
 
 ### Performance and WebGL
 PrettyGCode renders with WebGL via Three.js.

@@ -1,9 +1,11 @@
+import * as THREE from './three-exports'
 import { Settings, type SettingKey, type SettingValues } from './settings'
 import { Viewer } from './viewer/viewer'
-import { loadGcodeFile, cancelGcodeLoad } from './gcode/loader'
-import { PrintTimeline } from './gcode/print-timeline'
+import { loadGcodeFile, cancelGcodeLoad } from './gcode/parsing/loader'
+import { ObservedPrintSpeed } from './gcode/timeline/observed-print-speed'
+import { PrintTimeline } from './gcode/timeline/print-timeline'
 import { PrintExclusions } from './gcode/exclusions'
-import { GcodeModel } from './gcode/gcode-model'
+import { GcodeModel } from './gcode/rendering/gcode-model'
 import { initViewSettingsPanel, type ViewSettingsPanel } from './ui/view-settings/view-settings-panel'
 import { saveDefaultViewSettings, updateDefaultViewSettingsPanel } from './ui/view-settings/default-view-settings-panel'
 import { initOverlayWindows } from './ui/overlays/overlay-windows'
@@ -12,15 +14,21 @@ import { updateWebcamOverlay } from './ui/overlays/webcam'
 import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue, applyLayerSliderVisibility } from './ui/sliders/layer-slider'
 import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue, applySegmentSliderVisibility } from './ui/sliders/segment-slider'
 import { initToggleButtons } from './ui/toggle-buttons'
-import { setStatusBarText, applyStatusBarVisibility } from './ui/status-bar'
+import { setStatusBarTemperatures, applyStatusBarVisibility } from './ui/status-bar'
 import { showLoadingScreen, hideLoadingScreen } from './ui/notices/loading-screen'
 import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/notices/large-file-confirmation'
-import type { ParsedGcode } from './gcode/parser'
+import type { ParsedGcode } from './gcode/parsing/parser'
 import type { ParserColors } from './gcode/model-colors'
 import type { BedVolume } from './viewer/bed'
-import type { ViewAngle } from './viewer/navigation'
 import type { PrintViewUpdate } from './viewer/viewer'
-import type { Vector3 } from 'three'
+
+/** Temperatures read at one moment, by heater name */
+export interface PrinterTemperatures {
+  /** Moment the temperatures were read, in seconds since the epoch */
+  time: number
+  /** Actual and target temperature of one heater, each unknown until the printer reports it */
+  [heater: string]: { actual: number | null, target: number | null } | number
+}
 
 /** Printer state reported by OctoPrint */
 interface PrinterState {
@@ -29,16 +37,20 @@ interface PrinterState {
 
 /** OctoPrint current/history data payload */
 interface PrinterDataPayload {
-  logs: string[]
+  temps: PrinterTemperatures[]
   job: { file: { path: string, date: number, size: number } }
   state: PrinterState
-  progress: { filepos: number }
+  progress: { filepos: number, printTime: number }
 }
 
 /** Selector of the plugin tab */
-const PG_TAB = '#tab_plugin_prettygcode'
+export const PG_TAB = '#tab_plugin_prettygcode'
 /** Selector of the plugin settings tab */
 const PG_SETTINGS_TAB = '#settings_plugin_prettygcode'
+/** Selector of the OctoPrint page container */
+export const PAGE_CONTAINER = '.page-container'
+/** Class marking the page as filled by the plugin view */
+export const MAXIMIZED_CLASS = 'pg-maximized'
 
 /** Nozzle diameter in mm assumed when the printer profile does not state one */
 const DEFAULT_NOZZLE_DIAMETER_MM = 0.4
@@ -65,16 +77,20 @@ export class PrettyGCodeApp {
   private viewSettingsPanel!: ViewSettingsPanel
 
   /** The 3D view */
-  private readonly viewer = new Viewer(this.settings, () => this.bedVolume, (deltaSeconds) => this.updatePrintView(deltaSeconds))
+  private readonly viewer = new Viewer(this.settings, () => this.bedVolume, () => this.nozzleDiameter, (deltaSeconds) => this.updatePrintView(deltaSeconds))
   /** Print exclusions of the loaded gcode */
-  private readonly exclusions = new PrintExclusions()
+  private readonly exclusions = new PrintExclusions(this.settings)
   /** Print timeline of the loaded gcode */
   private readonly printTimeline = new PrintTimeline(this.exclusions)
+  /** Speed the running print is going at */
+  private readonly observedPrintSpeed = new ObservedPrintSpeed()
   /** The rendered gcode model */
   private readonly gcodeModel = new GcodeModel(this.settings, () => this.nozzleDiameter, this.printTimeline, this.exclusions, this.viewer.mirrorBoundsPlanes)
 
   /** Parsed gcode of the currently loaded job */
   private parsedGcode: ParsedGcode | null = null
+  /** Belt printer gantry angle the loaded gcode was parsed with */
+  private parsedBeltPrinterGantryAngle: number | null = null
   /** Model colors the loaded gcode was parsed with */
   private parsedColors: ParserColors | null = null
 
@@ -106,9 +122,6 @@ export class PrettyGCodeApp {
   /** Whether the user is sliding the layer or segment manually */
   private manualSliding = false
 
-  /** Prefix of received terminal log lines */
-  private readonly recvLogPrefix = parseInt(VERSION, 10) < 2 ? 'Recv: ' : '<<< '
-
   /**
    * @param viewModels - OctoPrint view models
    */
@@ -136,8 +149,8 @@ export class PrettyGCodeApp {
 
         // 3D view and gcode
         this.viewer.init()
-        this.viewer.scene.add(this.gcodeModel.linesGroup)
-        this.viewer.scene.add(this.exclusions.regionMarkersGroup)
+        this.viewer.add(this.gcodeModel.linesGroup)
+        this.viewer.add(this.exclusions.regionMarkersGroup)
         this.loadGcode(this.currentJobPath)
         this.fetchExclusions()
 
@@ -196,12 +209,7 @@ export class PrettyGCodeApp {
     this.updatePrinterData(data)
     if (!this.viewInitialized) return
 
-    // Update status bar with the reported temperatures
-    data.logs.forEach((e) => {
-      if (e.startsWith(this.recvLogPrefix + 'T:')) {
-        setStatusBarText(e.substr(this.recvLogPrefix.length).split('@')[0])
-      }
-    })
+    setStatusBarTemperatures(data.temps)
   }
 
   /**
@@ -239,6 +247,13 @@ export class PrettyGCodeApp {
     // Live printer state and progress
     this.currentPrinterState = data.state
     this.currentFilePosition = data.progress.filepos
+
+    // Speed of the job the printer is on
+    if (data.state.flags.printing) {
+      this.observedPrintSpeed.track(data.progress.printTime, this.printTimeline.estimatedSecondsAt(this.currentFilePosition))
+    } else {
+      this.observedPrintSpeed.restart()
+    }
   }
 
   /* ---- Gcode loading ---- */
@@ -246,6 +261,11 @@ export class PrettyGCodeApp {
   /** Layer count of the loaded gcode */
   get layerCount (): number {
     return this.parsedGcode?.layers.length ?? 0
+  }
+
+  /** Angle between the belt and the printer gantry in degrees, null for non-belt printers */
+  private get beltPrinterGantryAngle (): number | null {
+    return this.settings.beltPrinter ? this.settings.beltPrinterGantryAngle : null
   }
 
   /**
@@ -256,8 +276,10 @@ export class PrettyGCodeApp {
   private async loadGcode (jobPath: string, preserveView = false): Promise<void> {
     // Supersede the load in flight and clear the view
     const sequence = ++this.loadSequence
+    hideLoadingScreen()
     hideLargeFileConfirmation()
     this.unloadGcode()
+    this.parsedBeltPrinterGantryAngle = this.beltPrinterGantryAngle
     this.parsedColors = { colorRules: this.settings.modelColorRules, defaultColor: this.settings.modelDefaultColor }
 
     // Ask before loading a large file, which takes long and can bog the browser down
@@ -279,7 +301,7 @@ export class PrettyGCodeApp {
       const objectTag = this.settingsVM.settings?.plugins?.cancelobject?.reptag?.()
       // Whether G90/G91 affect extrusion follows OctoPrint's firmware setting
       const g90InfluencesExtruder = this.settingsVM.settings?.feature?.g90InfluencesExtruder?.() ?? false
-      const parsedGcode = await loadGcodeFile(jobPath, objectTag, this.parsedColors, g90InfluencesExtruder)
+      const parsedGcode = await loadGcodeFile(jobPath, objectTag, this.parsedColors, g90InfluencesExtruder, this.parsedBeltPrinterGantryAngle)
 
       // Stop if a newer load has started
       if (sequence !== this.loadSequence) return
@@ -288,7 +310,8 @@ export class PrettyGCodeApp {
       this.exclusions.setGcodeObjectNames(this.parsedGcode.objectNames)
 
       // Index the timeline and build the model
-      this.printTimeline.index(this.parsedGcode.layers)
+      this.printTimeline.build(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
+      this.observedPrintSpeed.restart()
       this.gcodeModel.build(this.parsedGcode.layers)
 
       // Apply the gcode bounds
@@ -305,16 +328,17 @@ export class PrettyGCodeApp {
       }
       this.viewer.requestRender()
     } catch (error) {
-      console.error('PrettyGCode: gcode load failed', error)
+      if (sequence === this.loadSequence) console.error('PrettyGCode: gcode load failed', error)
     } finally {
-      hideLoadingScreen()
+      if (sequence === this.loadSequence) hideLoadingScreen()
     }
   }
 
   /** Empties the 3D view of the loaded gcode */
   private unloadGcode (): void {
     this.parsedGcode = null
-    this.printTimeline.index([])
+    this.printTimeline.build([], null)
+    this.observedPrintSpeed.restart()
     this.gcodeModel.build([])
     updateLayerSliderMax(this)
     updateSegmentSliderMax(this)
@@ -332,7 +356,8 @@ export class PrettyGCodeApp {
   private updateExclusions (): void {
     if (!this.viewInitialized || !this.parsedGcode) return
 
-    this.printTimeline.index(this.parsedGcode.layers)
+    this.printTimeline.build(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
+    this.observedPrintSpeed.restart()
     this.gcodeModel.rebuild()
     this.updateLayerHighlight()
   }
@@ -342,14 +367,14 @@ export class PrettyGCodeApp {
   /**
    * Advances the displayed print progress for a new frame
    * @param deltaSeconds - Seconds elapsed since the previous call
-   * @returns Whether the scene changed, the nozzle position to show, if any, and the nozzle diameter
+   * @returns Whether the scene changed and the nozzle position to show, if any
    */
   private updatePrintView (deltaSeconds: number): PrintViewUpdate {
     const state = this.currentPrinterState
     const tracking = state && !this.manualSliding && (state.flags.printing || state.flags.paused)
 
     let needRender = false
-    let nozzlePosition: Vector3 | null = null
+    let nozzlePosition: THREE.Vector3 | null = null
     let revealedLayer: number | null = null
 
     if (tracking) {
@@ -372,7 +397,7 @@ export class PrettyGCodeApp {
     // Highlight the revealed layer
     if (revealedLayer != null) this.gcodeModel.highlightLayer(revealedLayer)
 
-    return { needRender, nozzlePosition, nozzleDiameter: this.nozzleDiameter }
+    return { needRender, nozzlePosition }
   }
 
   /* ---- UI events ---- */
@@ -392,9 +417,25 @@ export class PrettyGCodeApp {
     return this.printTimeline.layerSegmentCount(this._currentLayerNumber)
   }
 
-  /** Z height of the current layer */
+  /** Machine Z of the current layer */
   get currentLayerZ (): number {
     return this.parsedGcode?.layers[this._currentLayerNumber - 1]?.z ?? 0
+  }
+
+  /**
+   * Gets how long the running print still takes to reach a layer
+   * @param layerNumber - 1-based layer number
+   * @returns The seconds left and whether the measurement behind them has stabilized, or null when
+   * the print is not running, the gcode carries no slicer time marks, or the layer is already behind
+   */
+  secondsUntilLayer (layerNumber: number): { seconds: number, stabilized: boolean } | null {
+    if (!this.currentPrinterState?.flags.printing || !this.parsedGcode?.slicerTimeMarks) return null
+
+    const reachedSeconds = this.printTimeline.estimatedSecondsAt(this.currentFilePosition)
+    const layerSeconds = this.printTimeline.estimatedSecondsAtLayer(layerNumber)
+    if (layerSeconds <= reachedSeconds) return null
+
+    return this.observedPrintSpeed.toRealSeconds(layerSeconds - reachedSeconds)
   }
 
   /**
@@ -445,14 +486,6 @@ export class PrettyGCodeApp {
   }
 
   /**
-   * Rotates the camera to a named view angle
-   * @param view - View angle to rotate to
-   */
-  applyViewAngle (view: ViewAngle): void {
-    this.viewer.applyViewAngle(view, true)
-  }
-
-  /**
    * (Re)applies the given settings to the view
    * @param keys - Names of the settings to apply
    */
@@ -466,14 +499,17 @@ export class PrettyGCodeApp {
      */
     const anyOf = (...names: SettingKey[]): boolean => names.some((name) => toApply.has(name))
 
-    const mustReload = anyOf('modelColorRules', 'modelDefaultColor') &&
+    const beltPrinterChanged = anyOf('beltPrinter', 'beltPrinterGantryAngle') &&
+      this.beltPrinterGantryAngle !== this.parsedBeltPrinterGantryAngle
+    const colorsChanged = anyOf('modelColorRules', 'modelDefaultColor') &&
       (
         this.parsedColors == null ||
         !this.settings.matches('modelColorRules', this.parsedColors.colorRules) ||
         !this.settings.matches('modelDefaultColor', this.parsedColors.defaultColor)
       )
-    // Model color changes require a reload, which rebuilds the model on its own
-    if (mustReload) this.loadGcode(this.currentJobPath, true)
+
+    // Belt printer and model color changes require a reload, which rebuilds the model on its own
+    if (beltPrinterChanged || colorsChanged) this.loadGcode(this.currentJobPath, !beltPrinterChanged)
     else if (anyOf('thickLines', 'showExcluded', 'showBed', 'showMirror')) {
       this.gcodeModel.rebuild()
       this.viewer.requestRender()
@@ -482,16 +518,27 @@ export class PrettyGCodeApp {
     if (anyOf('darkMode')) {
       $('html').toggleClass('pg-dark', this.settings.darkMode)
       this.viewer.applyBackground(this.settings.darkMode)
-      this.viewer.updateBedMesh()
+      this.viewer.applyViewCubeTheme(this.settings.darkMode)
+      this.viewer.rebuildBed()
     }
     if (anyOf('antialias')) this.viewer.applyAntialias(this.settings.antialias)
 
     if (anyOf('navigationMode')) this.viewer.applyNavigationMode(this.settings.navigationMode)
     if (anyOf('projectionMode')) this.viewer.applyProjectionMode(this.settings.projectionMode)
 
+    if (anyOf('beltPrinter', 'beltPrinterGantryAngle')) {
+      this.exclusions.placeRegionMarkers()
+      this.viewer.requestRender()
+    }
+
+    if (anyOf('travelScope', 'travelColor')) {
+      this.gcodeModel.rebuildTravelLines()
+      this.viewer.requestRender()
+    }
+
     if (anyOf('showBed')) this.viewer.applyBedVisibility(this.settings.showBed)
     if (anyOf('showExclusionMarker')) {
-      this.exclusions.regionMarkersGroup.visible = this.settings.showExclusionMarker
+      this.exclusions.applyRegionMarkersVisibility(this.settings.showExclusionMarker)
       this.viewer.requestRender()
     }
 
@@ -502,6 +549,7 @@ export class PrettyGCodeApp {
         'showStatusBar',
         'showLayerSlider',
         'showSegmentSlider',
+        'showCameraControls',
         'showState',
         'showFiles',
         'showDashboard',
@@ -518,7 +566,7 @@ export class PrettyGCodeApp {
     this.viewer.requestRender()
   }
 
-  /** Shows or hides the overlay windows to match the current settings */
+  /** Shows or hides the view's controls and windows to match the current settings */
   updateWindowStates (): void {
     applyStatusBarVisibility(this.settings.showStatusBar)
 
@@ -526,6 +574,9 @@ export class PrettyGCodeApp {
     applySegmentSliderVisibility(this.settings.showSegmentSlider)
     if (!this.settings.showLayerSlider) this.setCurrentLayerNumber(this.layerCount)
     else if (!this.settings.showSegmentSlider) this.setCurrentSegmentNumber(this.currentLayerSegmentCount)
+
+    $('.pg-camera-controls').toggleClass('pg-hidden', !this.settings.showCameraControls)
+    this.viewer.applyViewCubeVisibility(this.settings.showCameraControls)
 
     $('#state_wrapper').toggleClass('pg-hidden', !this.settings.showState)
     $('#files_wrapper').toggleClass('pg-hidden', !this.settings.showFiles)
@@ -546,7 +597,7 @@ export class PrettyGCodeApp {
     this.updateBedVolume()
     this.updateProfileNozzleDiameter()
     this.gcodeModel.updateLineWidth()
-    this.viewer.updateBedMesh()
+    this.viewer.rebuildBed()
     this.viewer.resetCameraTarget()
     this.viewer.requestRender()
   }
@@ -565,15 +616,6 @@ export class PrettyGCodeApp {
     if (!currentProfileData || !currentProfileData.volume) return
 
     const volume = currentProfileData.volume
-
-    const dims: Omit<BedVolume, 'origin'> = typeof volume.custom_box === 'function'
-      ? { width: volume.width(), height: volume.height(), depth: volume.depth() }
-      : {
-          width: volume.custom_box.x_max() - volume.custom_box.x_min(),
-          height: volume.custom_box.z_max() - volume.custom_box.z_min(),
-          depth: volume.custom_box.y_max() - volume.custom_box.y_min()
-        }
-
-    this.bedVolume = { ...dims, origin: volume.origin() }
+    this.bedVolume = { depth: volume.depth(), height: volume.height(), origin: volume.origin(), width: volume.width() }
   }
 }

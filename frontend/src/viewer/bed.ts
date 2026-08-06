@@ -6,6 +6,9 @@ const LIGHT_GRID_CENTER = 0x000000
 /** Dark theme bed grid center-line color */
 const DARK_GRID_CENTER = 0xffffff
 
+/** Spacing of the bed grid lines */
+const GRID_SPACING_MM = 10
+
 /** Planes clipping the gcode reflection when the camera is below the bed */
 const BELOW_BED_CLIP_PLANES = [new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)]
 /** Empty plane set, to disable clipping */
@@ -44,7 +47,7 @@ export class Bed {
   /** Bed surface */
   private plane: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null
   /** Bed grid lines */
-  private grid: THREE.GridHelper | null = null
+  private grid: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial> | null = null
 
   /**
    * @param settings - Plugin frontend settings
@@ -67,14 +70,11 @@ export class Bed {
     const center = bedCenter(bedVolume)
 
     // Drop the previous bed
-    if (this.plane) {
-      this.scene.remove(this.plane)
-      this.plane.geometry.dispose()
-      this.plane.material.dispose()
-    }
-    if (this.grid) {
-      this.scene.remove(this.grid)
-      this.grid.dispose()
+    for (const object of [this.plane, this.grid]) {
+      if (!object) continue
+      this.scene.remove(object)
+      object.geometry.dispose()
+      object.material.dispose()
     }
 
     // Translucent bed surface
@@ -84,12 +84,41 @@ export class Bed {
     this.scene.add(plane)
     this.plane = plane
 
+    /**
+     * Lists the offsets from the bed center where grid lines run along an axis
+     * @param half - Half the bed size along that axis
+     * @returns The offsets, one per line, the two edges included
+     */
+    const gridLineOffsets = (half: number): number[] => {
+      const offsets = [0]
+      for (let offset = GRID_SPACING_MM; offset < half; offset += GRID_SPACING_MM) offsets.push(offset, -offset)
+      offsets.push(half, -half)
+      return offsets
+    }
+
     // Grid lines
-    const grid = new THREE.GridHelper(bedVolume.width, bedVolume.width / 10, this.settings.darkMode ? DARK_GRID_CENTER : LIGHT_GRID_CENTER, 0xc1c1c1)
+    const halfWidth = bedVolume.width / 2
+    const halfDepth = bedVolume.depth / 2
+    const centerColor = new THREE.Color(this.settings.darkMode ? DARK_GRID_CENTER : LIGHT_GRID_CENTER)
+    const lineColor = new THREE.Color(0xc1c1c1)
+    const gridPositions: number[] = []
+    const gridColors: number[] = []
+    for (const offset of gridLineOffsets(halfWidth)) {
+      const color = offset === 0 ? centerColor : lineColor
+      gridPositions.push(offset, -halfDepth, 0, offset, halfDepth, 0)
+      gridColors.push(color.r, color.g, color.b, color.r, color.g, color.b)
+    }
+    for (const offset of gridLineOffsets(halfDepth)) {
+      const color = offset === 0 ? centerColor : lineColor
+      gridPositions.push(-halfWidth, offset, 0, halfWidth, offset, 0)
+      gridColors.push(color.r, color.g, color.b, color.r, color.g, color.b)
+    }
+
+    const gridGeometry = new THREE.BufferGeometry()
+    gridGeometry.setAttribute('position', new THREE.Float32BufferAttribute(gridPositions, 3))
+    gridGeometry.setAttribute('color', new THREE.Float32BufferAttribute(gridColors, 3))
+    const grid = new THREE.LineSegments(gridGeometry, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6 }))
     grid.position.set(center.x, center.y, 0)
-    grid.material.transparent = true
-    grid.material.opacity = 0.6
-    grid.quaternion.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)) // Three.js creates the grid standing upright: rotate it to lie flat on the bed
     this.scene.add(grid)
     this.grid = grid
 
@@ -123,19 +152,17 @@ export class Bed {
     // Refresh the planes clipping the bed reflection, when it is shown
     if (!mirrorShown) return
 
-    const lowerleft = bedVolume.origin === 'lowerleft'
-    const xMin = lowerleft ? 0 : -bedVolume.width / 2
-    const xMax = lowerleft ? bedVolume.width : bedVolume.width / 2
-    const yMin = lowerleft ? 0 : -bedVolume.depth / 2
-    const yMax = lowerleft ? bedVolume.depth : bedVolume.depth / 2
+    const { x: centerX, y: centerY } = bedCenter(bedVolume)
+    const halfWidth = bedVolume.width / 2
+    const halfDepth = bedVolume.depth / 2
 
     const corners = [
-      new THREE.Vector3(xMin, yMin, 0),
-      new THREE.Vector3(xMax, yMin, 0),
-      new THREE.Vector3(xMax, yMax, 0),
-      new THREE.Vector3(xMin, yMax, 0)
+      new THREE.Vector3(centerX - halfWidth, centerY - halfDepth, 0),
+      new THREE.Vector3(centerX + halfWidth, centerY - halfDepth, 0),
+      new THREE.Vector3(centerX + halfWidth, centerY + halfDepth, 0),
+      new THREE.Vector3(centerX - halfWidth, centerY + halfDepth, 0)
     ]
-    const center = new THREE.Vector3((xMin + xMax) / 2, (yMin + yMax) / 2, 0)
+    const center = new THREE.Vector3(centerX, centerY, 0)
     const cameraPosition = camera.position
     const viewDirection = camera.getWorldDirection(new THREE.Vector3())
 

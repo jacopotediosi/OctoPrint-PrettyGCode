@@ -4,8 +4,11 @@ import type { Settings } from '../../settings'
 
 /** A resizable overlay sized through its height in px */
 export interface Overlay {
-  measure: () => { width: number, height: number }
+  /** Element the overlay is drawn in */
+  $element: JQuery
+  /** Callback called with the new height in px while the overlay is dragged */
   apply: (height: number) => void
+  /** Callback called when the drag ends, saving the overlay size in settings */
   persist: () => void
 }
 
@@ -47,7 +50,7 @@ export function makeResizable ($handle: JQuery, overlay: Overlay, axis: 'x' | 'y
     e.preventDefault()
     e.stopPropagation()
 
-    const startSize = overlay.measure()
+    const startSize = overlay.$element[0].getBoundingClientRect()
     const startCoord = pointerEvent[pointerCoord]
     const startDimension = axis === 'x' ? startSize.width : startSize.height
     if (this.setPointerCapture) this.setPointerCapture(pointerEvent.pointerId)

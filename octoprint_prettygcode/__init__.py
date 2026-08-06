@@ -38,7 +38,7 @@ MODEL_COLOR_RULE_DEFS: list[ModelColorRuleDef] = [
     {"id": "solidInfill", "keywords": ["solid"]},
     # SuperSlicer "Internal bridge infill"
     {"id": "internalBridge", "keywords": ["internal bridge infill"]},
-    # Prusa/SuperSlicer "Bridge infill", Bambu/Orca "Bridge", Simplify3D "bridge"
+    # Prusa/SuperSlicer "Bridge infill", Bambu/Orca "Bridge", Orca "Internal Bridge", Simplify3D "bridge"
     {"id": "bridge", "keywords": ["bridge"]},
     # Bambu "Support ironing"
     {"id": "supportIroning", "keywords": ["support ironing"]},
@@ -161,19 +161,15 @@ DEFAULT_DEFAULT_VIEW_SETTINGS = {
     "navigationMode": "prusaslicer",
     # Projection mode of the 3D view
     "projectionMode": "perspective",
+    # Whether to show the camera controls
+    "showCameraControls": True,
     # Whether to auto-orbit the camera when idle
     "orbitWhenIdle": False,
-    # ---- Gcode model ----
-    # Whether to draw the lines with their real thickness
-    "thickLines": True,
-    # Shading intensity of the topmost displayed layer, in percent
-    "highlightIntensity": 40,
-    # Whether to show gcode excluded from printing, greyed out
-    "showExcluded": True,
-    # Model color rules, tried in order
-    "modelColorRules": MODEL_COLOR_PRESETS[0]["colorRules"],
-    # Color of segments matching no color rule
-    "modelDefaultColor": MODEL_COLOR_PRESETS[0]["defaultColor"],
+    # ---- Printer ----
+    # Whether the printer prints onto a moving belt
+    "beltPrinter": False,
+    # Angle between the belt and the printer gantry, in degrees
+    "beltPrinterGantryAngle": 45,
     # ---- Nozzle ----
     # Marker shown at the nozzle position
     "nozzleStyle": "model",
@@ -185,6 +181,22 @@ DEFAULT_DEFAULT_VIEW_SETTINGS = {
     "nozzleTransparency": 0,
     # Whether to reflect the scene on the nozzle model
     "nozzleReflection": True,
+    # ---- Travel moves ----
+    # Part of the print the travel moves are drawn for
+    "travelScope": "none",
+    # Color of the travel moves
+    "travelColor": "#808080",
+    # ---- Gcode model ----
+    # Whether to draw the lines with their real thickness
+    "thickLines": True,
+    # Shading intensity of the topmost displayed layer, in percent
+    "highlightIntensity": 40,
+    # Whether to show gcode excluded from printing, greyed out
+    "showExcluded": True,
+    # Model color rules, tried in order
+    "modelColorRules": MODEL_COLOR_PRESETS[0]["colorRules"],
+    # Color of segments matching no color rule
+    "modelDefaultColor": MODEL_COLOR_PRESETS[0]["defaultColor"],
     # ---- Bed ----
     # Whether to show the print bed
     "showBed": True,

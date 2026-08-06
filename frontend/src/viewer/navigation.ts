@@ -1,16 +1,3 @@
-/** Named camera view angles */
-export type ViewAngle = 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right'
-
-/** Azimuth and polar angles of the named views, in radians */
-export const VIEW_ANGLES: Record<ViewAngle, [number, number]> = {
-  top: [0, 0],
-  bottom: [0, Math.PI],
-  front: [0, Math.PI / 2],
-  back: [Math.PI, Math.PI / 2],
-  left: [-Math.PI / 2, Math.PI / 2],
-  right: [Math.PI / 2, Math.PI / 2]
-}
-
 /** Mouse buttons usable in a navigation binding */
 export type MouseButton = 'left' | 'middle' | 'right'
 /** Mouse button with an optional modifier key to hold */

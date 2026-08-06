@@ -1,5 +1,5 @@
 import { GcodeParser, type ParsedGcode } from './parser'
-import type { ParserColors } from './model-colors'
+import type { ParserColors } from '../model-colors'
 
 /** Gcode parse request */
 export interface GcodeParseRequest {
@@ -11,6 +11,8 @@ export interface GcodeParseRequest {
   colors: ParserColors
   /** Whether G90/G91 also switch the extrusion mode */
   g90InfluencesExtruder: boolean
+  /** Angle between the belt and the printer gantry in degrees, null for non-belt printers */
+  beltPrinterGantryAngle: number | null
 }
 
 /** Gcode parse reply */
@@ -33,16 +35,17 @@ declare const self: {
  * @returns The parsed gcode
  */
 async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode> {
-  const parser = new GcodeParser(request.colors, request.objectTag, request.g90InfluencesExtruder)
+  const parser = new GcodeParser(request.colors, request.objectTag, request.g90InfluencesExtruder, request.beltPrinterGantryAngle)
 
   const response = await fetch(request.fileUrl)
+  if (!response.ok) throw new Error(`Gcode download failed with status ${response.status}`)
+
   if (response.body) {
     const reader = response.body.getReader()
-    const decoder = new TextDecoder()
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      parser.parse(decoder.decode(value, { stream: true }))
+      parser.parse(value)
     }
     parser.finish()
   }
@@ -51,6 +54,7 @@ async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode>
     layers: parser.layers,
     bounds: parser.bounds,
     slicerNozzleDiameter: parser.slicerNozzleDiameter,
+    slicerTimeMarks: parser.slicerTimeMarks,
     objectNames: parser.objectNames
   } satisfies ParsedGcode
 }
@@ -62,9 +66,10 @@ self.onmessage = async ({ data }) => {
 
     const buffers: Transferable[] = []
     for (const layer of gcode.layers) {
-      buffers.push(layer.vertices.buffer, layer.colors.buffer, layer.filePositions.buffer, layer.durations.buffer)
+      buffers.push(layer.vertices.buffer, layer.colors.buffer, layer.filePositions.buffer, layer.durations.buffer, layer.travelVertices.buffer, layer.travelSegmentIndices.buffer)
       if (layer.objectIds) buffers.push(layer.objectIds.buffer)
     }
+    if (gcode.slicerTimeMarks) buffers.push(gcode.slicerTimeMarks.filePositions.buffer, gcode.slicerTimeMarks.elapsedSeconds.buffer)
 
     self.postMessage({ gcode }, buffers)
   } catch (error) {

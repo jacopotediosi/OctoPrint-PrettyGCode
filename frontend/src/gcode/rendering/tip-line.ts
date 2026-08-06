@@ -1,7 +1,7 @@
-import * as THREE from '../three-exports'
+import * as THREE from '../../three-exports'
 import { isThickLine, isThickMaterial } from './line-materials'
 import type { GcodeLine, GcodeLineMaterial } from './line-materials'
-import type { PrintTimeline, TimelineSpot } from './print-timeline'
+import type { PrintTimeline, TimelineSpot } from '../timeline/print-timeline'
 
 /** The growing tip drawn along the segment the nozzle is currently laying down */
 export class TipLine {

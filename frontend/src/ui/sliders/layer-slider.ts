@@ -1,10 +1,44 @@
 import type { PrettyGCodeApp } from '../../app'
 import { bindStepButton } from './slider-step-button'
 
-/** Layer the slider is showing */
-let shownLayer = -1
+/** Revealed layer the slider is showing */
+let revealedLayer = -1
 /** Highest layer the slider can reach */
 let maxLayer = -1
+
+/**
+ * Spells out how long something takes, in the largest units it fills
+ * @param seconds - Duration to spell out
+ * @returns The duration as text
+ */
+function secondsToDurationText (seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`
+
+  const minutes = Math.round(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (days) return `${days}d ${hours % 24}h`
+  if (hours) return `${hours}h ${minutes % 60}m`
+  return `${minutes}m`
+}
+
+/**
+ * Reads the clock a number of seconds from now, on a 24 hour dial
+ * @param seconds - Seconds from now
+ * @returns The time as text, carrying the date when it falls on another day
+ */
+function secondsFromNowToClockText (seconds: number): string {
+  const futureTime = new Date(Date.now() + seconds * 1000)
+  const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+
+  if (futureTime.toDateString() !== new Date().toDateString()) {
+    options.day = '2-digit'
+    options.month = '2-digit'
+  }
+
+  return futureTime.toLocaleString([], options)
+}
 
 /**
  * Creates the layer slider
@@ -36,7 +70,19 @@ export function initLayerSlider (app: PrettyGCodeApp): void {
     orientation: 'vertical',
     reversed: true,
     selection: 'after',
-    formatter: () => `Z: ${app.currentLayerZ}`,
+    formatter: () => {
+      const height = `${app.settings.beltPrinter ? 'Belt' : 'Z'}: ${app.currentLayerZ}`
+
+      const untilLayer = app.secondsUntilLayer(app.currentLayerNumber)
+      if (!untilLayer) return height
+
+      const { seconds, stabilized } = untilLayer
+      const left = stabilized
+        ? `in ${secondsToDurationText(seconds)} (~${secondsFromNowToClockText(seconds)})`
+        : `in ${formatFuzzyPrintTime(seconds)} (still stabilizing)`
+
+      return [height, left].join('\n')
+    },
     min: 0,
     max: 100,
     value: 100
@@ -83,7 +129,7 @@ export function updateLayerSliderMax (app: PrettyGCodeApp): void {
   if (!$('#pg-layer-slider').length) return
 
   if (app.layerCount !== maxLayer) {
-    $('#pg-layer-slider').slider('setMax', app.layerCount)
+    $('#pg-layer-slider').slider('setMax', Math.max(app.layerCount, 1))
     $('#pg-layer-slider').slider(app.layerCount ? 'enable' : 'disable')
   }
 
@@ -97,8 +143,8 @@ export function updateLayerSliderMax (app: PrettyGCodeApp): void {
  */
 export function setLayerSliderValue (app: PrettyGCodeApp, layer: number): void {
   if (!$('#pg-layer-slider').length) return
-  if (layer === shownLayer && app.layerCount === maxLayer) return
-  shownLayer = layer
+  if (layer === revealedLayer && app.layerCount === maxLayer) return
+  revealedLayer = layer
   maxLayer = app.layerCount
 
   $('#pg-layer-slider').slider('setValue', layer)

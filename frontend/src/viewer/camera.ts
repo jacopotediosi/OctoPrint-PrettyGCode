@@ -2,10 +2,11 @@ import * as THREE from '../three-exports'
 import CameraControls from 'camera-controls'
 import { Vector2, Vector3, Vector4, Quaternion, Matrix4, Spherical, Box3, Sphere, Raycaster } from 'three'
 import { bedCenter } from './bed'
-import { NAVIGATION_MODES, VIEW_ANGLES } from './navigation'
-import type { GcodeBounds } from '../gcode/parser'
+import { ViewCube } from './view-cube'
+import { NAVIGATION_MODES } from './navigation'
+import type { GcodeBounds } from '../gcode/parsing/parser'
 import type { BedVolume } from './bed'
-import type { MouseBinding, MouseButton, NavigationMode, NavigationModeKey, ProjectionMode, ViewAngle } from './navigation'
+import type { MouseBinding, MouseButton, NavigationMode, NavigationModeKey, ProjectionMode } from './navigation'
 import type { Settings } from '../settings'
 
 /**
@@ -29,10 +30,20 @@ const DEFAULT_VIEW_POLAR_ANGLE = Math.PI / 4
 /** Height framed by the orthographic camera at zoom 1 */
 const ORTHOGRAPHIC_VIEW_HEIGHT_MM = 100
 
+/** Area the camera frames and orbits around */
+interface FramedArea {
+  centerX: number
+  centerY: number
+  depth: number
+  width: number
+}
+
 /** The camera of the 3D view */
 export class Camera {
   /** Plugin frontend settings */
   private readonly settings: Settings
+  /** Renderer drawing the 3D view */
+  private renderer: THREE.WebGLRenderer
   /** Callback forcing a render on the next animation frame */
   private readonly requestRender: () => void
 
@@ -44,6 +55,8 @@ export class Camera {
   private activeCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera
   /** Camera controls */
   private readonly controls: CameraControls
+  /** The view cube */
+  private readonly viewCube: ViewCube
   /** Seconds the camera has sat idle */
   private idleTime = 0
   /** Bounds of the displayed gcode */
@@ -58,30 +71,36 @@ export class Camera {
 
   /**
    * @param settings - Plugin frontend settings
-   * @param canvas - Canvas the camera controls listen on
+   * @param renderer - Renderer drawing the 3D view
    * @param bedVolume - Print bed geometry
    * @param requestRender - Callback forcing a render on the next animation frame
    */
-  constructor (settings: Settings, canvas: HTMLCanvasElement, bedVolume: BedVolume, requestRender: () => void) {
+  constructor (settings: Settings, renderer: THREE.WebGLRenderer, bedVolume: BedVolume, requestRender: () => void) {
     this.settings = settings
+    this.renderer = renderer
     this.requestRender = requestRender
+
+    // Objects stand upright along Z
+    THREE.Object3D.DEFAULT_UP.set(0, 0, 1)
 
     // Cameras
     this.perspectiveCamera = new THREE.PerspectiveCamera(70, 2, 1, 5000)
     this.orthographicCamera = new THREE.OrthographicCamera(-ORTHOGRAPHIC_VIEW_HEIGHT_MM, ORTHOGRAPHIC_VIEW_HEIGHT_MM, ORTHOGRAPHIC_VIEW_HEIGHT_MM / 2, -ORTHOGRAPHIC_VIEW_HEIGHT_MM / 2, 1, 5000)
     this.activeCamera = settings.projectionMode === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera
     for (const camera of [this.perspectiveCamera, this.orthographicCamera]) {
-      camera.up.set(0, 0, 1)
       camera.position.set(bedVolume.width, 0, 50)
     }
 
     // Controls
     CameraControls.install({ THREE: CAMERA_CONTROLS_THREE })
-    this.controls = new CameraControls(this.activeCamera, canvas)
+    this.controls = new CameraControls(this.activeCamera, renderer.domElement)
     this.controls.dollyToCursor = true
     this.controls.infinityDolly = true
     this.controls.minDistance = 10
     this.applyDefaultView(bedVolume)
+
+    // View cube
+    this.viewCube = new ViewCube(this.activeCamera, renderer, settings.darkMode, (direction) => this.applyViewDirection(direction), requestRender)
 
     // Watch navigation modifiers
     window.addEventListener('keydown', (event) => this.updateNavigationModifier(event))
@@ -95,12 +114,14 @@ export class Camera {
   }
 
   /**
-   * Switches the camera to the given canvas
-   * @param canvas - Canvas to listen on
+   * Switches the camera to the given renderer
+   * @param renderer - Renderer drawing the 3D view
    */
-  setCanvas (canvas: HTMLCanvasElement): void {
+  setRenderer (renderer: THREE.WebGLRenderer): void {
+    this.renderer = renderer
     this.controls.disconnect()
-    this.controls.connect(canvas)
+    this.controls.connect(renderer.domElement)
+    this.viewCube.attachTo(this.activeCamera, renderer)
   }
 
   /* ---- Render loop ---- */
@@ -111,15 +132,21 @@ export class Camera {
    * @returns True if the camera moved
    */
   update (deltaSeconds: number): boolean {
+    // Leave the camera to the view cube while it animates
+    if (this.viewCube.animating) {
+      this.idleTime = 0
+      return true
+    }
+
     // Cap any pending dolly at the zoom-out limit
-    if (this.activeCamera === this.perspectiveCamera && this.controls.getSpherical(new Spherical()).radius > this.controls.maxDistance) {
+    if (this.activeCamera === this.perspectiveCamera && this.controls.getSpherical(new THREE.Spherical()).radius > this.controls.maxDistance) {
       this.controls.dollyTo(this.controls.maxDistance, true)
     }
 
     // Slow the zoom near the gcode
     if (this.activeCamera === this.perspectiveCamera && !this.gcodeBounds.isEmpty()) {
-      const position = this.controls.getPosition(new Vector3())
-      const size = this.gcodeBounds.getSize(new Vector3())
+      const position = this.controls.getPosition(new THREE.Vector3())
+      const size = this.gcodeBounds.getSize(new THREE.Vector3())
       const gcodeSpan = Math.max(1, size.x, size.y, size.z)
       const gcodeDistance = this.gcodeBounds.distanceToPoint(position)
       this.controls.dollySpeed = MIN_ZOOM_SPEED + (1 - MIN_ZOOM_SPEED) * Math.min(1, gcodeDistance / gcodeSpan)
@@ -154,25 +181,66 @@ export class Camera {
     this.orthographicCamera.right = ORTHOGRAPHIC_VIEW_HEIGHT_MM * aspect / 2
     this.orthographicCamera.updateProjectionMatrix()
     this.controls.setViewport(0, 0, width, height)
+    this.viewCube.attachTo(this.activeCamera, this.renderer)
+  }
+
+  /** Draws the view cube over the 3D view */
+  renderViewCube (): void {
+    this.viewCube.render(this.controls.getTarget(new THREE.Vector3()))
+  }
+
+  /**
+   * Repaints the view cube in the light or dark theme
+   * @param darkMode - True for the dark theme
+   */
+  applyViewCubeTheme (darkMode: boolean): void {
+    this.viewCube.applyTheme(darkMode)
+  }
+
+  /**
+   * Shows or hides the view cube
+   * @param visible - True to show the view cube
+   */
+  applyViewCubeVisibility (visible: boolean): void {
+    this.viewCube.applyVisibility(visible)
   }
 
   /* ---- Views ---- */
+
+  /**
+   * Computes the area the camera frames and orbits around
+   * @param bedVolume - Print bed geometry
+   * @returns Its center and size in mm
+   */
+  private framedArea (bedVolume: BedVolume): FramedArea {
+    const center = bedCenter(bedVolume)
+
+    if (this.settings.beltPrinter) {
+      // The print along the belt, which runs on with no end of its own to frame
+      const printCenter = this.gcodeBounds.getCenter(new THREE.Vector3())
+      const printSize = this.gcodeBounds.getSize(new THREE.Vector3())
+      return { centerX: center.x, centerY: printCenter.y, depth: printSize.y, width: bedVolume.width }
+    } else {
+      // The whole bed
+      return { centerX: center.x, centerY: center.y, depth: bedVolume.depth, width: bedVolume.width }
+    }
+  }
 
   /**
    * Adapts the camera to the given bed geometry
    * @param bedVolume - Print bed geometry
    */
   applyBedVolume (bedVolume: BedVolume): void {
-    const gcodeSize = this.gcodeBounds.getSize(new Vector3())
-    const maxSceneDimension = Math.max(100, bedVolume.width, bedVolume.depth, bedVolume.height, gcodeSize.x, gcodeSize.y, gcodeSize.z)
-    const center = bedCenter(bedVolume)
+    const area = this.framedArea(bedVolume)
+    const gcodeSize = this.gcodeBounds.getSize(new THREE.Vector3())
+    const maxSceneDimension = Math.max(100, area.width, area.depth, bedVolume.height, gcodeSize.x, gcodeSize.y, gcodeSize.z)
 
     // Cap the zoom-out
     this.controls.maxDistance = MAX_ZOOM_OUT_FACTOR * maxSceneDimension
     this.controls.minZoom = this.toOrthographicZoom(this.controls.maxDistance)
-    this.controls.setBoundary(new Box3(
-      new Vector3(center.x - 2 * maxSceneDimension, center.y - 2 * maxSceneDimension, -2 * maxSceneDimension),
-      new Vector3(center.x + 2 * maxSceneDimension, center.y + 2 * maxSceneDimension, 2 * maxSceneDimension)
+    this.controls.setBoundary(new THREE.Box3(
+      new THREE.Vector3(area.centerX - 2 * maxSceneDimension, area.centerY - 2 * maxSceneDimension, -2 * maxSceneDimension),
+      new THREE.Vector3(area.centerX + 2 * maxSceneDimension, area.centerY + 2 * maxSceneDimension, 2 * maxSceneDimension)
     ))
 
     // Cameras only render between their near and far planes: put the far planes
@@ -189,13 +257,13 @@ export class Camera {
   }
 
   /**
-   * Points the camera back at the bed center
+   * Points the camera back at what it frames
    * @param bedVolume - Print bed geometry
    * @param enableTransition - True to animate the move
    */
   resetTarget (bedVolume: BedVolume, enableTransition = false): void {
-    const center = bedCenter(bedVolume)
-    this.controls.setTarget(center.x, center.y, 0, enableTransition)
+    const area = this.framedArea(bedVolume)
+    this.controls.setTarget(area.centerX, area.centerY, 0, enableTransition)
   }
 
   /**
@@ -211,21 +279,22 @@ export class Camera {
     this.controls.normalizeRotations()
     this.controls.rotateTo(0, DEFAULT_VIEW_POLAR_ANGLE, enableTransition)
 
-    // Pull back to fit the whole bed, with a floor for tiny beds
-    const distance = Math.max(40, bedVolume.width, bedVolume.depth)
+    // Pull back to fit the framed area, with a floor for tiny ones
+    const area = this.framedArea(bedVolume)
+    const distance = Math.max(40, area.width, area.depth)
     if (this.activeCamera === this.perspectiveCamera) this.controls.dollyTo(distance, enableTransition)
     else this.controls.zoomTo(this.toOrthographicZoom(distance), enableTransition)
   }
 
   /**
-   * Rotates the camera to a named view angle
-   * @param view - View angle to rotate to
-   * @param enableTransition - True to animate the move
+   * Rotates the camera to look at what it frames from the given direction, keeping its distance
+   * @param direction - Unit vector from the camera target to the camera
    */
-  applyViewAngle (view: ViewAngle, enableTransition = false): void {
-    const [azimuthAngle, polarAngle] = VIEW_ANGLES[view]
-    this.controls.normalizeRotations()
-    this.controls.rotateTo(azimuthAngle, polarAngle, enableTransition)
+  private applyViewDirection (direction: THREE.Vector3): void {
+    const { x, y, z } = direction
+    // Straight up and down look the same from anywhere around the vertical
+    const azimuthAngle = x === 0 && y === 0 ? 0 : Math.atan2(x, -y)
+    this.controls.rotateTo(azimuthAngle, Math.acos(THREE.MathUtils.clamp(z, -1, 1)), false)
   }
 
   /**
@@ -325,6 +394,7 @@ export class Camera {
       this.controls.zoomTo(1, false)
     }
     this.applyMouseBindings()
+    this.viewCube.attachTo(camera, this.renderer)
     this.requestRender()
   }
 }

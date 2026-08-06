@@ -1,4 +1,4 @@
-import * as THREE from '../three-exports'
+import * as THREE from '../../three-exports'
 
 /** A rendered gcode line object */
 export type GcodeLine = THREE.LineSegments2 | THREE.LineSegments

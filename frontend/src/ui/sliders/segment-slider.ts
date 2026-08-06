@@ -1,8 +1,8 @@
 import type { PrettyGCodeApp } from '../../app'
 import { bindStepButton } from './slider-step-button'
 
-/** Segments the slider is showing */
-let shownSegment = -1
+/** Revealed segments the slider is showing */
+let revealedSegments = -1
 /** Highest segment the slider can reach */
 let maxSegment = -1
 
@@ -99,8 +99,8 @@ export function setSegmentSliderValue (app: PrettyGCodeApp, segment: number): vo
   if (!$('#pg-segment-slider').length) return
 
   const segmentCount = app.currentLayerSegmentCount
-  if (segment === shownSegment && segmentCount === maxSegment) return
-  shownSegment = segment
+  if (segment === revealedSegments && segmentCount === maxSegment) return
+  revealedSegments = segment
   maxSegment = segmentCount
 
   $('#pg-segment-slider').slider('setValue', segment)

@@ -98,10 +98,79 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
 
   option(
     cameraFolder,
+    'showCameraControls',
+    'Camera controls',
+    'Show the camera controls (view cube, reset view button).'
+  )
+
+  option(
+    cameraFolder,
     'orbitWhenIdle',
     'Orbit when idle',
     'After 5 seconds with no mouse/camera movement the camera slowly orbits around the center.'
   )
+
+  /* ---- Printer ---- */
+
+  const printerFolder = gui.addFolder('Printer')
+
+  const beltPrinter = option(
+    printerFolder,
+    'beltPrinter',
+    'Belt printer',
+    'Set whether the printer prints onto a moving belt.'
+  )
+
+  const beltPrinterGantryAngle = printerFolder.add(settings, 'beltPrinterGantryAngle', 1, 89, 1).name('Gantry angle')
+  beltPrinterGantryAngle.domElement.title = 'Set the angle between the belt and the printer gantry.'
+
+  beltPrinter.onFinishChange(() => beltPrinterGantryAngle.show(settings.beltPrinter))
+  beltPrinterGantryAngle.show(settings.beltPrinter)
+
+  /* ---- Nozzle ---- */
+
+  const nozzleFolder = gui.addFolder('Nozzle')
+
+  const nozzleStyle = nozzleFolder.add(settings, 'nozzleStyle', { None: 'none', '3D model': 'model', Dot: 'dot' }).name('Nozzle style')
+  nozzleStyle.domElement.title = 'Set the marker shown at the current print position.'
+
+  const nozzleSize = nozzleFolder.add(settings, 'nozzleSize', 50, 200, 5).name('Nozzle size')
+  nozzleSize.domElement.title = 'Set the size of the nozzle marker, in percent of its default.'
+
+  const nozzleColor = nozzleFolder.addColor(settings, 'nozzleColor').name('Nozzle color')
+  nozzleColor.domElement.title = 'Set the color of the nozzle marker.'
+
+  const nozzleTransparency = nozzleFolder.add(settings, 'nozzleTransparency', 0, 100, 1).name('Nozzle transparency')
+  nozzleTransparency.domElement.title = 'Set how transparent the nozzle marker at the current print position is.'
+
+  const nozzleReflection = option(
+    nozzleFolder,
+    'nozzleReflection',
+    'Nozzle reflection',
+    'Reflect the surrounding scene on the nozzle 3D model.'
+  )
+
+  const refreshNozzleControls = (): void => {
+    nozzleSize.show(settings.nozzleStyle !== 'none')
+    nozzleColor.show(settings.nozzleStyle !== 'none')
+    nozzleTransparency.show(settings.nozzleStyle !== 'none')
+    nozzleReflection.show(settings.nozzleStyle === 'model')
+  }
+  nozzleStyle.onFinishChange(refreshNozzleControls)
+  refreshNozzleControls()
+
+  /* ---- Travel moves ---- */
+
+  const travelMovesFolder = gui.addFolder('Travel moves')
+
+  const travelScope = travelMovesFolder.add(settings, 'travelScope', { Off: 'none', 'Displayed layer': 'displayedLayer', 'Whole model': 'wholeModel' }).name('Travel moves')
+  travelScope.domElement.title = 'Set where the non-extruding moves between printed lines are drawn.'
+
+  const travelColor = travelMovesFolder.addColor(settings, 'travelColor').name('Travel color')
+  travelColor.domElement.title = 'Set the color of the travel moves.'
+
+  travelScope.onFinishChange(() => travelColor.show(settings.travelScope !== 'none'))
+  travelColor.show(settings.travelScope !== 'none')
 
   /* ---- Gcode model ---- */
 
@@ -132,38 +201,6 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
   })
   const customizeColors = gcodeModelFolder.add({ customize: () => modelColorsModal.open() }, 'customize').name('Customize colors…')
   customizeColors.domElement.title = 'Customize the colors used for the gcode model.'
-
-  /* ---- Nozzle ---- */
-
-  const nozzleFolder = gui.addFolder('Nozzle')
-
-  const nozzleStyle = nozzleFolder.add(settings, 'nozzleStyle', { None: 'none', '3D model': 'model', Dot: 'dot' }).name('Nozzle style')
-  nozzleStyle.domElement.title = 'Set the marker shown at the current print position.'
-
-  const nozzleSize = nozzleFolder.add(settings, 'nozzleSize', 50, 200, 5).name('Nozzle size')
-  nozzleSize.domElement.title = 'Set the size of the nozzle marker, in percent of its default.'
-
-  const nozzleColor = nozzleFolder.addColor(settings, 'nozzleColor').name('Nozzle color')
-  nozzleColor.domElement.title = 'Set the color of the nozzle marker.'
-
-  const nozzleTransparency = nozzleFolder.add(settings, 'nozzleTransparency', 0, 100, 1).name('Nozzle transparency')
-  nozzleTransparency.domElement.title = 'Set how transparent the nozzle marker at the current print position is.'
-
-  const nozzleReflection = option(
-    nozzleFolder,
-    'nozzleReflection',
-    'Nozzle reflection',
-    'Reflect the surrounding scene on the nozzle 3D model.'
-  )
-
-  const updateNozzleControls = (): void => {
-    nozzleSize.show(settings.nozzleStyle !== 'none')
-    nozzleColor.show(settings.nozzleStyle !== 'none')
-    nozzleTransparency.show(settings.nozzleStyle !== 'none')
-    nozzleReflection.show(settings.nozzleStyle === 'model')
-  }
-  nozzleStyle.onFinishChange(updateNozzleControls)
-  updateNozzleControls()
 
   /* ---- Bed ---- */
 
@@ -268,7 +305,9 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
   return {
     refresh: () => {
       gui.controllersRecursive().forEach((controller) => controller.updateDisplay())
-      updateNozzleControls()
+      beltPrinterGantryAngle.show(settings.beltPrinter)
+      refreshNozzleControls()
+      travelColor.show(settings.travelScope !== 'none')
       mirror.show(settings.showBed)
       refreshResets()
     }

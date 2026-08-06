@@ -1,5 +1,6 @@
 import type { NavigationModeKey, ProjectionMode } from './viewer/navigation'
 import type { NozzleStyle } from './viewer/nozzle'
+import type { TravelScope } from './gcode/rendering/gcode-model'
 import type { ColorRule } from './gcode/model-colors'
 
 /** localStorage key holding the settings */
@@ -32,21 +33,17 @@ export class Settings {
   declare navigationMode: NavigationModeKey
   /** Projection mode of the 3D view */
   declare projectionMode: ProjectionMode
+  /** Whether to show the camera controls */
+  declare showCameraControls: boolean
   /** Whether to auto-orbit the camera when idle */
   declare orbitWhenIdle: boolean
 
-  /* ---- Gcode model ---- */
+  /* ---- Printer ---- */
 
-  /** Whether to draw the lines with their real thickness */
-  declare thickLines: boolean
-  /** Shading intensity of the topmost displayed layer, in percent */
-  declare highlightIntensity: number
-  /** Whether to show gcode excluded from printing, greyed out */
-  declare showExcluded: boolean
-  /** Model color rules, tried in order */
-  declare modelColorRules: ColorRule[]
-  /** Color of segments matching no color rule */
-  declare modelDefaultColor: string
+  /** Whether the printer prints onto a moving belt */
+  declare beltPrinter: boolean
+  /** Angle between the belt and the printer gantry, in degrees */
+  declare beltPrinterGantryAngle: number
 
   /* ---- Nozzle ---- */
 
@@ -60,6 +57,26 @@ export class Settings {
   declare nozzleTransparency: number
   /** Whether to reflect the scene on the nozzle model */
   declare nozzleReflection: boolean
+
+  /* ---- Travel moves ---- */
+
+  /** Part of the print the travel moves are drawn for */
+  declare travelScope: TravelScope
+  /** Color of the travel moves */
+  declare travelColor: string
+
+  /* ---- Gcode model ---- */
+
+  /** Whether to draw the lines with their real thickness */
+  declare thickLines: boolean
+  /** Shading intensity of the topmost displayed layer, in percent */
+  declare highlightIntensity: number
+  /** Whether to show gcode excluded from printing, greyed out */
+  declare showExcluded: boolean
+  /** Model color rules, tried in order */
+  declare modelColorRules: ColorRule[]
+  /** Color of segments matching no color rule */
+  declare modelDefaultColor: string
 
   /* ---- Bed ---- */
 

@@ -1,30 +1,33 @@
-import * as THREE from '../three-exports'
+import * as THREE from '../../three-exports'
 import { isThickLine, isThickMaterial, makeThickMaterial, makeThinMaterial } from './line-materials'
 import { TipLine } from './tip-line'
 import type { GcodeLine, GcodeLineMaterial } from './line-materials'
-import type { Settings } from '../settings'
-import type { Layer } from './parser'
-import type { PrintExclusions } from './exclusions'
-import type { PrintTimeline, TimelineSpot } from './print-timeline'
+import type { Settings } from '../../settings'
+import type { Layer } from '../parsing/parser'
+import type { PrintExclusions } from '../exclusions'
+import type { PrintTimeline, TimelineSpot } from '../timeline/print-timeline'
 
-/** Metadata a rendered layer part carries */
-interface LayerPartMetadata {
-  /** Z height of the layer */
-  layerZ: number
+/** Part of the print the travel moves are drawn for */
+export type TravelScope = 'none' | 'displayedLayer' | 'wholeModel'
+
+/** Metadata a rendered gcode line carries */
+interface GcodeLineMetadata {
   /** 1-based layer number */
   layerNumber: number
   /** Global segment index the layer starts at */
   globalBase: number
-  /** Segments the part draws */
-  numSegments: number
-  /** Indices of the part's segments in the layer, or null for the whole layer */
+  /** Moves the line draws */
+  numMoves: number
+  /** Segment of the layer each drawn move waits for, or null for the whole layer */
   segmentIndices: Uint32Array | null
-  /** Whether the part draws the layer's mirror */
+  /** Whether the line draws the layer's mirror */
   mirror?: boolean
 }
 
 /** Name prefix of the layer line objects */
 const LAYER_PREFIX = 'layer#'
+/** Name prefix of the travel line objects */
+const TRAVEL_PREFIX = 'travel#'
 
 /**
  * Tells whether a scene object is one of the rendered gcode layers
@@ -34,11 +37,11 @@ const LAYER_PREFIX = 'layer#'
 const isLayerObject = (child: THREE.Object3D): child is GcodeLine => child.name.startsWith(LAYER_PREFIX)
 
 /**
- * Reads the metadata a layer line object carries
- * @param line - Layer line object
+ * Reads the metadata a gcode line carries
+ * @param line - Gcode line
  * @returns Its metadata
  */
-const layerPartMetadata = (line: GcodeLine): LayerPartMetadata => line.userData as LayerPartMetadata
+const gcodeLineMetadata = (line: GcodeLine): GcodeLineMetadata => line.userData as GcodeLineMetadata
 
 /** Oversize factor of the drawn lines, to avoid gaps */
 const LINE_THICKNESS_FACTOR = 1.1
@@ -84,10 +87,13 @@ export class GcodeModel {
   /** Group holding the mirror lines, reflected through the bed */
   private readonly mirrorGroup = new THREE.Group()
 
+  /** Group holding the travel lines */
+  private readonly travelGroup = new THREE.Group()
+
   /** Layers the model was last built from */
   private layers: Layer[] = []
 
-  /** Global segment index of the reveal position the model is showing */
+  /** Global segment index the model is revealed up to */
   private revealedIndex = -1
 
   /** Layer the highlight is on, or 0 when no layer is highlighted */
@@ -109,6 +115,9 @@ export class GcodeModel {
   private readonly mirrorThickMaterial: THREE.LineMaterial
   /** Thin line material for the mirror, clipped to the bed */
   private readonly mirrorThinMaterial: THREE.LineBasicMaterial
+
+  /** Material for the travel lines */
+  private readonly travelMaterial = new THREE.LineBasicMaterial()
 
   /** Plugin frontend settings */
   private readonly settings: Settings
@@ -150,6 +159,7 @@ export class GcodeModel {
     this.mirrorGroup.matrixAutoUpdate = false
     this.mirrorGroup.updateMatrix()
     this.linesGroup.add(this.mirrorGroup)
+    this.linesGroup.add(this.travelGroup)
 
     this.tipLine = new TipLine(timeline, this.linesGroup)
   }
@@ -178,7 +188,7 @@ export class GcodeModel {
   /* ---- Object building ---- */
 
   /**
-   * Builds the model's line objects from parsed layers
+   * (Re)builds the model's line objects from parsed layers
    * @param layers - Parsed gcode layers
    */
   build (layers: Layer[]): void {
@@ -189,6 +199,7 @@ export class GcodeModel {
     this.mirrorGroup.clear()
     this.linesGroup.clear()
     this.linesGroup.add(this.mirrorGroup)
+    this.linesGroup.add(this.travelGroup)
     this.revealedIndex = -1
     this.highlightedLayer = -1
 
@@ -197,6 +208,8 @@ export class GcodeModel {
     for (const { layerNumber, globalBase } of this.timeline.drawnLayers) {
       this.addLayerLines(layers[layerNumber - 1], layerNumber, globalBase)
     }
+
+    this.rebuildTravelLines()
 
     this.tipLine.build(this.highlightMaterial)
   }
@@ -250,7 +263,7 @@ export class GcodeModel {
     // Layers untouched by exclusions go in whole
     const excludedFlags = this.exclusions.classifyLayer(layer)
     if (!excludedFlags) {
-      this.addLayerPart(layer, layerNumber, globalBase, layer.vertices, layer.colors, null)
+      this.addLayerPart(layerNumber, globalBase, layer.vertices, layer.colors, null)
       return
     }
 
@@ -265,33 +278,31 @@ export class GcodeModel {
     }
 
     // Add the printed part
-    this.addLayerPart(layer, layerNumber, globalBase, printedPart.vertices, printedPart.colors, printedPart.segmentIndices)
+    this.addLayerPart(layerNumber, globalBase, printedPart.vertices, printedPart.colors, printedPart.segmentIndices)
 
     // Add the excluded part, greyed out
     if (this.settings.showExcluded) {
       this.greyOutColors(excludedPart.colors)
-      this.addLayerPart(layer, layerNumber, globalBase, excludedPart.vertices, excludedPart.colors, excludedPart.segmentIndices)
+      this.addLayerPart(layerNumber, globalBase, excludedPart.vertices, excludedPart.colors, excludedPart.segmentIndices)
     }
   }
 
   /**
    * Adds one part of a layer's segments to the model
-   * @param layer - Parsed layer
    * @param layerNumber - 1-based layer number
    * @param globalBase - Global segment index the layer starts at
    * @param vertices - Segment endpoints as flat XYZ triplets
    * @param colors - Vertex colors as flat RGB triplets
    * @param segmentIndices - Indices of the part's segments in the layer, or null for the whole layer
    */
-  private addLayerPart (layer: Layer, layerNumber: number, globalBase: number, vertices: Float32Array, colors: Uint8ClampedArray, segmentIndices: Uint32Array | null): void {
+  private addLayerPart (layerNumber: number, globalBase: number, vertices: Float32Array, colors: Uint8ClampedArray, segmentIndices: Uint32Array | null): void {
     // Skip empty parts
     if (vertices.length <= 2) return
 
-    const metadata: LayerPartMetadata = {
-      layerZ: layer.z,
+    const metadata: GcodeLineMetadata = {
       layerNumber,
       globalBase,
-      numSegments: vertices.length / 6,
+      numMoves: vertices.length / 6,
       segmentIndices
     }
 
@@ -308,7 +319,7 @@ export class GcodeModel {
         : new THREE.LineSegments(line.geometry, this.mirrorThinMaterial)
       mirror.matrixAutoUpdate = false
       mirror.name = LAYER_PREFIX + layerNumber
-      mirror.userData = { ...metadata, mirror: true } satisfies LayerPartMetadata
+      mirror.userData = { ...metadata, mirror: true } satisfies GcodeLineMetadata
       this.mirrorGroup.add(mirror)
     }
   }
@@ -330,6 +341,68 @@ export class GcodeModel {
     }
   }
 
+  /** (Re)builds the travel lines from the current travel settings */
+  rebuildTravelLines (): void {
+    for (const child of this.travelGroup.children) (child as THREE.LineSegments).geometry.dispose()
+    this.travelGroup.clear()
+
+    // Let the next reveal show the new lines
+    this.revealedIndex = -1
+
+    if (this.settings.travelScope === 'none') return
+
+    this.travelMaterial.color.set(this.settings.travelColor)
+
+    for (const { layerNumber, globalBase } of this.timeline.drawnLayers) {
+      this.addTravelLines(this.layers[layerNumber - 1], layerNumber, globalBase)
+    }
+  }
+
+  /**
+   * Adds a layer's travel lines to the model
+   * @param layer - Parsed layer
+   * @param layerNumber - 1-based layer number
+   * @param globalBase - Global segment index the layer starts at
+   */
+  private addTravelLines (layer: Layer, layerNumber: number, globalBase: number): void {
+    let { travelVertices, travelSegmentIndices } = layer
+
+    // Leave out the travels leading to segments the exclusions keep undrawn
+    const excludedFlags = this.settings.showExcluded ? null : this.exclusions.classifyLayer(layer)
+    if (excludedFlags) {
+      const drawnIndices = travelSegmentIndices.filter((segment) => !excludedFlags[segment])
+      const drawnVertices = new Float32Array(drawnIndices.length * 6)
+      let drawn = 0
+      for (let travel = 0; travel < travelSegmentIndices.length; travel++) {
+        if (excludedFlags[travelSegmentIndices[travel]]) continue
+        drawnVertices.set(travelVertices.subarray(travel * 6, travel * 6 + 6), drawn * 6)
+        drawn++
+      }
+      travelVertices = drawnVertices
+      travelSegmentIndices = drawnIndices
+    }
+
+    // Skip layers with no travel
+    if (!travelVertices.length) return
+
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(travelVertices, 3))
+
+    const line = new THREE.LineSegments(geometry, this.travelMaterial)
+
+    // Speeds up rendering, the lines never move
+    line.matrixAutoUpdate = false
+
+    line.name = TRAVEL_PREFIX + layerNumber
+    line.userData = {
+      layerNumber,
+      globalBase,
+      numMoves: travelSegmentIndices.length,
+      segmentIndices: travelSegmentIndices
+    } satisfies GcodeLineMetadata
+    this.travelGroup.add(line)
+  }
+
   /* ---- Reveal and highlight ---- */
 
   /**
@@ -349,7 +422,7 @@ export class GcodeModel {
 
     this.linesGroup.traverse((child) => {
       if (!isLayerObject(child)) return
-      const metadata = layerPartMetadata(child)
+      const metadata = gcodeLineMetadata(child)
 
       // The mirror keeps its own bed-clipped material
       if (metadata.mirror) return
@@ -360,18 +433,18 @@ export class GcodeModel {
   }
 
   /**
-   * Shows a layer up to a within-layer position, hiding the layers above
+   * Reveals a layer up to a within-layer position, hiding the layers above
    * @param layerNumber - 1-based topmost layer to show
-   * @param segmentsShown - Segments of that layer to reveal
+   * @param revealedSegments - Segments of that layer to reveal
    * @returns True if anything changed
    */
-  syncToLayerSegment (layerNumber: number, segmentsShown: number): boolean {
+  syncToLayerSegment (layerNumber: number, revealedSegments: number): boolean {
     let needUpdate = false
 
     // Hide the growing tip while sliding layer/segments manually
     if (this.tipLine.hide()) needUpdate = true
 
-    if (this.revealUpTo(this.timeline.revealIndex(layerNumber, segmentsShown))) needUpdate = true
+    if (this.revealUpTo(this.timeline.revealIndex(layerNumber, revealedSegments))) needUpdate = true
 
     return needUpdate
   }
@@ -400,35 +473,61 @@ export class GcodeModel {
 
     this.linesGroup.traverse((child) => {
       if (!isLayerObject(child)) return
-      const count = this.partRevealCount(child, index)
+      const count = this.revealedMoveCount(child, index)
       const visible = count > 0
       if (child.visible !== visible) {
         child.visible = visible
         needUpdate = true
       }
-      if (visible && this.setRevealCount(child, count)) needUpdate = true
+      if (visible && this.setRevealedMoveCount(child, count)) needUpdate = true
     })
+
+    if (this.revealTravelsUpTo(index)) needUpdate = true
 
     return needUpdate
   }
 
   /**
-   * Counts how many of a part's segments a reveal position has passed
-   * @param child - Layer line object
-   * @param revealed - Global index of the reveal position
-   * @returns The number of segments passed
+   * Reveals the travel lines up to a global segment index, hiding the ones it hasn't reached
+   * @param index - Global index of the reveal position
+   * @returns True if anything changed
    */
-  private partRevealCount (child: GcodeLine, revealed: number): number {
-    const { globalBase, numSegments, segmentIndices } = layerPartMetadata(child)
+  private revealTravelsUpTo (index: number): boolean {
+    const wholeModel = this.settings.travelScope === 'wholeModel'
+    const displayedLayer = this.timeline.revealPosition(index).layerNumber
+
+    let needUpdate = false
+
+    for (const child of this.travelGroup.children as THREE.LineSegments[]) {
+      const count = this.revealedMoveCount(child, index + 1)
+      const visible = count > 0 && (wholeModel || gcodeLineMetadata(child).layerNumber === displayedLayer)
+      if (child.visible !== visible) {
+        child.visible = visible
+        needUpdate = true
+      }
+      if (visible && this.setRevealedMoveCount(child, count)) needUpdate = true
+    }
+
+    return needUpdate
+  }
+
+  /**
+   * Counts how many of a line's moves a reveal position has passed
+   * @param line - Gcode line
+   * @param revealed - Global index of the reveal position
+   * @returns The number of moves passed
+   */
+  private revealedMoveCount (line: GcodeLine, revealed: number): number {
+    const { globalBase, numMoves, segmentIndices } = gcodeLineMetadata(line)
 
     // How many of the layer's segments the reveal has passed
     const revealedInLayer = revealed - globalBase
 
     // A whole layer is drawn up to the reveal, capped to its own size
-    if (!segmentIndices) return Math.max(0, Math.min(numSegments, revealedInLayer))
+    if (!segmentIndices) return Math.max(0, Math.min(numMoves, revealedInLayer))
 
-    // A split part counts its segments the reveal has passed (binary search)
-    let lo = 0; let hi = numSegments
+    // Otherwise count the moves whose segment the reveal has passed (binary search)
+    let lo = 0; let hi = numMoves
     while (lo < hi) {
       const mid = (lo + hi) >> 1
       if (segmentIndices[mid] < revealedInLayer) lo = mid + 1
@@ -438,19 +537,19 @@ export class GcodeModel {
   }
 
   /**
-   * Limits how many of a layer's segments are drawn
-   * @param child - Layer line object
-   * @param count - Segments to draw
+   * Limits how many of a line's moves are drawn
+   * @param line - Gcode line
+   * @param count - Moves to draw
    * @returns True if the count changed
    */
-  private setRevealCount (child: GcodeLine, count: number): boolean {
-    // Thick lines are instanced; thin ones aren't, so limit their drawn vertex range (2 per segment)
-    if (isThickLine(child)) {
-      if (child.geometry.instanceCount === count) return false
-      child.geometry.instanceCount = count
+  private setRevealedMoveCount (line: GcodeLine, count: number): boolean {
+    // Thick lines are instanced; thin ones aren't, so limit their drawn vertex range (2 per move)
+    if (isThickLine(line)) {
+      if (line.geometry.instanceCount === count) return false
+      line.geometry.instanceCount = count
     } else {
-      if (child.geometry.drawRange.count === count * 2) return false
-      child.geometry.setDrawRange(0, count * 2)
+      if (line.geometry.drawRange.count === count * 2) return false
+      line.geometry.setDrawRange(0, count * 2)
     }
     return true
   }

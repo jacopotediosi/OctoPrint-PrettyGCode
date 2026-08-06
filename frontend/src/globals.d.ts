@@ -6,11 +6,11 @@ declare const OctoPrint: any
 /** Knockout */
 declare const ko: any
 
+/** OctoPrint helper turning a duration into a rough human readable time */
+declare function formatFuzzyPrintTime (seconds: number): string
+
 /** OctoPrint helper turning a byte count into a human readable size */
 declare function formatSize (bytes: number): string
-
-/** OctoPrint version, injected by the asset pipeline */
-declare const VERSION: string
 
 /** Plugin assets base URL, injected by the asset pipeline */
 declare const PLUGIN_BASEURL: string
