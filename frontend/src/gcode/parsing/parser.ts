@@ -77,8 +77,18 @@ const feedrateMmPerSecond = (feedrate: number): number => (feedrate > 0 ? feedra
 
 /* ---- Gcode text ---- */
 
-/** Byte the gcode breaks its lines on */
-const NEWLINE_BYTE = 0x0a
+/** Matches non-ASCII characters, whose lines need real encoding to be measured */
+const NON_ASCII = /[\u0080-\uffff]/
+
+/** Encoder measuring lines in bytes */
+const textEncoder = new TextEncoder()
+
+/**
+ * Measures a gcode line on the decoded text, the way OctoPrint measures the print position
+ * @param line - Line to measure
+ * @returns Its length in bytes
+ */
+const lineByteLength = (line: string): number => NON_ASCII.test(line) ? textEncoder.encode(line).length : line.length
 
 /** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */
 const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
@@ -311,12 +321,10 @@ export class GcodeParser {
 
   /* ---- Gcode text ---- */
 
-  /** Decoder turning the gcode bytes into text */
-  private readonly decoder = new TextDecoder()
+  /** Decoder turning the gcode bytes into text, keeping the byte order mark so it counts toward the file position */
+  private readonly decoder = new TextDecoder('utf-8', { ignoreBOM: true })
   /** Partial line left over from the previous chunk */
   private pendingLine = ''
-  /** Bytes the partial line left over from the previous chunk takes */
-  private pendingLineBytes = 0
   /** Bytes parsed so far */
   private filePosition = 0
 
@@ -405,16 +413,10 @@ export class GcodeParser {
     lines[0] = this.pendingLine + lines[0]
     this.pendingLine = lines[lines.length - 1]
 
-    // Measure each line on the bytes it takes
-    let lineStartByte = 0
     for (let i = 0; i < lines.length - 1; i++) {
-      const newlineByte = chunk.indexOf(NEWLINE_BYTE, lineStartByte)
-      this.filePosition += this.pendingLineBytes + newlineByte - lineStartByte + 1
-      this.pendingLineBytes = 0
-      lineStartByte = newlineByte + 1
+      this.filePosition += lineByteLength(lines[i]) + 1
       this.parseLine(lines[i])
     }
-    this.pendingLineBytes += chunk.length - lineStartByte
   }
 
   /**
@@ -422,6 +424,9 @@ export class GcodeParser {
    * @param rawLine - Gcode line, comment included
    */
   private parseLine (rawLine: string): void {
+    // Drop the byte order mark
+    if (rawLine.startsWith('\ufeff')) rawLine = rawLine.slice(1)
+
     // Parse object markers
     if (rawLine.startsWith('@')) {
       this.parseObjectMarker(rawLine)
@@ -660,7 +665,7 @@ export class GcodeParser {
   finish (): void {
     // Parse the last line of a file that does not end with a newline
     if (this.pendingLine) {
-      this.filePosition += this.pendingLineBytes
+      this.filePosition += lineByteLength(this.pendingLine)
       this.parseLine(this.pendingLine)
       this.pendingLine = ''
     }
