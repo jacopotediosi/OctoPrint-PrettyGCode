@@ -77,18 +77,8 @@ const feedrateMmPerSecond = (feedrate: number): number => (feedrate > 0 ? feedra
 
 /* ---- Gcode text ---- */
 
-/** Matches non-ASCII characters, whose lines need real encoding since OctoPrint's filepos counts bytes */
-const NON_ASCII = /[\u0080-\uffff]/
-
-/** Encoder measuring lines in bytes */
-const textEncoder = new TextEncoder()
-
-/**
- * Measures a gcode line
- * @param line - Line to measure
- * @returns Its length in bytes
- */
-const lineByteLength = (line: string): number => NON_ASCII.test(line) ? textEncoder.encode(line).length : line.length
+/** Byte the gcode breaks its lines on */
+const NEWLINE_BYTE = 0x0a
 
 /** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */
 const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
@@ -304,7 +294,7 @@ const scratchEnd: ScenePoint = { x: 0, y: 0, z: 0 }
 /** Travel length below which the move is not drawn */
 const MIN_TRAVEL_LENGTH_MM = 0.5
 
-/** Streaming gcode parser: feed it text chunks to get colored layers of segments with file positions and time estimates */
+/** Streaming gcode parser: feed it byte chunks to get colored layers of segments with file positions and time estimates */
 export class GcodeParser {
   /** Initial size of the buffer holding the travels waiting for the segment they lead to */
   private static readonly INITIAL_PENDING_TRAVELS_CAPACITY = 16
@@ -352,8 +342,12 @@ export class GcodeParser {
   private featureTypeCommentSeen = false
   /** Id of the object the parsed segments belong to, -1 for none */
   private currentObjectId = -1
+  /** Decoder turning the gcode bytes into text */
+  private readonly decoder = new TextDecoder()
   /** Partial line left over from the previous chunk */
   private pendingLine = ''
+  /** Bytes the partial line left over from the previous chunk takes */
+  private pendingLineBytes = 0
   /** Bytes parsed so far */
   private filePosition = 0
   /** Travel time accumulated since the last segment */
@@ -388,19 +382,25 @@ export class GcodeParser {
   }
 
   /**
-   * Parses the next chunk of gcode text; chunks may split lines anywhere
-   * @param chunk - Raw gcode text
+   * Parses the next chunk of gcode bytes; chunks may split lines anywhere
+   * @param chunk - Raw gcode bytes
    */
-  parse (chunk: string): void {
+  parse (chunk: Uint8Array): void {
     // Chunks may split a line in two: prepend last call's leftover, hold the new trailing partial for next time
-    const lines = chunk.split('\n')
+    const lines = this.decoder.decode(chunk, { stream: true }).split('\n')
     lines[0] = this.pendingLine + lines[0]
     this.pendingLine = lines[lines.length - 1]
 
+    // Measure each line on the bytes it takes
+    let lineStartByte = 0
     for (let i = 0; i < lines.length - 1; i++) {
-      this.filePosition += lineByteLength(lines[i]) + 1
+      const newlineByte = chunk.indexOf(NEWLINE_BYTE, lineStartByte)
+      this.filePosition += this.pendingLineBytes + newlineByte - lineStartByte + 1
+      this.pendingLineBytes = 0
+      lineStartByte = newlineByte + 1
       this.parseLine(lines[i])
     }
+    this.pendingLineBytes += chunk.length - lineStartByte
   }
 
   /**
@@ -646,7 +646,7 @@ export class GcodeParser {
   finish (): void {
     // Parse the last line of a file that does not end with a newline
     if (this.pendingLine) {
-      this.filePosition += lineByteLength(this.pendingLine)
+      this.filePosition += this.pendingLineBytes
       this.parseLine(this.pendingLine)
       this.pendingLine = ''
     }

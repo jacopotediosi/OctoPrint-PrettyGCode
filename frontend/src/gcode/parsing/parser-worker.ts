@@ -40,11 +40,10 @@ async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode>
   const response = await fetch(request.fileUrl)
   if (response.body) {
     const reader = response.body.getReader()
-    const decoder = new TextDecoder()
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      parser.parse(decoder.decode(value, { stream: true }))
+      parser.parse(value)
     }
     parser.finish()
   }
