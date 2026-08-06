@@ -29,7 +29,7 @@ interface PrinterState {
 
 /** OctoPrint current/history data payload */
 interface PrinterDataPayload {
-  logs: string[]
+  logs?: string[] // absent without the MONITOR_TERMINAL permission
   job: { file: { path: string, date: number, size: number } }
   state: PrinterState
   progress: { filepos: number, printTime: number }
@@ -205,7 +205,7 @@ export class PrettyGCodeApp {
     if (!this.viewInitialized) return
 
     // Update status bar with the reported temperatures
-    data.logs.forEach((e) => {
+    data.logs?.forEach((e) => {
       if (e.startsWith(this.recvLogPrefix + 'T:')) {
         setStatusBarText(e.substr(this.recvLogPrefix.length).split('@')[0])
       }
