@@ -14,13 +14,21 @@ import { updateWebcamOverlay } from './ui/overlays/webcam'
 import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue, applyLayerSliderVisibility } from './ui/sliders/layer-slider'
 import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue, applySegmentSliderVisibility } from './ui/sliders/segment-slider'
 import { initToggleButtons } from './ui/toggle-buttons'
-import { setStatusBarText, applyStatusBarVisibility } from './ui/status-bar'
+import { setStatusBarTemperatures, applyStatusBarVisibility } from './ui/status-bar'
 import { showLoadingScreen, hideLoadingScreen } from './ui/notices/loading-screen'
 import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/notices/large-file-confirmation'
 import type { ParsedGcode } from './gcode/parsing/parser'
 import type { ParserColors } from './gcode/model-colors'
 import type { BedVolume } from './viewer/bed'
 import type { PrintViewUpdate } from './viewer/viewer'
+
+/** Temperatures read at one moment, by heater name */
+export interface PrinterTemperatures {
+  /** Moment the temperatures were read, in seconds since the epoch */
+  time: number
+  /** Actual and target temperature of one heater, each unknown until the printer reports it */
+  [heater: string]: { actual: number | null, target: number | null } | number
+}
 
 /** Printer state reported by OctoPrint */
 interface PrinterState {
@@ -29,7 +37,7 @@ interface PrinterState {
 
 /** OctoPrint current/history data payload */
 interface PrinterDataPayload {
-  logs?: string[] // absent without the MONITOR_TERMINAL permission
+  temps: PrinterTemperatures[]
   job: { file: { path: string, date: number, size: number } }
   state: PrinterState
   progress: { filepos: number, printTime: number }
@@ -113,9 +121,6 @@ export class PrettyGCodeApp {
   private _currentSegmentNumber = 0
   /** Whether the user is sliding the layer or segment manually */
   private manualSliding = false
-
-  /** Prefix of received terminal log lines */
-  private readonly recvLogPrefix = parseInt(VERSION, 10) < 2 ? 'Recv: ' : '<<< '
 
   /**
    * @param viewModels - OctoPrint view models
@@ -204,12 +209,7 @@ export class PrettyGCodeApp {
     this.updatePrinterData(data)
     if (!this.viewInitialized) return
 
-    // Update status bar with the reported temperatures
-    data.logs?.forEach((e) => {
-      if (e.startsWith(this.recvLogPrefix + 'T:')) {
-        setStatusBarText(e.substr(this.recvLogPrefix.length).split('@')[0])
-      }
-    })
+    setStatusBarTemperatures(data.temps)
   }
 
   /**
