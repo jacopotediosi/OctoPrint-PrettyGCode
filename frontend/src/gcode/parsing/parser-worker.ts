@@ -38,6 +38,8 @@ async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode>
   const parser = new GcodeParser(request.colors, request.objectTag, request.g90InfluencesExtruder, request.beltPrinterGantryAngle)
 
   const response = await fetch(request.fileUrl)
+  if (!response.ok) throw new Error(`Gcode download failed with status ${response.status}`)
+
   if (response.body) {
     const reader = response.body.getReader()
     while (true) {

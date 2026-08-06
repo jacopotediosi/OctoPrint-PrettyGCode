@@ -276,6 +276,7 @@ export class PrettyGCodeApp {
   private async loadGcode (jobPath: string, preserveView = false): Promise<void> {
     // Supersede the load in flight and clear the view
     const sequence = ++this.loadSequence
+    hideLoadingScreen()
     hideLargeFileConfirmation()
     this.unloadGcode()
     this.parsedBeltPrinterGantryAngle = this.beltPrinterGantryAngle
