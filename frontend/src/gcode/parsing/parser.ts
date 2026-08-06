@@ -296,52 +296,21 @@ const MIN_TRAVEL_LENGTH_MM = 0.5
 
 /** Streaming gcode parser: feed it byte chunks to get colored layers of segments with file positions and time estimates */
 export class GcodeParser {
-  /** Initial size of the buffer holding the travels waiting for the segment they lead to */
-  private static readonly INITIAL_PENDING_TRAVELS_CAPACITY = 16
+  /* ---- Parse result ---- */
 
   /** Parsed layers: segment endpoints, colors, file positions and estimated durations */
   readonly layers: Layer[] = []
-
   /** Bounding box of the extruded gcode */
   bounds = emptyBounds()
-
   /** Nozzle diameter the slicer states, if any */
   slicerNozzleDiameter: number | null = null
-
   /** Print times the slicer states along the file, if any */
   slicerTimeMarks: SlicerTimeMarks | null = null
-
   /** Names of the objects marked in the gcode, by object id */
   readonly objectNames: string[] = []
 
-  /** Tag of the object markers, lowercased */
-  private readonly objectTag: string
+  /* ---- Gcode text ---- */
 
-  /** Whether G90/G91 also switch the extrusion mode, not only the axes */
-  private readonly g90InfluencesExtruder: boolean
-
-  /** Transform of the belt printer the gcode is meant for, null for non-belt printers */
-  private readonly printerTransform: BeltPrinterTransform | null
-
-  /** Collector of the print times the slicer states along the file */
-  private readonly slicerTimeMarksCollector = new SlicerTimeMarksCollector()
-
-  /** Current machine state */
-  private machineState: MachineState = INITIAL_MACHINE_STATE
-  /** Layer being filled, if any */
-  private currentLayer: OpenLayer | null = null
-  /** Layers opened so far */
-  private layersOpened = 0
-  /** Color rules, in priority order */
-  private readonly colorRules: { keywords: string[], color: RgbColor }[]
-  /** Color of segments matching no color rule */
-  private readonly defaultColor: RgbColor
-  /** Color of the current feature type */
-  private currentColor: RgbColor
-  /** Whether a slicer feature type comment has been seen yet */
-  private featureTypeCommentSeen = false
-  /** Id of the object the parsed segments belong to, -1 for none */
-  private currentObjectId = -1
   /** Decoder turning the gcode bytes into text */
   private readonly decoder = new TextDecoder()
   /** Partial line left over from the previous chunk */
@@ -350,16 +319,61 @@ export class GcodeParser {
   private pendingLineBytes = 0
   /** Bytes parsed so far */
   private filePosition = 0
+
+  /* ---- Machine state ---- */
+
+  /** Current machine state */
+  private machineState: MachineState = INITIAL_MACHINE_STATE
+  /** Whether axis moves are relative */
+  private axesRelative = false
+  /** Whether extrusion is relative */
+  private extrusionRelative = false
+  /** Whether G90/G91 also switch the extrusion mode, not only the axes */
+  private readonly g90InfluencesExtruder: boolean
+  /** Transform of the belt printer the gcode is meant for, null for non-belt printers */
+  private readonly printerTransform: BeltPrinterTransform | null
+
+  /* ---- Layers ---- */
+
+  /** Layer being filled, if any */
+  private currentLayer: OpenLayer | null = null
+  /** Layers opened so far */
+  private layersOpened = 0
+
+  /* ---- Travels ---- */
+
+  /** Initial size of the buffer holding the travels waiting for the segment they lead to */
+  private static readonly INITIAL_PENDING_TRAVELS_CAPACITY = 16
+
   /** Travel time accumulated since the last segment */
   private pendingTravelSeconds = 0
   /** Endpoints of the travels made since the last segment */
   private pendingTravelVertices = new Float32Array(GcodeParser.INITIAL_PENDING_TRAVELS_CAPACITY * 6)
   /** Travels made since the last segment */
   private pendingTravels = 0
-  /** Whether axis moves are relative */
-  private axesRelative = false
-  /** Whether extrusion is relative */
-  private extrusionRelative = false
+
+  /* ---- Segment colors ---- */
+
+  /** Color rules, in priority order */
+  private readonly colorRules: { keywords: string[], color: RgbColor }[]
+  /** Color of segments matching no color rule */
+  private readonly defaultColor: RgbColor
+  /** Color of the current feature type */
+  private currentColor: RgbColor
+  /** Whether a slicer feature type comment has been seen yet */
+  private featureTypeCommentSeen = false
+
+  /* ---- Object markers ---- */
+
+  /** Tag of the object markers, lowercased */
+  private readonly objectTag: string
+  /** Id of the object the parsed segments belong to, -1 for none */
+  private currentObjectId = -1
+
+  /* ---- Slicer time marks ---- */
+
+  /** Collector of the print times the slicer states along the file */
+  private readonly slicerTimeMarksCollector = new SlicerTimeMarksCollector()
 
   /**
    * @param colors - Colors the parser paints segments with
