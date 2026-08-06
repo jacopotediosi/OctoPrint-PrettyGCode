@@ -83,6 +83,13 @@ const NON_ASCII = /[\u0080-\uffff]/
 /** Encoder measuring lines in bytes */
 const textEncoder = new TextEncoder()
 
+/**
+ * Measures a gcode line
+ * @param line - Line to measure
+ * @returns Its length in bytes
+ */
+const lineByteLength = (line: string): number => NON_ASCII.test(line) ? textEncoder.encode(line).length : line.length
+
 /** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */
 const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
 
@@ -391,193 +398,198 @@ export class GcodeParser {
     this.pendingLine = lines[lines.length - 1]
 
     for (let i = 0; i < lines.length - 1; i++) {
-      // Get the line
-      const rawLine = lines[i]
-      this.filePosition += (NON_ASCII.test(rawLine) ? textEncoder.encode(rawLine).length : rawLine.length) + 1
+      this.filePosition += lineByteLength(lines[i]) + 1
+      this.parseLine(lines[i])
+    }
+  }
 
-      // Parse object markers
-      if (rawLine.startsWith('@')) {
-        this.parseObjectMarker(rawLine)
-        continue
-      }
+  /**
+   * Parses one line of gcode
+   * @param rawLine - Gcode line, comment included
+   */
+  private parseLine (rawLine: string): void {
+    // Parse object markers
+    if (rawLine.startsWith('@')) {
+      this.parseObjectMarker(rawLine)
+      return
+    }
 
-      // Parse comments
-      const commentStart = rawLine.indexOf(';')
-      if (commentStart >= 0) {
-        const commentLower = rawLine.toLowerCase()
+    // Parse comments
+    const commentStart = rawLine.indexOf(';')
+    if (commentStart >= 0) {
+      const commentLower = rawLine.toLowerCase()
 
-        // Pick the color from feature-type comments only
-        if (FEATURE_TYPE_COMMENT.test(commentLower)) {
-          const match = this.colorRules.find(({ keywords }) => keywords.some((keyword) => commentLower.includes(keyword)))
-          if (match) {
-            this.currentColor = match.color
-            // First feature type seen
-            if (!this.featureTypeCommentSeen) {
-              this.featureTypeCommentSeen = true
-              // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
-              this.bounds = emptyBounds()
-            }
+      // Pick the color from feature-type comments only
+      if (FEATURE_TYPE_COMMENT.test(commentLower)) {
+        const match = this.colorRules.find(({ keywords }) => keywords.some((keyword) => commentLower.includes(keyword)))
+        if (match) {
+          this.currentColor = match.color
+          // First feature type seen
+          if (!this.featureTypeCommentSeen) {
+            this.featureTypeCommentSeen = true
+            // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
+            this.bounds = emptyBounds()
           }
         }
-
-        // First nozzle diameter the slicer states wins
-        if (this.slicerNozzleDiameter == null) {
-          const nozzleMatch = commentLower.match(NOZZLE_DIAMETER_COMMENT)
-          if (nozzleMatch) this.slicerNozzleDiameter = parseFloat(nozzleMatch[1])
-        }
-
-        // Take the elapsed print time the slicer states
-        if (commentLower.startsWith(TIME_ELAPSED_COMMENT, commentStart)) {
-          this.slicerTimeMarksCollector.addElapsed(this.filePosition, parseFloat(rawLine.slice(commentStart + TIME_ELAPSED_COMMENT.length)))
-        }
       }
 
-      // Parse gcode cmd and args
+      // First nozzle diameter the slicer states wins
+      if (this.slicerNozzleDiameter == null) {
+        const nozzleMatch = commentLower.match(NOZZLE_DIAMETER_COMMENT)
+        if (nozzleMatch) this.slicerNozzleDiameter = parseFloat(nozzleMatch[1])
+      }
+
+      // Take the elapsed print time the slicer states
+      if (commentLower.startsWith(TIME_ELAPSED_COMMENT, commentStart)) {
+        this.slicerTimeMarksCollector.addElapsed(this.filePosition, parseFloat(rawLine.slice(commentStart + TIME_ELAPSED_COMMENT.length)))
+      }
+    }
+
+    // Parse gcode cmd and args
+    // Temporary workaround for https://github.com/OctoPrint/OctoPrint/issues/5438: the babel-polyfill
+    // library OctoPrint ships replaces the browser's own trim with a far slower one, so the line
+    // bounds are found here without using it
+    const lineEnd = commentStart < 0 ? rawLine.length : commentStart
+    let lineStart = 0
+    while (lineStart < lineEnd && rawLine[lineStart] <= ' ') lineStart++
+    let lineStop = lineEnd
+    while (lineStop > lineStart && rawLine[lineStop - 1] <= ' ') lineStop--
+
+    const tokens = rawLine.slice(lineStart, lineStop).split(' ')
+    const cmd = tokens[0].toUpperCase()
+    const args: Record<string, number> = {}
+    for (let token = 1; token < tokens.length; token++) {
+      const word = tokens[token]
+      if (!word) continue
+
       // Temporary workaround for https://github.com/OctoPrint/OctoPrint/issues/5438: the babel-polyfill
-      // library OctoPrint ships replaces the browser's own trim with a far slower one, so the line
-      // bounds are found here without using it
-      const lineEnd = commentStart < 0 ? rawLine.length : commentStart
-      let lineStart = 0
-      while (lineStart < lineEnd && rawLine[lineStart] <= ' ') lineStart++
-      let lineStop = lineEnd
-      while (lineStop > lineStart && rawLine[lineStop - 1] <= ' ') lineStop--
+      // library OctoPrint ships replaces the browser's own parseFloat with a far slower one, so the
+      // unary plus reads the number instead, and only what it cannot read goes through parseFloat
+      const text = word.substring(1)
+      const number = text === '' ? NaN : +text
+      args[word[0].toLowerCase()] = Number.isNaN(number) ? parseFloat(text) : number
+    }
 
-      const tokens = rawLine.slice(lineStart, lineStop).split(' ')
-      const cmd = tokens[0].toUpperCase()
-      const args: Record<string, number> = {}
-      for (let token = 1; token < tokens.length; token++) {
-        const word = tokens[token]
-        if (!word) continue
+    // Axis value from args (absolute/relative aware), or the current one if omitted
+    const coord = (key: keyof MachineState): number => {
+      if (args[key] === undefined) return this.machineState[key]
+      if (key === 'f') return args.f
+      const relative = key === 'e' ? this.extrusionRelative : this.axesRelative
+      return relative ? this.machineState[key] + args[key] : args[key]
+    }
 
-        // Temporary workaround for https://github.com/OctoPrint/OctoPrint/issues/5438: the babel-polyfill
-        // library OctoPrint ships replaces the browser's own parseFloat with a far slower one, so the
-        // unary plus reads the number instead, and only what it cannot read goes through parseFloat
-        const text = word.substring(1)
-        const number = text === '' ? NaN : +text
-        args[word[0].toLowerCase()] = Number.isNaN(number) ? parseFloat(text) : number
+    switch (cmd) {
+      // Linear move
+      case 'G0':
+      case 'G1': {
+        const move: MachineState = { x: coord('x'), y: coord('y'), z: coord('z'), e: coord('e'), f: coord('f') }
+        const extruding = this.extrusionDelta(args, move) > 0
+
+        // New layer when extrusion moves to a different Z
+        if (extruding && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
+          this.changeLayer(move)
+        }
+
+        // Extrude a segment when the move lays down material, otherwise track the travel time
+        if (extruding) this.addSegment(this.machineState, move)
+        else this.addTravel(this.machineState, move)
+        this.machineState = move
+        break
       }
+      // Arc move (G2 clockwise, G3 counter-clockwise)
+      case 'G2':
+      case 'G3': {
+        const move: MachineState = {
+          x: coord('x'),
+          y: coord('y'),
+          z: coord('z'),
+          e: coord('e'), // extruder position
+          f: coord('f') // feedrate
+        }
+        const extruding = this.extrusionDelta(args, move) > 0
 
-      // Axis value from args (absolute/relative aware), or the current one if omitted
-      const coord = (key: keyof MachineState): number => {
-        if (args[key] === undefined) return this.machineState[key]
-        if (key === 'f') return args.f
-        const relative = key === 'e' ? this.extrusionRelative : this.axesRelative
-        return relative ? this.machineState[key] + args[key] : args[key]
-      }
+        // New layer when extrusion moves to a different Z
+        if (extruding && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
+          this.changeLayer(move)
+        }
 
-      switch (cmd) {
-        // Linear move
-        case 'G0':
-        case 'G1': {
-          const move: MachineState = { x: coord('x'), y: coord('y'), z: coord('z'), e: coord('e'), f: coord('f') }
-          const extruding = this.extrusionDelta(args, move) > 0
+        // Center offset from the I/J words, or computed from the radius of an R-form arc
+        const offset = args.r !== undefined
+          ? arcOffsetFromRadius(this.machineState, move, args.r, cmd === 'G2')
+          : { i: args.i ?? 0, j: args.j ?? 0 }
 
-          // New layer when extrusion moves to a different Z
-          if (extruding && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
-            this.changeLayer(move)
-          }
-
-          // Extrude a segment when the move lays down material, otherwise track the travel time
+        // Arcs with K, or an R that gives no usable center, fall back to a straight segment
+        // so the next moves still start from the right point
+        if (args.k !== undefined || (args.r !== undefined && !offset.i && !offset.j)) {
+          console.warn('PrettyGCode: Unsupported arc', rawLine)
           if (extruding) this.addSegment(this.machineState, move)
           else this.addTravel(this.machineState, move)
           this.machineState = move
           break
         }
-        // Arc move (G2 clockwise, G3 counter-clockwise)
-        case 'G2':
-        case 'G3': {
-          const move: MachineState = {
-            x: coord('x'),
-            y: coord('y'),
-            z: coord('z'),
-            e: coord('e'), // extruder position
-            f: coord('f') // feedrate
-          }
-          const extruding = this.extrusionDelta(args, move) > 0
 
-          // New layer when extrusion moves to a different Z
-          if (extruding && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
-            this.changeLayer(move)
-          }
-
-          // Center offset from the I/J words, or computed from the radius of an R-form arc
-          const offset = args.r !== undefined
-            ? arcOffsetFromRadius(this.machineState, move, args.r, cmd === 'G2')
-            : { i: args.i ?? 0, j: args.j ?? 0 }
-
-          // Arcs with K, or an R that gives no usable center, fall back to a straight segment
-          // so the next moves still start from the right point
-          if (args.k !== undefined || (args.r !== undefined && !offset.i && !offset.j)) {
-            console.warn('PrettyGCode: Unsupported arc', rawLine)
-            if (extruding) this.addSegment(this.machineState, move)
-            else this.addTravel(this.machineState, move)
-            this.machineState = move
-            break
-          }
-
-          // Split the arc into straight segments
-          const arc = {
-            ...move,
-            i: offset.i, // X offset from start to arc center
-            j: offset.j, // Y offset from start to arc center
-            is_clockwise: cmd === 'G2'
-          }
-          const segments = interpolateArc(this.machineState, arc)
-          for (let segmentIndex = 1; segmentIndex < segments.length; segmentIndex++) {
-            if (extruding) this.addSegment(segments[segmentIndex - 1], segments[segmentIndex])
-            else this.addTravel(segments[segmentIndex - 1], segments[segmentIndex])
-          }
-          this.machineState = segments[segments.length - 1]
-          break
+        // Split the arc into straight segments
+        const arc = {
+          ...move,
+          i: offset.i, // X offset from start to arc center
+          j: offset.j, // Y offset from start to arc center
+          is_clockwise: cmd === 'G2'
         }
-        // Dwell: the pause adds to the time of the travel toward the next segment
-        case 'G4':
-          this.pendingTravelSeconds += (args.s || 0) + (args.p || 0) / 1000
-          break
-        // Home: the named axes (all of them if none is given) end up at the origin
-        case 'G28': {
-          const all = args.x === undefined && args.y === undefined && args.z === undefined
-          this.machineState = {
-            ...this.machineState,
-            x: all || args.x !== undefined ? 0 : this.machineState.x,
-            y: all || args.y !== undefined ? 0 : this.machineState.y,
-            z: all || args.z !== undefined ? 0 : this.machineState.z
-          }
-          break
+        const segments = interpolateArc(this.machineState, arc)
+        for (let segmentIndex = 1; segmentIndex < segments.length; segmentIndex++) {
+          if (extruding) this.addSegment(segments[segmentIndex - 1], segments[segmentIndex])
+          else this.addTravel(segments[segmentIndex - 1], segments[segmentIndex])
         }
-        // Absolute positioning
-        case 'G90':
-          this.axesRelative = false
-          if (this.g90InfluencesExtruder) this.extrusionRelative = false
-          break
-          // Relative positioning
-        case 'G91':
-          this.axesRelative = true
-          if (this.g90InfluencesExtruder) this.extrusionRelative = true
-          break
-          // Remaining print time the slicer states
-        case 'M73':
-          if (args.r !== undefined) this.slicerTimeMarksCollector.addRemaining(this.filePosition, args.r * 60)
-          break
-          // Absolute extrusion
-        case 'M82':
-          this.extrusionRelative = false
-          break
-          // Relative extrusion
-        case 'M83':
-          this.extrusionRelative = true
-          break
-          // Set position without moving
-        case 'G92':
-          this.machineState = {
-            ...this.machineState,
-            x: args.x ?? this.machineState.x,
-            y: args.y ?? this.machineState.y,
-            z: args.z ?? this.machineState.z,
-            e: args.e ?? this.machineState.e
-          }
-          break
+        this.machineState = segments[segments.length - 1]
+        break
       }
+      // Dwell: the pause adds to the time of the travel toward the next segment
+      case 'G4':
+        this.pendingTravelSeconds += (args.s || 0) + (args.p || 0) / 1000
+        break
+      // Home: the named axes (all of them if none is given) end up at the origin
+      case 'G28': {
+        const all = args.x === undefined && args.y === undefined && args.z === undefined
+        this.machineState = {
+          ...this.machineState,
+          x: all || args.x !== undefined ? 0 : this.machineState.x,
+          y: all || args.y !== undefined ? 0 : this.machineState.y,
+          z: all || args.z !== undefined ? 0 : this.machineState.z
+        }
+        break
+      }
+      // Absolute positioning
+      case 'G90':
+        this.axesRelative = false
+        if (this.g90InfluencesExtruder) this.extrusionRelative = false
+        break
+        // Relative positioning
+      case 'G91':
+        this.axesRelative = true
+        if (this.g90InfluencesExtruder) this.extrusionRelative = true
+        break
+        // Remaining print time the slicer states
+      case 'M73':
+        if (args.r !== undefined) this.slicerTimeMarksCollector.addRemaining(this.filePosition, args.r * 60)
+        break
+        // Absolute extrusion
+      case 'M82':
+        this.extrusionRelative = false
+        break
+        // Relative extrusion
+      case 'M83':
+        this.extrusionRelative = true
+        break
+        // Set position without moving
+      case 'G92':
+        this.machineState = {
+          ...this.machineState,
+          x: args.x ?? this.machineState.x,
+          y: args.y ?? this.machineState.y,
+          z: args.z ?? this.machineState.z,
+          e: args.e ?? this.machineState.e
+        }
+        break
     }
   }
 
@@ -632,6 +644,13 @@ export class GcodeParser {
 
   /** Finishes parsing */
   finish (): void {
+    // Parse the last line of a file that does not end with a newline
+    if (this.pendingLine) {
+      this.filePosition += lineByteLength(this.pendingLine)
+      this.parseLine(this.pendingLine)
+      this.pendingLine = ''
+    }
+
     this.sealLayer()
     this.slicerTimeMarks = this.slicerTimeMarksCollector.getMarks()
     if (this.printerTransform) this.slidePrintToBeltOrigin()
