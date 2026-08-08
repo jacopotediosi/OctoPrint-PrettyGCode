@@ -1,8 +1,8 @@
-import { type ColorPreset, type ColorRule, cloneColorRules } from '../../gcode/model-colors'
+import { type FeatureTypeColorPreset, type FeatureTypeColorRule, cloneFeatureTypeColorRules } from '../../gcode/feature-type-colors'
 import type { Settings } from '../../settings'
 
-/** Handles of the model colors modal */
-export interface ModelColorsModal {
+/** Handles of the feature type colors modal */
+export interface FeatureTypeColorsModal {
   /** Opens the modal */
   open: () => void
   /** Resets the colors to their defaults */
@@ -20,13 +20,13 @@ function htmlStringToElement (markup: string): HTMLElement {
   return template.content.firstElementChild as HTMLElement
 }
 
-/** Markup of the model colors modal */
+/** Markup of the feature type colors modal */
 const MODAL_MARKUP = `
   <div class="modal hide fade pg-modal-color">
     <div class="modal-header">
       <button type="button" class="close" data-dismiss="modal">&times;</button>
       <h3 class="pg-modal-color-title">
-        Model colors
+        Feature type colors
         <button type="button" class="pg-reset pg-modal-color-reset" title="Reset colors to their defaults"><i class="fa-solid fa-arrow-rotate-left"></i></button>
       </h3>
     </div>
@@ -64,13 +64,13 @@ const ROW_MARKUP = `
 `
 
 /**
- * Builds the modal to customize the model colors
- * @param settings - Settings holding the model colors to customize
+ * Builds the modal to customize the feature type colors
+ * @param settings - Settings holding the feature type colors to customize
  * @param colorPresets - Color presets offered for loading into the settings
  * @param onChange - Callback called after a color change
  * @returns A handle to open and reset the modal
  */
-export function initModelColorsModal (settings: Settings, colorPresets: ColorPreset[], onChange: () => void): ModelColorsModal {
+export function initFeatureTypeColorsModal (settings: Settings, colorPresets: FeatureTypeColorPreset[], onChange: () => void): FeatureTypeColorsModal {
   const modal = htmlStringToElement(MODAL_MARKUP)
 
   const resetButton = modal.querySelector<HTMLButtonElement>('.pg-modal-color-reset')!
@@ -90,7 +90,7 @@ export function initModelColorsModal (settings: Settings, colorPresets: ColorPre
   /** Index of the preset matching the current colors, or -1 when they match none */
   const currentPresetIndex = (): number =>
     colorPresets.findIndex((preset) =>
-      settings.matches('modelDefaultColor', preset.defaultColor) && settings.matches('modelColorRules', preset.colorRules))
+      settings.matches('featureTypeDefaultColor', preset.defaultColor) && settings.matches('featureTypeColorRules', preset.colorRules))
 
   /** Enables preset Load button only when the selected option is not the current preset */
   const refreshPresetLoadButton = (): void => {
@@ -101,7 +101,7 @@ export function initModelColorsModal (settings: Settings, colorPresets: ColorPre
   /** Refreshes controls to reflect the current colors */
   const refreshControls = (): void => {
     // Reset button
-    resetButton.disabled = settings.isDefault('modelDefaultColor') && settings.isDefault('modelColorRules')
+    resetButton.disabled = settings.isDefault('featureTypeDefaultColor') && settings.isDefault('featureTypeColorRules')
 
     // Preset select
     const current = currentPresetIndex()
@@ -122,8 +122,8 @@ export function initModelColorsModal (settings: Settings, colorPresets: ColorPre
 
   /** Saves the input values to the settings and applies them */
   const commit = (): void => {
-    settings.modelDefaultColor = defaultColorInput.value
-    settings.modelColorRules = [...colorRulesContainer.querySelectorAll<HTMLElement>('.pg-modal-color-rule')].map((row) => ({
+    settings.featureTypeDefaultColor = defaultColorInput.value
+    settings.featureTypeColorRules = [...colorRulesContainer.querySelectorAll<HTMLElement>('.pg-modal-color-rule')].map((row) => ({
       keywords: row.querySelector<HTMLInputElement>('.pg-modal-color-keywords')!.value.split(',').map((keyword) => keyword.trim()).filter(Boolean),
       color: row.querySelector<HTMLInputElement>('.pg-modal-color-swatch')!.value
     }))
@@ -137,7 +137,7 @@ export function initModelColorsModal (settings: Settings, colorPresets: ColorPre
    * @param rule - Color rule to show
    * @returns The row element
    */
-  const createRow = (rule: ColorRule): HTMLElement => {
+  const createRow = (rule: FeatureTypeColorRule): HTMLElement => {
     const row = htmlStringToElement(ROW_MARKUP)
 
     const keywords = row.querySelector<HTMLInputElement>('.pg-modal-color-keywords')!
@@ -155,8 +155,8 @@ export function initModelColorsModal (settings: Settings, colorPresets: ColorPre
 
   /** Fills the inputs with the current colors */
   const fillInputs = (): void => {
-    defaultColorInput.value = settings.modelDefaultColor
-    colorRulesContainer.replaceChildren(...settings.modelColorRules.map(createRow))
+    defaultColorInput.value = settings.featureTypeDefaultColor
+    colorRulesContainer.replaceChildren(...settings.featureTypeColorRules.map(createRow))
   }
 
   /**
@@ -203,9 +203,9 @@ export function initModelColorsModal (settings: Settings, colorPresets: ColorPre
    * @param defaultColor - New default color
    * @param rules - New color rules
    */
-  const replaceColors = (defaultColor: string, rules: ColorRule[]): void => {
-    settings.modelDefaultColor = defaultColor
-    settings.modelColorRules = rules
+  const replaceColors = (defaultColor: string, rules: FeatureTypeColorRule[]): void => {
+    settings.featureTypeDefaultColor = defaultColor
+    settings.featureTypeColorRules = rules
     fillInputs()
     applyChange()
   }
@@ -214,13 +214,13 @@ export function initModelColorsModal (settings: Settings, colorPresets: ColorPre
   const open = (): void => { fillInputs(); refreshControls(); $(modal).modal('show') }
 
   /** Reset to the default colors */
-  const resetToDefault = (): void => replaceColors(settings.defaultOf('modelDefaultColor'), cloneColorRules(settings.defaultOf('modelColorRules')))
+  const resetToDefault = (): void => replaceColors(settings.defaultOf('featureTypeDefaultColor'), cloneFeatureTypeColorRules(settings.defaultOf('featureTypeColorRules')))
 
   // Control listeners
   presetSelect.addEventListener('change', refreshPresetLoadButton)
   presetLoadButton.addEventListener('click', () => {
     const preset = colorPresets[Number(presetSelect.value)]
-    replaceColors(preset.defaultColor, cloneColorRules(preset.colorRules))
+    replaceColors(preset.defaultColor, cloneFeatureTypeColorRules(preset.colorRules))
   })
   defaultColorInput.addEventListener('change', commit)
   resetButton.addEventListener('click', resetToDefault)

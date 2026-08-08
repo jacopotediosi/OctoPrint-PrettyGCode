@@ -9,7 +9,6 @@ interface DrawnLayer {
   globalBase: number
   numSegments: number
   vertices: Float32Array
-  colors: Uint8ClampedArray
   filePositions: Uint32Array
   durations: Float32Array
   excluded: Uint8Array | null
@@ -84,7 +83,7 @@ export class PrintTimeline {
     layers.forEach((layer, i) => {
       if (layer.vertices.length <= 2) return // empty layers have no drawn object
       const numSegments = layer.vertices.length / 6
-      this.drawnLayers.push({ layerNumber: i + 1, globalBase: base, numSegments, vertices: layer.vertices, colors: layer.colors, filePositions: layer.filePositions, durations: layer.durations, excluded: this.exclusions.classifyLayer(layer) })
+      this.drawnLayers.push({ layerNumber: i + 1, globalBase: base, numSegments, vertices: layer.vertices, filePositions: layer.filePositions, durations: layer.durations, excluded: this.exclusions.classifyLayer(layer) })
       base += numSegments
     })
     this.totalSegments = base

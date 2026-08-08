@@ -18,7 +18,6 @@ import { setStatusBarTemperatures, applyStatusBarVisibility } from './ui/status-
 import { showLoadingScreen, hideLoadingScreen } from './ui/notices/loading-screen'
 import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/notices/large-file-confirmation'
 import type { ParsedGcode } from './gcode/parsing/parser'
-import type { ParserColors } from './gcode/model-colors'
 import type { BedVolume } from './viewer/bed'
 import type { PrintViewUpdate } from './viewer/viewer'
 
@@ -91,8 +90,6 @@ export class PrettyGCodeApp {
   private parsedGcode: ParsedGcode | null = null
   /** Belt printer gantry angle the loaded gcode was parsed with */
   private parsedBeltPrinterGantryAngle: number | null = null
-  /** Model colors the loaded gcode was parsed with */
-  private parsedColors: ParserColors | null = null
 
   /** Print bed geometry */
   private bedVolume: BedVolume = { depth: DEFAULT_BED_SIZE_MM, height: DEFAULT_BED_SIZE_MM, origin: DEFAULT_BED_ORIGIN, width: DEFAULT_BED_SIZE_MM }
@@ -280,7 +277,6 @@ export class PrettyGCodeApp {
     hideLargeFileConfirmation()
     this.unloadGcode()
     this.parsedBeltPrinterGantryAngle = this.beltPrinterGantryAngle
-    this.parsedColors = { colorRules: this.settings.modelColorRules, defaultColor: this.settings.modelDefaultColor }
 
     // Ask before loading a large file, which takes long and can bog the browser down
     const largeFileThreshold = Number(this.settingsVM.settings?.plugins?.prettygcode?.largeFileThresholdMb?.() ?? 0) * 1024 * 1024
@@ -301,7 +297,7 @@ export class PrettyGCodeApp {
       const objectTag = this.settingsVM.settings?.plugins?.cancelobject?.reptag?.()
       // Whether G90/G91 affect extrusion follows OctoPrint's firmware setting
       const g90InfluencesExtruder = this.settingsVM.settings?.feature?.g90InfluencesExtruder?.() ?? false
-      const parsedGcode = await loadGcodeFile(jobPath, objectTag, this.parsedColors, g90InfluencesExtruder, this.parsedBeltPrinterGantryAngle)
+      const parsedGcode = await loadGcodeFile(jobPath, objectTag, g90InfluencesExtruder, this.parsedBeltPrinterGantryAngle)
 
       // Stop if a newer load has started
       if (sequence !== this.loadSequence) return
@@ -312,7 +308,7 @@ export class PrettyGCodeApp {
       // Index the timeline and build the model
       this.printTimeline.build(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
       this.observedPrintSpeed.restart()
-      this.gcodeModel.build(this.parsedGcode.layers)
+      this.gcodeModel.build(this.parsedGcode.layers, this.parsedGcode.featureTypeComments)
 
       // Apply the gcode bounds
       this.viewer.applyGcodeBounds(this.parsedGcode.bounds)
@@ -339,7 +335,7 @@ export class PrettyGCodeApp {
     this.parsedGcode = null
     this.printTimeline.build([], null)
     this.observedPrintSpeed.restart()
-    this.gcodeModel.build([])
+    this.gcodeModel.build([], [])
     updateLayerSliderMax(this)
     updateSegmentSliderMax(this)
     this.viewer.requestRender()
@@ -501,17 +497,14 @@ export class PrettyGCodeApp {
 
     const beltPrinterChanged = anyOf('beltPrinter', 'beltPrinterGantryAngle') &&
       this.beltPrinterGantryAngle !== this.parsedBeltPrinterGantryAngle
-    const colorsChanged = anyOf('modelColorRules', 'modelDefaultColor') &&
-      (
-        this.parsedColors == null ||
-        !this.settings.matches('modelColorRules', this.parsedColors.colorRules) ||
-        !this.settings.matches('modelDefaultColor', this.parsedColors.defaultColor)
-      )
 
-    // Belt printer and model color changes require a reload, which rebuilds the model on its own
-    if (beltPrinterChanged || colorsChanged) this.loadGcode(this.currentJobPath, !beltPrinterChanged)
+    // Belt printer changes require a reload, which rebuilds the model on its own
+    if (beltPrinterChanged) this.loadGcode(this.currentJobPath)
     else if (anyOf('thickLines', 'showExcluded', 'showBed', 'showMirror')) {
       this.gcodeModel.rebuild()
+      this.viewer.requestRender()
+    } else if (anyOf('featureTypeColorRules', 'featureTypeDefaultColor')) {
+      this.gcodeModel.recolor()
       this.viewer.requestRender()
     }
 

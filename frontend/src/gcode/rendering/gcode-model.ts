@@ -1,7 +1,9 @@
 import * as THREE from '../../three-exports'
 import { isThickLine, isThickMaterial, makeThickMaterial, makeThinMaterial } from './line-materials'
+import { fillLayerVertexColors, resolveFeatureTypeColors } from '../feature-type-colors'
 import { TipLine } from './tip-line'
 import type { GcodeLine, GcodeLineMaterial } from './line-materials'
+import type { ResolvedFeatureTypeColors } from '../feature-type-colors'
 import type { Settings } from '../../settings'
 import type { Layer } from '../parsing/parser'
 import type { PrintExclusions } from '../exclusions'
@@ -20,6 +22,8 @@ interface GcodeLineMetadata {
   numMoves: number
   /** Segment of the layer each drawn move waits for, or null for the whole layer */
   segmentIndices: Uint32Array | null
+  /** Whether the line draws the excluded part of the layer */
+  excluded?: boolean
   /** Whether the line draws the layer's mirror */
   mirror?: boolean
 }
@@ -43,10 +47,23 @@ const isLayerObject = (child: THREE.Object3D): child is GcodeLine => child.name.
  */
 const gcodeLineMetadata = (line: GcodeLine): GcodeLineMetadata => line.userData as GcodeLineMetadata
 
+/**
+ * Reads the buffer a gcode line holds its vertex colors in
+ * @param line - Gcode line
+ * @returns The buffer holding the vertex colors as flat RGB triplets
+ */
+function gcodeLineColorBuffer (line: GcodeLine): THREE.InterleavedBuffer | THREE.BufferAttribute {
+  if (isThickLine(line)) {
+    const attributes = line.geometry.attributes as Record<string, THREE.InterleavedBufferAttribute>
+    return attributes.instanceColorStart.data
+  }
+  return line.geometry.attributes.color as THREE.BufferAttribute
+}
+
 /** Oversize factor of the drawn lines, to avoid gaps */
 const LINE_THICKNESS_FACTOR = 1.1
 
-/** Brightness the mirror multiplies the model colors by */
+/** Brightness the mirror multiplies the line colors by */
 const MIRROR_BRIGHTNESS = 0.5
 
 /** A subset of a layer's segments */
@@ -65,14 +82,15 @@ class LayerPart {
   /**
    * Adds a layer's segment to the part
    * @param layer - Layer holding the segment
+   * @param colors - Vertex colors of the layer as flat RGB triplets
    * @param segment - Segment index within the layer
    */
-  add (layer: Layer, segment: number): void {
+  add (layer: Layer, colors: Uint8ClampedArray, segment: number): void {
     const from = segment * 6
     const to = this.segmentCount * 6
     for (let i = 0; i < 6; i++) {
       this.vertices[to + i] = layer.vertices[from + i]
-      this.colors[to + i] = layer.colors[from + i]
+      this.colors[to + i] = colors[from + i]
     }
     this.segmentIndices[this.segmentCount] = segment
     this.segmentCount++
@@ -92,6 +110,12 @@ export class GcodeModel {
 
   /** Layers the model was last built from */
   private layers: Layer[] = []
+
+  /** Lowercased feature type comments of the gcode the model was last built from */
+  private featureTypeComments: string[] = []
+
+  /** Vertex colors of each layer the model was last built from */
+  private layerColors: Uint8ClampedArray[] = []
 
   /** Global segment index the model is revealed up to */
   private revealedIndex = -1
@@ -187,12 +211,19 @@ export class GcodeModel {
 
   /* ---- Object building ---- */
 
+  /** Colors the segments are drawn with, resolved from the current settings */
+  private get featureTypeColors (): ResolvedFeatureTypeColors {
+    return resolveFeatureTypeColors(this.featureTypeComments, this.settings.featureTypeColorRules, this.settings.featureTypeDefaultColor)
+  }
+
   /**
    * (Re)builds the model's line objects from parsed layers
    * @param layers - Parsed gcode layers
+   * @param featureTypeComments - Lowercased feature type comments the gcode states, by feature type id
    */
-  build (layers: Layer[]): void {
+  build (layers: Layer[], featureTypeComments: string[]): void {
     this.layers = layers
+    this.featureTypeComments = featureTypeComments
     for (const child of this.linesGroup.children) {
       if (isLayerObject(child)) child.geometry.dispose()
     }
@@ -200,13 +231,15 @@ export class GcodeModel {
     this.linesGroup.clear()
     this.linesGroup.add(this.mirrorGroup)
     this.linesGroup.add(this.travelGroup)
+    this.layerColors = []
     this.revealedIndex = -1
     this.highlightedLayer = -1
 
     this.updateLineWidth()
 
+    const featureTypeColors = this.featureTypeColors
     for (const { layerNumber, globalBase } of this.timeline.drawnLayers) {
-      this.addLayerLines(layers[layerNumber - 1], layerNumber, globalBase)
+      this.addLayerLines(layers[layerNumber - 1], layerNumber, globalBase, featureTypeColors)
     }
 
     this.rebuildTravelLines()
@@ -216,7 +249,39 @@ export class GcodeModel {
 
   /** Rebuilds the model from the last given layers, e.g. after a settings change */
   rebuild (): void {
-    this.build(this.layers)
+    this.build(this.layers, this.featureTypeComments)
+  }
+
+  /** Applies the current colors to the model's lines */
+  recolor (): void {
+    const featureTypeColors = this.featureTypeColors
+    for (const { layerNumber } of this.timeline.drawnLayers) {
+      fillLayerVertexColors(this.layers[layerNumber - 1], layerNumber, featureTypeColors, this.layerColors[layerNumber - 1])
+    }
+
+    this.linesGroup.traverse((child) => {
+      if (!isLayerObject(child)) return
+      const { layerNumber, numMoves, segmentIndices, excluded, mirror } = gcodeLineMetadata(child)
+
+      // The mirror draws the geometry of the layer's own line, filled already
+      if (mirror) return
+
+      const buffer = gcodeLineColorBuffer(child)
+
+      // Parts keep their own copy of the segments they draw
+      if (segmentIndices) {
+        const colors = buffer.array as Uint8ClampedArray
+        const layerColors = this.layerColors[layerNumber - 1]
+        for (let move = 0; move < numMoves; move++) {
+          const from = segmentIndices[move] * 6
+          const to = move * 6
+          for (let i = 0; i < 6; i++) colors[to + i] = layerColors[from + i]
+        }
+        if (excluded) this.greyOutColors(colors)
+      }
+
+      buffer.needsUpdate = true
+    })
   }
 
   /**
@@ -255,15 +320,20 @@ export class GcodeModel {
    * @param layer - Parsed layer
    * @param layerNumber - 1-based layer number
    * @param globalBase - Global segment index the layer starts at
+   * @param featureTypeColors - Colors to paint the segments with
    */
-  private addLayerLines (layer: Layer, layerNumber: number, globalBase: number): void {
+  private addLayerLines (layer: Layer, layerNumber: number, globalBase: number, featureTypeColors: ResolvedFeatureTypeColors): void {
     // Skip empty layers
     if (layer.vertices.length <= 2) return
+
+    const colors = new Uint8ClampedArray(layer.vertices.length)
+    fillLayerVertexColors(layer, layerNumber, featureTypeColors, colors)
+    this.layerColors[layerNumber - 1] = colors
 
     // Layers untouched by exclusions go in whole
     const excludedFlags = this.exclusions.classifyLayer(layer)
     if (!excludedFlags) {
-      this.addLayerPart(layerNumber, globalBase, layer.vertices, layer.colors, null)
+      this.addLayerPart(layerNumber, globalBase, layer.vertices, colors, null)
       return
     }
 
@@ -274,7 +344,7 @@ export class GcodeModel {
     const excludedPart = new LayerPart(excludedSegments)
     for (let segment = 0; segment < excludedFlags.length; segment++) {
       const part = excludedFlags[segment] ? excludedPart : printedPart
-      part.add(layer, segment)
+      part.add(layer, colors, segment)
     }
 
     // Add the printed part
@@ -283,7 +353,7 @@ export class GcodeModel {
     // Add the excluded part, greyed out
     if (this.settings.showExcluded) {
       this.greyOutColors(excludedPart.colors)
-      this.addLayerPart(layerNumber, globalBase, excludedPart.vertices, excludedPart.colors, excludedPart.segmentIndices)
+      this.addLayerPart(layerNumber, globalBase, excludedPart.vertices, excludedPart.colors, excludedPart.segmentIndices, true)
     }
   }
 
@@ -294,8 +364,9 @@ export class GcodeModel {
    * @param vertices - Segment endpoints as flat XYZ triplets
    * @param colors - Vertex colors as flat RGB triplets
    * @param segmentIndices - Indices of the part's segments in the layer, or null for the whole layer
+   * @param excluded - True when the part holds the layer's excluded segments
    */
-  private addLayerPart (layerNumber: number, globalBase: number, vertices: Float32Array, colors: Uint8ClampedArray, segmentIndices: Uint32Array | null): void {
+  private addLayerPart (layerNumber: number, globalBase: number, vertices: Float32Array, colors: Uint8ClampedArray, segmentIndices: Uint32Array | null, excluded = false): void {
     // Skip empty parts
     if (vertices.length <= 2) return
 
@@ -303,7 +374,8 @@ export class GcodeModel {
       layerNumber,
       globalBase,
       numMoves: vertices.length / 6,
-      segmentIndices
+      segmentIndices,
+      excluded
     }
 
     // Build the part's line object and add it to the gcode group
@@ -457,7 +529,7 @@ export class GcodeModel {
     this.revealUpTo(spot.segmentIndex)
 
     // Grow the segment the nozzle is mid-way through
-    this.tipLine.update(spot)
+    this.tipLine.update(spot, this.layerColors)
   }
 
   /**

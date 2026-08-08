@@ -1,13 +1,12 @@
 import { arcOffsetFromRadius, interpolateArc } from './arc-interpolation'
 import { BeltPrinterTransform } from '../printer-transform/belt-printer-transform'
 import { SlicerTimeMarksCollector, type SlicerTimeMarks } from './slicer-time-marks'
-import type { ParserColors } from '../model-colors'
 
 /* ---- Parse result ---- */
 
 /** A parsed gcode */
 export interface ParsedGcode {
-  /** Parsed layers (segment endpoints, colors...) */
+  /** Parsed layers (segment endpoints, feature types...) */
   layers: Layer[]
   /** Bounding box of the extruded gcode */
   bounds: GcodeBounds
@@ -15,6 +14,8 @@ export interface ParsedGcode {
   slicerNozzleDiameter: number | null
   /** Print times the slicer states along the file, if any */
   slicerTimeMarks: SlicerTimeMarks | null
+  /** Lowercased feature type comments the gcode states, by feature type id */
+  featureTypeComments: string[]
   /** Names of the objects marked in the gcode, by object id */
   objectNames: string[]
 }
@@ -23,10 +24,11 @@ export interface ParsedGcode {
 export interface Layer {
   vertices: Float32Array
   z: number
-  colors: Uint8ClampedArray
   filePositions: Uint32Array
   durations: Float32Array
   objectIds: Int32Array | null
+  featureTypeIds: Int32Array
+  featureTypeSegmentIndices: Uint32Array
   travelVertices: Float32Array
   travelSegmentIndices: Uint32Array
 }
@@ -104,56 +106,6 @@ const FEATURE_TYPE_COMMENT = /;\s*(type:|feature[ :])/i
 /** Prefix, lowercased, of the comment stating the print time elapsed so far */
 const TIME_ELAPSED_COMMENT = ';time_elapsed:'
 
-/* ---- Segment colors ---- */
-
-/** An RGB color, with components from 0 to 1 */
-interface RgbColor {
-  r: number
-  g: number
-  b: number
-}
-
-/** Scratch color reused across segments to avoid allocations */
-const scratchColor: RgbColor = { r: 0, g: 0, b: 0 }
-
-/** Brightness the darkest segments are drawn at, as a share of their own color */
-const MIN_BRIGHTNESS = 0.5
-/** Brightness range the segments span as their angle turns, so the passes inside a layer can be told apart */
-const ANGLE_BRIGHTNESS_RANGE = 0.4
-/** Brightness the odd layers gain, so stacked layers can be told apart */
-const ODD_LAYER_BRIGHTNESS_GAIN = 0.1
-
-/**
- * Converts an sRGB component to linear space
- * @param component - The sRGB component (from 0 to 1)
- * @returns The linear component
- */
-const srgbToLinear = (component: number): number => component < 0.04045 ? component * 0.0773993808 : Math.pow(component * 0.9478672986 + 0.0521327014, 2.4)
-
-/**
- * Converts a color to its most vivid form
- * @param hexString - Color as "#rrggbb"
- * @returns The vivid color, in linear space
- */
-function hexStringToVividColor (hexString: string): RgbColor {
-  const hex = parseInt(hexString.slice(1), 16)
-  const red = srgbToLinear(((hex >> 16) & 255) / 255)
-  const green = srgbToLinear(((hex >> 8) & 255) / 255)
-  const blue = srgbToLinear((hex & 255) / 255)
-
-  const max = Math.max(red, green, blue)
-  const min = Math.min(red, green, blue)
-  if (max === min) return { r: 0.5, g: 0.5, b: 0.5 }
-
-  const lightness = (max + min) / 2
-  const saturation = lightness <= 0.5 ? (max - min) / (max + min) : (max - min) / (2 - max - min)
-
-  // Spread the components around half lightness
-  const scale = saturation / (max - min)
-  const offset = (1 - saturation) / 2 - min * scale
-  return { r: red * scale + offset, g: green * scale + offset, b: blue * scale + offset }
-}
-
 /* ---- Layers ---- */
 
 /** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
@@ -167,10 +119,11 @@ class OpenLayer {
   private static readonly INITIAL_TRAVEL_BUFFERS_CAPACITY = 128
 
   private vertices = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 6)
-  private colors = new Uint8ClampedArray(OpenLayer.INITIAL_BUFFERS_CAPACITY * 6)
   private filePositions = new Uint32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY)
   private durations = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 2)
   private objectIds: Int32Array | null = null
+  private readonly featureTypeIds: number[] = []
+  private readonly featureTypeSegmentIndices: number[] = []
   private capacity = OpenLayer.INITIAL_BUFFERS_CAPACITY
   private segments = 0
 
@@ -185,13 +138,13 @@ class OpenLayer {
    * Appends a segment
    * @param start - Segment start point
    * @param end - Segment end point
-   * @param color - Segment color
    * @param filePosition - Byte offset of the segment's line in the file
    * @param travelSeconds - Estimated travel time leading to the segment
    * @param extrusionSeconds - Estimated time extruding the segment
    * @param objectId - Id of the object the segment belongs to, -1 for none
+   * @param featureTypeId - Id of the feature type the segment belongs to, -1 for none
    */
-  addSegment (start: ScenePoint, end: ScenePoint, color: RgbColor, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number): void {
+  addSegment (start: ScenePoint, end: ScenePoint, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number, featureTypeId: number): void {
     if (this.segments === this.capacity) this.growSegments()
 
     const vertex = this.segments * 6
@@ -202,16 +155,6 @@ class OpenLayer {
     this.vertices[vertex + 4] = end.y
     this.vertices[vertex + 5] = end.z
 
-    const red = color.r * 255
-    const green = color.g * 255
-    const blue = color.b * 255
-    this.colors[vertex] = red
-    this.colors[vertex + 1] = green
-    this.colors[vertex + 2] = blue
-    this.colors[vertex + 3] = red
-    this.colors[vertex + 4] = green
-    this.colors[vertex + 5] = blue
-
     this.filePositions[this.segments] = filePosition
     this.durations[this.segments * 2] = travelSeconds
     this.durations[this.segments * 2 + 1] = extrusionSeconds
@@ -219,6 +162,12 @@ class OpenLayer {
     // Start storing object ids at the first segment that belongs to one
     if (objectId >= 0 && !this.objectIds) this.objectIds = new Int32Array(this.capacity).fill(-1)
     if (this.objectIds) this.objectIds[this.segments] = objectId
+
+    // Record the segment each feature type starts at
+    if (this.featureTypeIds[this.featureTypeIds.length - 1] !== featureTypeId) {
+      this.featureTypeIds.push(featureTypeId)
+      this.featureTypeSegmentIndices.push(this.segments)
+    }
 
     this.segments++
   }
@@ -243,10 +192,6 @@ class OpenLayer {
     const vertices = new Float32Array(this.capacity * 6)
     vertices.set(this.vertices)
     this.vertices = vertices
-
-    const colors = new Uint8ClampedArray(this.capacity * 6)
-    colors.set(this.colors)
-    this.colors = colors
 
     const filePositions = new Uint32Array(this.capacity)
     filePositions.set(this.filePositions)
@@ -284,10 +229,11 @@ class OpenLayer {
     return {
       z: this.z,
       vertices: this.vertices.slice(0, this.segments * 6),
-      colors: this.colors.slice(0, this.segments * 6),
       filePositions: this.filePositions.slice(0, this.segments),
       durations: this.durations.slice(0, this.segments * 2),
       objectIds: this.objectIds ? this.objectIds.slice(0, this.segments) : null,
+      featureTypeIds: Int32Array.from(this.featureTypeIds),
+      featureTypeSegmentIndices: Uint32Array.from(this.featureTypeSegmentIndices),
       travelVertices: this.travelVertices.slice(0, this.travels * 6),
       travelSegmentIndices: this.travelSegmentIndices.slice(0, this.travels)
     }
@@ -304,11 +250,11 @@ const scratchEnd: ScenePoint = { x: 0, y: 0, z: 0 }
 /** Travel length below which the move is not drawn */
 const MIN_TRAVEL_LENGTH_MM = 0.5
 
-/** Streaming gcode parser: feed it byte chunks to get colored layers of segments with file positions and time estimates */
+/** Streaming gcode parser: feed it byte chunks to get layers of segments with feature types, file positions and time estimates */
 export class GcodeParser {
   /* ---- Parse result ---- */
 
-  /** Parsed layers: segment endpoints, colors, file positions and estimated durations */
+  /** Parsed layers: segment endpoints, feature types, file positions and estimated durations */
   readonly layers: Layer[] = []
   /** Bounding box of the extruded gcode */
   bounds = emptyBounds()
@@ -316,6 +262,8 @@ export class GcodeParser {
   slicerNozzleDiameter: number | null = null
   /** Print times the slicer states along the file, if any */
   slicerTimeMarks: SlicerTimeMarks | null = null
+  /** Lowercased feature type comments the gcode states, by feature type id */
+  readonly featureTypeComments: string[] = []
   /** Names of the objects marked in the gcode, by object id */
   readonly objectNames: string[] = []
 
@@ -360,15 +308,11 @@ export class GcodeParser {
   /** Travels made since the last segment */
   private pendingTravels = 0
 
-  /* ---- Segment colors ---- */
+  /* ---- Feature types ---- */
 
-  /** Color rules, in priority order */
-  private readonly colorRules: { keywords: string[], color: RgbColor }[]
-  /** Color of segments matching no color rule */
-  private readonly defaultColor: RgbColor
-  /** Color of the current feature type */
-  private currentColor: RgbColor
-  /** Whether a slicer feature type comment has been seen yet */
+  /** Id of the feature type the parsed segments belong to, -1 for none */
+  private currentFeatureTypeId = -1
+  /** Whether a feature type comment of the printed model has been seen yet */
   private featureTypeCommentSeen = false
 
   /* ---- Object markers ---- */
@@ -384,23 +328,14 @@ export class GcodeParser {
   private readonly slicerTimeMarksCollector = new SlicerTimeMarksCollector()
 
   /**
-   * @param colors - Colors the parser paints segments with
    * @param objectTag - Tag of the "@<tag> <name>" object markers
    * @param g90InfluencesExtruder - Whether G90/G91 also switch the extrusion mode
    * @param beltPrinterGantryAngle - Angle between the belt and the printer gantry in degrees, null for non-belt printers
    */
-  constructor (colors: ParserColors, objectTag = 'Object', g90InfluencesExtruder = false, beltPrinterGantryAngle: number | null = null) {
+  constructor (objectTag = 'Object', g90InfluencesExtruder = false, beltPrinterGantryAngle: number | null = null) {
     this.objectTag = objectTag.toLowerCase()
     this.g90InfluencesExtruder = g90InfluencesExtruder
     this.printerTransform = beltPrinterGantryAngle == null ? null : new BeltPrinterTransform(beltPrinterGantryAngle)
-
-    // Precompute the colors and lowercase the keywords, dropping the empty ones
-    this.defaultColor = hexStringToVividColor(colors.defaultColor)
-    this.currentColor = this.defaultColor
-    this.colorRules = colors.colorRules.map((rule) => ({
-      keywords: rule.keywords.map((keyword) => keyword.toLowerCase()).filter(Boolean),
-      color: hexStringToVividColor(rule.color)
-    }))
   }
 
   /**
@@ -438,17 +373,16 @@ export class GcodeParser {
     if (commentStart >= 0) {
       const commentLower = rawLine.toLowerCase()
 
-      // Pick the color from feature-type comments only
+      // Take the feature type from feature-type comments only
       if (FEATURE_TYPE_COMMENT.test(commentLower)) {
-        const match = this.colorRules.find(({ keywords }) => keywords.some((keyword) => commentLower.includes(keyword)))
-        if (match) {
-          this.currentColor = match.color
-          // First feature type seen
-          if (!this.featureTypeCommentSeen) {
-            this.featureTypeCommentSeen = true
-            // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
-            this.bounds = emptyBounds()
-          }
+        const id = this.featureTypeComments.indexOf(commentLower)
+        this.currentFeatureTypeId = id >= 0 ? id : this.featureTypeComments.push(commentLower) - 1
+
+        // First feature type seen, not counting the slicers' own start gcode
+        if (!this.featureTypeCommentSeen && !commentLower.includes('custom')) {
+          this.featureTypeCommentSeen = true
+          // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
+          this.bounds = emptyBounds()
         }
       }
 
@@ -774,15 +708,7 @@ export class GcodeParser {
       this.expandBounds(sceneEnd)
     }
 
-    // Fake shading: tint by the segment's angle, alternating per layer for readability
-    const directionX = distance ? (end.x - start.x) / distance : 0
-    const brightness = MIN_BRIGHTNESS + ANGLE_BRIGHTNESS_RANGE * (directionX + 1) / 2 +
-      (this.layersOpened % 2 === 0 ? 0 : ODD_LAYER_BRIGHTNESS_GAIN)
-    scratchColor.r = this.currentColor.r * brightness
-    scratchColor.g = this.currentColor.g * brightness
-    scratchColor.b = this.currentColor.b * brightness
-
     // Add the segment to the layer
-    layer.addSegment(sceneStart, sceneEnd, scratchColor, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId)
+    layer.addSegment(sceneStart, sceneEnd, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId, this.currentFeatureTypeId)
   }
 }

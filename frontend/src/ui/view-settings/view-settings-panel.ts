@@ -1,7 +1,7 @@
 import GUI, { type Controller } from 'lil-gui'
 import { NAVIGATION_MODES } from '../../viewer/navigation'
-import { initModelColorsModal } from './model-colors-modal'
-import type { ColorPreset } from '../../gcode/model-colors'
+import { initFeatureTypeColorsModal } from './feature-type-colors-modal'
+import type { FeatureTypeColorPreset } from '../../gcode/feature-type-colors'
 import type { Settings, SettingKey } from '../../settings'
 import type { PrettyGCodeApp } from '../../app'
 
@@ -193,14 +193,14 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     'Show gcode excluded by the Exclude Region and Cancel Object plugins, greyed out.'
   )
 
-  const colorPresets: ColorPreset[] = JSON.parse(container.dataset.modelColorPresets ?? '[]')
-  const modelColorsModal = initModelColorsModal(settings, colorPresets, () => {
+  const featureTypeColorPresets: FeatureTypeColorPreset[] = JSON.parse(container.dataset.featureTypeColorPresets ?? '[]')
+  const featureTypeColorsModal = initFeatureTypeColorsModal(settings, featureTypeColorPresets, () => {
     onChange?.()
-    app?.applySettings(['modelColorRules', 'modelDefaultColor'])
+    app?.applySettings(['featureTypeColorRules', 'featureTypeDefaultColor'])
     refreshResets()
   })
-  const customizeColors = gcodeModelFolder.add({ customize: () => modelColorsModal.open() }, 'customize').name('Customize colors…')
-  customizeColors.domElement.title = 'Customize the colors used for the gcode model.'
+  const customizeFeatureTypeColors = gcodeModelFolder.add({ customize: () => featureTypeColorsModal.open() }, 'customize').name('Feature type colors…')
+  customizeFeatureTypeColors.domElement.title = 'Customize the colors of the G-code feature types.'
 
   /* ---- Bed ---- */
 
@@ -240,10 +240,10 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
   const keyOf = (controller: Controller): SettingKey => controller.property as SettingKey
 
   /**
-   * Tells whether the model colors are at their default
+   * Tells whether the feature type colors are at their default
    * @returns True when both the color rules and the default color are unchanged
    */
-  const colorsAtDefault = (): boolean => settings.isDefault('modelDefaultColor') && settings.isDefault('modelColorRules')
+  const featureTypeColorsAtDefault = (): boolean => settings.isDefault('featureTypeDefaultColor') && settings.isDefault('featureTypeColorRules')
 
   /**
    * Builds a reset button
@@ -266,7 +266,7 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
 
   // Rows that reset through their own logic instead of loading a default value
   const customResets: ResetEntry[] = [
-    { controller: customizeColors, atDefault: colorsAtDefault, resetToDefault: modelColorsModal.resetToDefault }
+    { controller: customizeFeatureTypeColors, atDefault: featureTypeColorsAtDefault, resetToDefault: featureTypeColorsModal.resetToDefault }
   ]
   const customControllers = new Set(customResets.map((entry) => entry.controller))
 

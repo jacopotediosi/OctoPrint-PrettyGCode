@@ -1,7 +1,7 @@
 import type { NavigationModeKey, ProjectionMode } from './viewer/navigation'
 import type { NozzleStyle } from './viewer/nozzle'
 import type { TravelScope } from './gcode/rendering/gcode-model'
-import type { ColorRule } from './gcode/model-colors'
+import type { FeatureTypeColorRule } from './gcode/feature-type-colors'
 
 /** localStorage key holding the settings */
 const STORAGE_KEY = 'pg-settings'
@@ -73,10 +73,10 @@ export class Settings {
   declare highlightIntensity: number
   /** Whether to show gcode excluded from printing, greyed out */
   declare showExcluded: boolean
-  /** Model color rules, tried in order */
-  declare modelColorRules: ColorRule[]
+  /** Feature type color rules, tried in order */
+  declare featureTypeColorRules: FeatureTypeColorRule[]
   /** Color of segments matching no color rule */
-  declare modelDefaultColor: string
+  declare featureTypeDefaultColor: string
 
   /* ---- Bed ---- */
 

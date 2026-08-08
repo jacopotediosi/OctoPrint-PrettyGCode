@@ -322,7 +322,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     overflow: hidden;
 }
 
-/* === Model colors modal === */
+/* === Feature type colors modal === */
 /* Modal header */
 .pg-modal-color-title .pg-modal-color-reset {
     margin-left: 8px;

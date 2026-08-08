@@ -70,8 +70,9 @@ export class TipLine {
   /**
    * Grows the tip up to a timeline position
    * @param spot - Timeline position
+   * @param layerColors - Vertex colors of every layer, in the layers' order
    */
-  update (spot: TimelineSpot): void {
+  update (spot: TimelineSpot, layerColors: Uint8ClampedArray[]): void {
     if (!this.line) return
 
     // Nothing grows while traveling between segments or past the end
@@ -87,7 +88,7 @@ export class TipLine {
 
     // Grow up to how far along the segment the nozzle has reached
     const progress = spot.fraction
-    const colors = segment.layer.colors
+    const colors = layerColors[segment.layer.layerNumber - 1]
     this.setGeometry(this.line, startX, startY, startZ,
       startX + (vertices[offset + 3] - startX) * progress, startY + (vertices[offset + 4] - startY) * progress, startZ + (vertices[offset + 5] - startZ) * progress,
       colors[offset] / 255, colors[offset + 1] / 255, colors[offset + 2] / 255)

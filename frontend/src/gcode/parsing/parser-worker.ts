@@ -1,5 +1,4 @@
 import { GcodeParser, type ParsedGcode } from './parser'
-import type { ParserColors } from '../model-colors'
 
 /** Gcode parse request */
 export interface GcodeParseRequest {
@@ -7,8 +6,6 @@ export interface GcodeParseRequest {
   fileUrl: string
   /** Tag of the "@<tag> <name>" object markers */
   objectTag: string | undefined
-  /** Colors with which the parser has to color the segments */
-  colors: ParserColors
   /** Whether G90/G91 also switch the extrusion mode */
   g90InfluencesExtruder: boolean
   /** Angle between the belt and the printer gantry in degrees, null for non-belt printers */
@@ -35,7 +32,7 @@ declare const self: {
  * @returns The parsed gcode
  */
 async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode> {
-  const parser = new GcodeParser(request.colors, request.objectTag, request.g90InfluencesExtruder, request.beltPrinterGantryAngle)
+  const parser = new GcodeParser(request.objectTag, request.g90InfluencesExtruder, request.beltPrinterGantryAngle)
 
   const response = await fetch(request.fileUrl)
   if (!response.ok) throw new Error(`Gcode download failed with status ${response.status}`)
@@ -55,6 +52,7 @@ async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode>
     bounds: parser.bounds,
     slicerNozzleDiameter: parser.slicerNozzleDiameter,
     slicerTimeMarks: parser.slicerTimeMarks,
+    featureTypeComments: parser.featureTypeComments,
     objectNames: parser.objectNames
   } satisfies ParsedGcode
 }
@@ -66,7 +64,7 @@ self.onmessage = async ({ data }) => {
 
     const buffers: Transferable[] = []
     for (const layer of gcode.layers) {
-      buffers.push(layer.vertices.buffer, layer.colors.buffer, layer.filePositions.buffer, layer.durations.buffer, layer.travelVertices.buffer, layer.travelSegmentIndices.buffer)
+      buffers.push(layer.vertices.buffer, layer.filePositions.buffer, layer.durations.buffer, layer.featureTypeIds.buffer, layer.featureTypeSegmentIndices.buffer, layer.travelVertices.buffer, layer.travelSegmentIndices.buffer)
       if (layer.objectIds) buffers.push(layer.objectIds.buffer)
     }
     if (gcode.slicerTimeMarks) buffers.push(gcode.slicerTimeMarks.filePositions.buffer, gcode.slicerTimeMarks.elapsedSeconds.buffer)
