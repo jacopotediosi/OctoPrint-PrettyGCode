@@ -59,27 +59,17 @@ const ODD_LAYER_BRIGHTNESS_GAIN = 0.1
 const srgbToLinear = (component: number): number => component < 0.04045 ? component * 0.0773993808 : Math.pow(component * 0.9478672986 + 0.0521327014, 2.4)
 
 /**
- * Converts a color to its most vivid form
+ * Converts a color to linear space
  * @param hexString - Color as "#rrggbb"
- * @returns The vivid color, in linear space
+ * @returns The linear color
  */
-function hexStringToVividColor (hexString: string): RgbColor {
+function hexStringToLinearColor (hexString: string): RgbColor {
   const hex = parseInt(hexString.slice(1), 16)
-  const red = srgbToLinear(((hex >> 16) & 255) / 255)
-  const green = srgbToLinear(((hex >> 8) & 255) / 255)
-  const blue = srgbToLinear((hex & 255) / 255)
-
-  const max = Math.max(red, green, blue)
-  const min = Math.min(red, green, blue)
-  if (max === min) return { r: 0.5, g: 0.5, b: 0.5 }
-
-  const lightness = (max + min) / 2
-  const saturation = lightness <= 0.5 ? (max - min) / (max + min) : (max - min) / (2 - max - min)
-
-  // Spread the components around half lightness
-  const scale = saturation / (max - min)
-  const offset = (1 - saturation) / 2 - min * scale
-  return { r: red * scale + offset, g: green * scale + offset, b: blue * scale + offset }
+  return {
+    r: srgbToLinear(((hex >> 16) & 255) / 255),
+    g: srgbToLinear(((hex >> 8) & 255) / 255),
+    b: srgbToLinear((hex & 255) / 255)
+  }
 }
 
 /**
@@ -99,9 +89,9 @@ export function resolveFeatureTypeColors (featureTypeComments: string[], colorRu
   return {
     colors: featureTypeComments.map((comment) => {
       const match = rules.find(({ keywords }) => keywords.some((keyword) => comment.includes(keyword)))
-      return hexStringToVividColor(match ? match.color : defaultColor)
+      return hexStringToLinearColor(match ? match.color : defaultColor)
     }),
-    defaultColor: hexStringToVividColor(defaultColor)
+    defaultColor: hexStringToLinearColor(defaultColor)
   }
 }
 
