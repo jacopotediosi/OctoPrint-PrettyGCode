@@ -51,6 +51,7 @@ async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode>
     layers: parser.layers,
     bounds: parser.bounds,
     slicerNozzleDiameter: parser.slicerNozzleDiameter,
+    slicerFilamentDiameter: parser.slicerFilamentDiameter,
     slicerTimeMarks: parser.slicerTimeMarks,
     featureTypeComments: parser.featureTypeComments,
     objectNames: parser.objectNames
@@ -66,7 +67,7 @@ self.onmessage = async ({ data }) => {
     for (const layer of gcode.layers) {
       buffers.push(layer.vertices.buffer, layer.filePositions.buffer, layer.durations.buffer, layer.travelVertices.buffer, layer.travelSegmentIndices.buffer)
       if (layer.objectIds) buffers.push(layer.objectIds.buffer)
-      for (const property of [layer.featureTypeIds, layer.feedrates, layer.fanSpeeds, layer.temperatures, layer.widths, layer.heights]) {
+      for (const property of [layer.featureTypeIds, layer.feedrates, layer.fanSpeeds, layer.temperatures, layer.widths, layer.heights, layer.filamentPerMm]) {
         buffers.push(property.segmentIndices.buffer, property.values.buffer)
       }
     }

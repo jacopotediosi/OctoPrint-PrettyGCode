@@ -12,6 +12,8 @@ export interface ParsedGcode {
   bounds: GcodeBounds
   /** Nozzle diameter the slicer states, if any */
   slicerNozzleDiameter: number | null
+  /** Filament diameter in mm the slicer states, null when it states none */
+  slicerFilamentDiameter: number | null
   /** Print times the slicer states along the file, if any */
   slicerTimeMarks: SlicerTimeMarks | null
   /** Lowercased feature type comments the gcode states, by feature type id */
@@ -33,6 +35,7 @@ export interface Layer {
   temperatures: SegmentProperty
   widths: SegmentProperty
   heights: SegmentProperty
+  filamentPerMm: SegmentProperty
   travelVertices: Float32Array
   travelSegmentIndices: Uint32Array
 }
@@ -59,6 +62,8 @@ export interface SegmentPropertyValues {
   width: number
   /** Height of the extruded line in mm */
   height: number
+  /** Filament in mm the segment extrudes over each mm of its length */
+  filamentPerMm: number
 }
 
 /** Box the parsed gcode fits in */
@@ -131,6 +136,9 @@ const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
  */
 const FEATURE_TYPE_COMMENT = /;\s*(type:|feature[ :])/i
 
+/** Matches the filament diameter stated by the slicer, e.g. "; filament_diameter = 1.75" */
+const FILAMENT_DIAMETER_COMMENT = /filament[_ ]?diameter\s*[:=,]\s*([\d.]+)/i
+
 /** Matches the extrusion width the slicer states, e.g. ";WIDTH:0.42" or "; LINE_WIDTH: 0.42" */
 const WIDTH_COMMENT = /;\s*(?:line_)?width:\s*([\d.]+)/i
 
@@ -142,10 +150,21 @@ const TIME_ELAPSED_COMMENT = ';time_elapsed:'
 
 /* ---- Layers ---- */
 
+/** Share the extrusion of a segment may differ by before it counts as a change, keeping the rounding of E out of the record */
+const FILAMENT_PER_MM_TOLERANCE = 0.02
+
+/** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
+const LAYER_EPSILON_MM = 0.04
+
 /** A property of the segments being filled, kept only where it changes */
 class OpenSegmentProperty {
   private readonly segmentIndices: number[] = []
   private readonly values: number[] = []
+
+  /**
+   * @param tolerance - Share of the last recorded value a new one may differ by and still count as the same
+   */
+  constructor (private readonly tolerance: number = 0) {}
 
   /**
    * Records the value the property takes on a segment
@@ -153,7 +172,8 @@ class OpenSegmentProperty {
    * @param value - Value the property takes there
    */
   add (segment: number, value: number): void {
-    if (this.values[this.values.length - 1] === value) return
+    const recorded = this.values[this.values.length - 1]
+    if (Math.abs(value - recorded) <= this.tolerance * Math.abs(recorded)) return
 
     this.segmentIndices.push(segment)
     this.values.push(value)
@@ -167,9 +187,6 @@ class OpenSegmentProperty {
     return { segmentIndices: Uint32Array.from(this.segmentIndices), values: Float32Array.from(this.values) }
   }
 }
-
-/** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
-const LAYER_EPSILON_MM = 0.04
 
 /** A layer being filled with segments and with the travels leading to them */
 class OpenLayer {
@@ -188,6 +205,7 @@ class OpenLayer {
   private readonly temperatures = new OpenSegmentProperty()
   private readonly widths = new OpenSegmentProperty()
   private readonly heights = new OpenSegmentProperty()
+  private readonly filamentPerMm = new OpenSegmentProperty(FILAMENT_PER_MM_TOLERANCE)
   private capacity = OpenLayer.INITIAL_BUFFERS_CAPACITY
   private segments = 0
 
@@ -233,6 +251,7 @@ class OpenLayer {
     this.temperatures.add(this.segments, propertyValues.temperature)
     this.widths.add(this.segments, propertyValues.width)
     this.heights.add(this.segments, propertyValues.height)
+    this.filamentPerMm.add(this.segments, propertyValues.filamentPerMm)
 
     this.segments++
   }
@@ -303,6 +322,7 @@ class OpenLayer {
       temperatures: this.temperatures.finish(),
       widths: this.widths.finish(),
       heights: this.heights.finish(),
+      filamentPerMm: this.filamentPerMm.finish(),
       travelVertices: this.travelVertices.slice(0, this.travels * 6),
       travelSegmentIndices: this.travelSegmentIndices.slice(0, this.travels)
     }
@@ -329,6 +349,8 @@ export class GcodeParser {
   bounds = emptyBounds()
   /** Nozzle diameter the slicer states, if any */
   slicerNozzleDiameter: number | null = null
+  /** Filament diameter in mm the slicer states, null when it states none */
+  slicerFilamentDiameter: number | null = null
   /** Print times the slicer states along the file, if any */
   slicerTimeMarks: SlicerTimeMarks | null = null
   /** Lowercased feature type comments the gcode states, by feature type id */
@@ -355,6 +377,8 @@ export class GcodeParser {
   private extrusionRelative = false
   /** Millimeters a gcode length unit stands for (a gcode can switch between inches and millimeters) */
   private mmPerUnit = 1
+  /** Factor the gcode scales its extrusion by */
+  private flowFactor = 1
   /** Whether G90/G91 also switch the extrusion mode, not only the axes */
   private readonly g90InfluencesExtruder: boolean
   /** Transform of the belt printer the gcode is meant for, null for non-belt printers */
@@ -382,7 +406,7 @@ export class GcodeParser {
   /* ---- Segment properties ---- */
 
   /** Value each property takes on the segments being parsed */
-  private readonly currentPropertyValues: SegmentPropertyValues = { featureTypeId: -1, feedrate: 0, fanSpeed: 0, temperature: 0, width: 0, height: 0 }
+  private readonly currentPropertyValues: SegmentPropertyValues = { featureTypeId: -1, feedrate: 0, fanSpeed: 0, temperature: 0, width: 0, height: 0, filamentPerMm: 0 }
   /** Whether a feature type comment of the printed model has been seen yet */
   private featureTypeCommentSeen = false
   /** Extrusion height the slicer states, null until it states one */
@@ -471,6 +495,12 @@ export class GcodeParser {
       if (this.slicerNozzleDiameter == null) {
         const nozzleMatch = commentLower.match(NOZZLE_DIAMETER_COMMENT)
         if (nozzleMatch) this.slicerNozzleDiameter = parseFloat(nozzleMatch[1])
+      }
+
+      // First filament diameter the slicer states wins
+      if (this.slicerFilamentDiameter == null) {
+        const filamentMatch = commentLower.match(FILAMENT_DIAMETER_COMMENT)
+        if (filamentMatch) this.slicerFilamentDiameter = parseFloat(filamentMatch[1])
       }
 
       // Take the elapsed print time the slicer states
@@ -638,6 +668,10 @@ export class GcodeParser {
       }
       case 'M107': { // Stop the print cooling fan
         this.currentPropertyValues.fanSpeed = 0
+        break
+      }
+      case 'M221': { // Scale the extrusion by a percentage, the per-extruder form left to the printer
+        if (args.s !== undefined && args.t === undefined) this.flowFactor = args.s / 100
         break
       }
       case 'G92': { // Set position without moving
@@ -824,6 +858,7 @@ export class GcodeParser {
     // Add the segment to the layer
     this.currentPropertyValues.feedrate = feedrate
     this.currentPropertyValues.height = this.slicerHeight ?? this.layerHeight
+    this.currentPropertyValues.filamentPerMm = distance > 0 ? (end.e - start.e) * this.flowFactor / distance : 0
     layer.addSegment(sceneStart, sceneEnd, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId, this.currentPropertyValues)
   }
 }
