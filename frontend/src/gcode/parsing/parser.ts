@@ -82,6 +82,14 @@ export interface GcodeBounds {
  */
 export const emptyBounds = (): GcodeBounds => ({ minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity })
 
+/**
+ * Builds an empty parse result
+ * @returns The empty gcode
+ */
+export const emptyGcode = (): ParsedGcode => ({
+  layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, slicerFilamentDiameter: null, slicerTimeMarks: null, featureTypeComments: [], objectNames: []
+})
+
 /** A point of the parsed gcode, in scene coordinates */
 export interface ScenePoint {
   x: number

@@ -17,7 +17,7 @@ import { initToggleButtons } from './ui/toggle-buttons'
 import { setStatusBarTemperatures, applyStatusBarVisibility } from './ui/status-bar'
 import { showLoadingScreen, hideLoadingScreen } from './ui/notices/loading-screen'
 import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/notices/large-file-confirmation'
-import type { ParsedGcode } from './gcode/parsing/parser'
+import { emptyGcode, type ParsedGcode } from './gcode/parsing/parser'
 import type { BedVolume } from './viewer/bed'
 import type { PrintViewUpdate } from './viewer/viewer'
 
@@ -308,7 +308,7 @@ export class PrettyGCodeApp {
       // Index the timeline and build the model
       this.printTimeline.build(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
       this.observedPrintSpeed.restart()
-      this.gcodeModel.build(this.parsedGcode.layers, this.parsedGcode.featureTypeComments)
+      this.gcodeModel.build(this.parsedGcode)
 
       // Apply the gcode bounds
       this.viewer.applyGcodeBounds(this.parsedGcode.bounds)
@@ -335,7 +335,7 @@ export class PrettyGCodeApp {
     this.parsedGcode = null
     this.printTimeline.build([], null)
     this.observedPrintSpeed.restart()
-    this.gcodeModel.build([], [])
+    this.gcodeModel.build(emptyGcode())
     updateLayerSliderMax(this)
     updateSegmentSliderMax(this)
     this.viewer.requestRender()
@@ -503,7 +503,7 @@ export class PrettyGCodeApp {
     else if (anyOf('thickLines', 'showExcluded', 'showBed', 'showMirror')) {
       this.gcodeModel.rebuild()
       this.viewer.requestRender()
-    } else if (anyOf('featureTypeColorRules', 'featureTypeDefaultColor')) {
+    } else if (anyOf('colorMode', 'featureTypeColorRules', 'featureTypeDefaultColor')) {
       this.gcodeModel.recolor()
       this.viewer.requestRender()
     }

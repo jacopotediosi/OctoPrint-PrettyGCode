@@ -1,7 +1,7 @@
 import GUI, { type Controller } from 'lil-gui'
 import { NAVIGATION_MODES } from '../../viewer/navigation'
 import { initFeatureTypeColorsModal } from './feature-type-colors-modal'
-import type { FeatureTypeColorPreset } from '../../gcode/feature-type-colors'
+import type { FeatureTypeColorPreset } from '../../gcode/colors/feature-type-colors'
 import type { Settings, SettingKey } from '../../settings'
 import type { PrettyGCodeApp } from '../../app'
 

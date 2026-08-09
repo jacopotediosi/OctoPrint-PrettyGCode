@@ -1,11 +1,12 @@
 import * as THREE from '../../three-exports'
 import { isThickLine, isThickMaterial, makeThickMaterial, makeThinMaterial } from './line-materials'
-import { fillLayerVertexColors, resolveFeatureTypeColors } from '../feature-type-colors'
+import { resolveFeatureTypeColors } from '../colors/feature-type-colors'
+import { COLOR_MODES, colorModeContext, fillLayerVertexColors, propertyRange, rangeColorAt } from '../colors/segment-colors'
 import { TipLine } from './tip-line'
 import type { GcodeLine, GcodeLineMaterial } from './line-materials'
-import type { ResolvedFeatureTypeColors } from '../feature-type-colors'
+import type { ColorMode, RgbColor, SegmentColoring } from '../colors/segment-colors'
 import type { Settings } from '../../settings'
-import type { Layer } from '../parsing/parser'
+import { emptyGcode, type Layer, type ParsedGcode, type SegmentProperty } from '../parsing/parser'
 import type { PrintExclusions } from '../exclusions'
 import type { PrintTimeline, TimelineSpot } from '../timeline/print-timeline'
 
@@ -108,11 +109,8 @@ export class GcodeModel {
   /** Group holding the travel lines */
   private readonly travelGroup = new THREE.Group()
 
-  /** Layers the model was last built from */
-  private layers: Layer[] = []
-
-  /** Lowercased feature type comments of the gcode the model was last built from */
-  private featureTypeComments: string[] = []
+  /** Gcode the model was last built from */
+  private gcode: ParsedGcode = emptyGcode()
 
   /** Vertex colors of each layer the model was last built from */
   private layerColors: Uint8ClampedArray[] = []
@@ -211,19 +209,34 @@ export class GcodeModel {
 
   /* ---- Object building ---- */
 
-  /** Colors the segments are drawn with, resolved from the current settings */
-  private get featureTypeColors (): ResolvedFeatureTypeColors {
-    return resolveFeatureTypeColors(this.featureTypeComments, this.settings.featureTypeColorRules, this.settings.featureTypeDefaultColor)
+  /** How the segments take their color, resolved from the current settings */
+  private get segmentColoring (): SegmentColoring {
+    const mode: ColorMode = COLOR_MODES[this.settings.colorMode]
+    const layerSeconds = (layerNumber: number): number =>
+      this.timeline.estimatedSecondsAtLayer(layerNumber + 1) - this.timeline.estimatedSecondsAtLayer(layerNumber)
+    const context = colorModeContext(this.gcode, layerSeconds)
+    const propertyOf = (layer: Layer, layerNumber: number): SegmentProperty => mode.propertyOf(layer, layerNumber, context)
+    let colorAt: (value: number) => RgbColor
+
+    if (this.settings.colorMode === 'featureType') {
+      // Feature types pick a color rule
+      const colors = resolveFeatureTypeColors(this.gcode.featureTypeComments, this.settings.featureTypeColorRules, this.settings.featureTypeDefaultColor)
+      colorAt = (featureTypeId) => featureTypeId < 0 ? colors.defaultColor : colors.colors[featureTypeId]
+    } else {
+      // Every other property falls somewhere in a range of values
+      const range = propertyRange(this.gcode.layers, propertyOf)
+      colorAt = (value) => rangeColorAt(value, range, mode.logarithmic)
+    }
+
+    return { mode, propertyOf, colorAt }
   }
 
   /**
    * (Re)builds the model's line objects from parsed layers
-   * @param layers - Parsed gcode layers
-   * @param featureTypeComments - Lowercased feature type comments the gcode states, by feature type id
+   * @param gcode - Parsed gcode to draw
    */
-  build (layers: Layer[], featureTypeComments: string[]): void {
-    this.layers = layers
-    this.featureTypeComments = featureTypeComments
+  build (gcode: ParsedGcode): void {
+    this.gcode = gcode
     for (const child of this.linesGroup.children) {
       if (isLayerObject(child)) child.geometry.dispose()
     }
@@ -237,9 +250,9 @@ export class GcodeModel {
 
     this.updateLineWidth()
 
-    const featureTypeColors = this.featureTypeColors
+    const coloring = this.segmentColoring
     for (const { layerNumber, globalBase } of this.timeline.drawnLayers) {
-      this.addLayerLines(layers[layerNumber - 1], layerNumber, globalBase, featureTypeColors)
+      this.addLayerLines(gcode.layers[layerNumber - 1], layerNumber, globalBase, coloring)
     }
 
     this.rebuildTravelLines()
@@ -249,14 +262,15 @@ export class GcodeModel {
 
   /** Rebuilds the model from the last given layers, e.g. after a settings change */
   rebuild (): void {
-    this.build(this.layers, this.featureTypeComments)
+    this.build(this.gcode)
   }
 
   /** Applies the current colors to the model's lines */
   recolor (): void {
-    const featureTypeColors = this.featureTypeColors
+    const coloring = this.segmentColoring
     for (const { layerNumber } of this.timeline.drawnLayers) {
-      fillLayerVertexColors(this.layers[layerNumber - 1], layerNumber, featureTypeColors, this.layerColors[layerNumber - 1])
+      const layer = this.gcode.layers[layerNumber - 1]
+      fillLayerVertexColors(layer, layerNumber, coloring.propertyOf(layer, layerNumber), coloring.colorAt, this.layerColors[layerNumber - 1])
     }
 
     this.linesGroup.traverse((child) => {
@@ -320,14 +334,14 @@ export class GcodeModel {
    * @param layer - Parsed layer
    * @param layerNumber - 1-based layer number
    * @param globalBase - Global segment index the layer starts at
-   * @param featureTypeColors - Colors to paint the segments with
+   * @param coloring - How the segments take their color
    */
-  private addLayerLines (layer: Layer, layerNumber: number, globalBase: number, featureTypeColors: ResolvedFeatureTypeColors): void {
+  private addLayerLines (layer: Layer, layerNumber: number, globalBase: number, coloring: SegmentColoring): void {
     // Skip empty layers
     if (layer.vertices.length <= 2) return
 
     const colors = new Uint8ClampedArray(layer.vertices.length)
-    fillLayerVertexColors(layer, layerNumber, featureTypeColors, colors)
+    fillLayerVertexColors(layer, layerNumber, coloring.propertyOf(layer, layerNumber), coloring.colorAt, colors)
     this.layerColors[layerNumber - 1] = colors
 
     // Layers untouched by exclusions go in whole
@@ -426,7 +440,7 @@ export class GcodeModel {
     this.travelMaterial.color.set(this.settings.travelColor)
 
     for (const { layerNumber, globalBase } of this.timeline.drawnLayers) {
-      this.addTravelLines(this.layers[layerNumber - 1], layerNumber, globalBase)
+      this.addTravelLines(this.gcode.layers[layerNumber - 1], layerNumber, globalBase)
     }
   }
 

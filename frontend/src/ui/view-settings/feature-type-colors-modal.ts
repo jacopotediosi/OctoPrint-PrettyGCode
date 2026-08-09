@@ -1,4 +1,4 @@
-import { type FeatureTypeColorPreset, type FeatureTypeColorRule, cloneFeatureTypeColorRules } from '../../gcode/feature-type-colors'
+import { type FeatureTypeColorPreset, type FeatureTypeColorRule, cloneFeatureTypeColorRules } from '../../gcode/colors/feature-type-colors'
 import type { Settings } from '../../settings'
 
 /** Handles of the feature type colors modal */

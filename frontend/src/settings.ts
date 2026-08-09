@@ -1,7 +1,8 @@
 import type { NavigationModeKey, ProjectionMode } from './viewer/navigation'
 import type { NozzleStyle } from './viewer/nozzle'
 import type { TravelScope } from './gcode/rendering/gcode-model'
-import type { FeatureTypeColorRule } from './gcode/feature-type-colors'
+import type { FeatureTypeColorRule } from './gcode/colors/feature-type-colors'
+import type { ColorModeId } from './gcode/colors/segment-colors'
 
 /** localStorage key holding the settings */
 const STORAGE_KEY = 'pg-settings'
@@ -67,6 +68,8 @@ export class Settings {
 
   /* ---- Gcode model ---- */
 
+  /** What the segments take their color from */
+  declare colorMode: ColorModeId
   /** Whether to draw the lines with their real thickness */
   declare thickLines: boolean
   /** Shading intensity of the topmost displayed layer, in percent */
@@ -113,7 +116,8 @@ export class Settings {
     showDashboard: false,
     dashboardHeight: 0,
     showWebcam: false,
-    webcamHeight: 0
+    webcamHeight: 0,
+    colorMode: 'featureType'
   } satisfies Partial<SettingValues>
 
   /** Default value of every setting */
