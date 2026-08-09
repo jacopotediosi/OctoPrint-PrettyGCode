@@ -31,6 +31,8 @@ export interface Layer {
   feedrates: SegmentProperty
   fanSpeeds: SegmentProperty
   temperatures: SegmentProperty
+  widths: SegmentProperty
+  heights: SegmentProperty
   travelVertices: Float32Array
   travelSegmentIndices: Uint32Array
 }
@@ -53,6 +55,10 @@ export interface SegmentPropertyValues {
   fanSpeed: number
   /** Nozzle temperature in degrees Celsius */
   temperature: number
+  /** Width of the extruded line in mm, 0 when the slicer states none */
+  width: number
+  /** Height of the extruded line in mm */
+  height: number
 }
 
 /** Box the parsed gcode fits in */
@@ -125,6 +131,12 @@ const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
  */
 const FEATURE_TYPE_COMMENT = /;\s*(type:|feature[ :])/i
 
+/** Matches the extrusion width the slicer states, e.g. ";WIDTH:0.42" or "; LINE_WIDTH: 0.42" */
+const WIDTH_COMMENT = /;\s*(?:line_)?width:\s*([\d.]+)/i
+
+/** Matches the extrusion height the slicer states, e.g. ";HEIGHT:0.2" or "; LAYER_HEIGHT: 0.2" */
+const HEIGHT_COMMENT = /;\s*(?:layer_)?height:\s*([\d.]+)/i
+
 /** Prefix, lowercased, of the comment stating the print time elapsed so far */
 const TIME_ELAPSED_COMMENT = ';time_elapsed:'
 
@@ -174,6 +186,8 @@ class OpenLayer {
   private readonly feedrates = new OpenSegmentProperty()
   private readonly fanSpeeds = new OpenSegmentProperty()
   private readonly temperatures = new OpenSegmentProperty()
+  private readonly widths = new OpenSegmentProperty()
+  private readonly heights = new OpenSegmentProperty()
   private capacity = OpenLayer.INITIAL_BUFFERS_CAPACITY
   private segments = 0
 
@@ -217,6 +231,8 @@ class OpenLayer {
     this.feedrates.add(this.segments, propertyValues.feedrate)
     this.fanSpeeds.add(this.segments, propertyValues.fanSpeed)
     this.temperatures.add(this.segments, propertyValues.temperature)
+    this.widths.add(this.segments, propertyValues.width)
+    this.heights.add(this.segments, propertyValues.height)
 
     this.segments++
   }
@@ -285,6 +301,8 @@ class OpenLayer {
       feedrates: this.feedrates.finish(),
       fanSpeeds: this.fanSpeeds.finish(),
       temperatures: this.temperatures.finish(),
+      widths: this.widths.finish(),
+      heights: this.heights.finish(),
       travelVertices: this.travelVertices.slice(0, this.travels * 6),
       travelSegmentIndices: this.travelSegmentIndices.slice(0, this.travels)
     }
@@ -364,9 +382,13 @@ export class GcodeParser {
   /* ---- Segment properties ---- */
 
   /** Value each property takes on the segments being parsed */
-  private readonly currentPropertyValues: SegmentPropertyValues = { featureTypeId: -1, feedrate: 0, fanSpeed: 0, temperature: 0 }
+  private readonly currentPropertyValues: SegmentPropertyValues = { featureTypeId: -1, feedrate: 0, fanSpeed: 0, temperature: 0, width: 0, height: 0 }
   /** Whether a feature type comment of the printed model has been seen yet */
   private featureTypeCommentSeen = false
+  /** Extrusion height the slicer states, null until it states one */
+  private slicerHeight: number | null = null
+  /** Height of the layer being filled, taken from its step in Z */
+  private layerHeight = 0
 
   /* ---- Object markers ---- */
 
@@ -438,6 +460,12 @@ export class GcodeParser {
           this.bounds = emptyBounds()
         }
       }
+
+      // Extrusion width and height the slicer states
+      const widthMatch = commentLower.match(WIDTH_COMMENT)
+      if (widthMatch) this.currentPropertyValues.width = parseFloat(widthMatch[1])
+      const heightMatch = commentLower.match(HEIGHT_COMMENT)
+      if (heightMatch) this.slicerHeight = parseFloat(heightMatch[1])
 
       // First nozzle diameter the slicer states wins
       if (this.slicerNozzleDiameter == null) {
@@ -663,6 +691,11 @@ export class GcodeParser {
   private changeLayer (move: MachineState): OpenLayer {
     this.sealLayer()
     this.layersOpened++
+
+    // Keep the height of the layers before when an object printed after another starts back at the bottom
+    const height = move.z - (this.layers.length ? this.layers[this.layers.length - 1].z : 0)
+    if (height > 0) this.layerHeight = height
+
     this.currentLayer = new OpenLayer(move.z)
     return this.currentLayer
   }
@@ -790,6 +823,7 @@ export class GcodeParser {
 
     // Add the segment to the layer
     this.currentPropertyValues.feedrate = feedrate
+    this.currentPropertyValues.height = this.slicerHeight ?? this.layerHeight
     layer.addSegment(sceneStart, sceneEnd, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId, this.currentPropertyValues)
   }
 }

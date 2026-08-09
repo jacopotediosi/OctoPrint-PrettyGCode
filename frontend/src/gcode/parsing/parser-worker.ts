@@ -66,7 +66,7 @@ self.onmessage = async ({ data }) => {
     for (const layer of gcode.layers) {
       buffers.push(layer.vertices.buffer, layer.filePositions.buffer, layer.durations.buffer, layer.travelVertices.buffer, layer.travelSegmentIndices.buffer)
       if (layer.objectIds) buffers.push(layer.objectIds.buffer)
-      for (const property of [layer.featureTypeIds, layer.feedrates, layer.fanSpeeds, layer.temperatures]) {
+      for (const property of [layer.featureTypeIds, layer.feedrates, layer.fanSpeeds, layer.temperatures, layer.widths, layer.heights]) {
         buffers.push(property.segmentIndices.buffer, property.values.buffer)
       }
     }
