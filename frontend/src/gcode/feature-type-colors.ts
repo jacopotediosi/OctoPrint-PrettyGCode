@@ -103,7 +103,8 @@ export function resolveFeatureTypeColors (featureTypeComments: string[], colorRu
  * @param colors - Vertex colors as flat RGB triplets, filled in place
  */
 export function fillLayerVertexColors (layer: Layer, layerNumber: number, featureTypeColors: ResolvedFeatureTypeColors, colors: Uint8ClampedArray): void {
-  const { vertices, featureTypeIds, featureTypeSegmentIndices } = layer
+  const { vertices } = layer
+  const { segmentIndices: featureTypeSegmentIndices, values: featureTypeIds } = layer.featureTypeIds
   const segments = vertices.length / 6
   const layerBrightnessGain = layerNumber % 2 === 0 ? 0 : ODD_LAYER_BRIGHTNESS_GAIN
 

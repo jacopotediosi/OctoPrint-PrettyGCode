@@ -27,10 +27,32 @@ export interface Layer {
   filePositions: Uint32Array
   durations: Float32Array
   objectIds: Int32Array | null
-  featureTypeIds: Int32Array
-  featureTypeSegmentIndices: Uint32Array
+  featureTypeIds: SegmentProperty
+  feedrates: SegmentProperty
+  fanSpeeds: SegmentProperty
+  temperatures: SegmentProperty
   travelVertices: Float32Array
   travelSegmentIndices: Uint32Array
+}
+
+/** A property of the segments, recorded only where it changes */
+export interface SegmentProperty {
+  /** Segment of the layer each property value starts at */
+  segmentIndices: Uint32Array
+  /** Value the property takes from that segment on */
+  values: Float32Array
+}
+
+/** The value each property takes on one segment */
+export interface SegmentPropertyValues {
+  /** Id of the feature type the segment belongs to, -1 for none */
+  featureTypeId: number
+  /** Speed of the segment in mm/s */
+  feedrate: number
+  /** Speed of the print cooling fan in percent */
+  fanSpeed: number
+  /** Nozzle temperature in degrees Celsius */
+  temperature: number
 }
 
 /** Box the parsed gcode fits in */
@@ -108,6 +130,32 @@ const TIME_ELAPSED_COMMENT = ';time_elapsed:'
 
 /* ---- Layers ---- */
 
+/** A property of the segments being filled, kept only where it changes */
+class OpenSegmentProperty {
+  private readonly segmentIndices: number[] = []
+  private readonly values: number[] = []
+
+  /**
+   * Records the value the property takes on a segment
+   * @param segment - Segment index within the layer
+   * @param value - Value the property takes there
+   */
+  add (segment: number, value: number): void {
+    if (this.values[this.values.length - 1] === value) return
+
+    this.segmentIndices.push(segment)
+    this.values.push(value)
+  }
+
+  /**
+   * Builds the property from the values recorded so far
+   * @returns The built property
+   */
+  finish (): SegmentProperty {
+    return { segmentIndices: Uint32Array.from(this.segmentIndices), values: Float32Array.from(this.values) }
+  }
+}
+
 /** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
 const LAYER_EPSILON_MM = 0.04
 
@@ -122,8 +170,10 @@ class OpenLayer {
   private filePositions = new Uint32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY)
   private durations = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 2)
   private objectIds: Int32Array | null = null
-  private readonly featureTypeIds: number[] = []
-  private readonly featureTypeSegmentIndices: number[] = []
+  private readonly featureTypeIds = new OpenSegmentProperty()
+  private readonly feedrates = new OpenSegmentProperty()
+  private readonly fanSpeeds = new OpenSegmentProperty()
+  private readonly temperatures = new OpenSegmentProperty()
   private capacity = OpenLayer.INITIAL_BUFFERS_CAPACITY
   private segments = 0
 
@@ -142,9 +192,9 @@ class OpenLayer {
    * @param travelSeconds - Estimated travel time leading to the segment
    * @param extrusionSeconds - Estimated time extruding the segment
    * @param objectId - Id of the object the segment belongs to, -1 for none
-   * @param featureTypeId - Id of the feature type the segment belongs to, -1 for none
+   * @param propertyValues - Value each property takes on the segment
    */
-  addSegment (start: ScenePoint, end: ScenePoint, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number, featureTypeId: number): void {
+  addSegment (start: ScenePoint, end: ScenePoint, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number, propertyValues: SegmentPropertyValues): void {
     if (this.segments === this.capacity) this.growSegments()
 
     const vertex = this.segments * 6
@@ -163,11 +213,10 @@ class OpenLayer {
     if (objectId >= 0 && !this.objectIds) this.objectIds = new Int32Array(this.capacity).fill(-1)
     if (this.objectIds) this.objectIds[this.segments] = objectId
 
-    // Record the segment each feature type starts at
-    if (this.featureTypeIds[this.featureTypeIds.length - 1] !== featureTypeId) {
-      this.featureTypeIds.push(featureTypeId)
-      this.featureTypeSegmentIndices.push(this.segments)
-    }
+    this.featureTypeIds.add(this.segments, propertyValues.featureTypeId)
+    this.feedrates.add(this.segments, propertyValues.feedrate)
+    this.fanSpeeds.add(this.segments, propertyValues.fanSpeed)
+    this.temperatures.add(this.segments, propertyValues.temperature)
 
     this.segments++
   }
@@ -232,8 +281,10 @@ class OpenLayer {
       filePositions: this.filePositions.slice(0, this.segments),
       durations: this.durations.slice(0, this.segments * 2),
       objectIds: this.objectIds ? this.objectIds.slice(0, this.segments) : null,
-      featureTypeIds: Int32Array.from(this.featureTypeIds),
-      featureTypeSegmentIndices: Uint32Array.from(this.featureTypeSegmentIndices),
+      featureTypeIds: this.featureTypeIds.finish(),
+      feedrates: this.feedrates.finish(),
+      fanSpeeds: this.fanSpeeds.finish(),
+      temperatures: this.temperatures.finish(),
       travelVertices: this.travelVertices.slice(0, this.travels * 6),
       travelSegmentIndices: this.travelSegmentIndices.slice(0, this.travels)
     }
@@ -308,10 +359,10 @@ export class GcodeParser {
   /** Travels made since the last segment */
   private pendingTravels = 0
 
-  /* ---- Feature types ---- */
+  /* ---- Segment properties ---- */
 
-  /** Id of the feature type the parsed segments belong to, -1 for none */
-  private currentFeatureTypeId = -1
+  /** Value each property takes on the segments being parsed */
+  private readonly currentPropertyValues: SegmentPropertyValues = { featureTypeId: -1, feedrate: 0, fanSpeed: 0, temperature: 0 }
   /** Whether a feature type comment of the printed model has been seen yet */
   private featureTypeCommentSeen = false
 
@@ -376,7 +427,7 @@ export class GcodeParser {
       // Take the feature type from feature-type comments only
       if (FEATURE_TYPE_COMMENT.test(commentLower)) {
         const id = this.featureTypeComments.indexOf(commentLower)
-        this.currentFeatureTypeId = id >= 0 ? id : this.featureTypeComments.push(commentLower) - 1
+        this.currentPropertyValues.featureTypeId = id >= 0 ? id : this.featureTypeComments.push(commentLower) - 1
 
         // First feature type seen, not counting the slicers' own start gcode
         if (!this.featureTypeCommentSeen && !commentLower.includes('custom')) {
@@ -432,9 +483,8 @@ export class GcodeParser {
     }
 
     switch (cmd) {
-      // Linear move
-      case 'G0':
-      case 'G1': {
+      case 'G0': // Rapid move
+      case 'G1': { // Linear move
         const move: MachineState = { x: coord('x'), y: coord('y'), z: coord('z'), e: coord('e'), f: coord('f') }
         const extruding = this.extrusionDelta(args, move) > 0
 
@@ -449,9 +499,8 @@ export class GcodeParser {
         this.machineState = move
         break
       }
-      // Arc move (G2 clockwise, G3 counter-clockwise)
-      case 'G2':
-      case 'G3': {
+      case 'G2': // Clockwise arc move
+      case 'G3': { // Counter-clockwise arc move
         const move: MachineState = {
           x: coord('x'),
           y: coord('y'),
@@ -496,12 +545,11 @@ export class GcodeParser {
         this.machineState = segments[segments.length - 1]
         break
       }
-      // Dwell: the pause adds to the time of the travel toward the next segment
-      case 'G4':
+      case 'G4': { // Dwell: the pause adds to the time of the travel toward the next segment
         this.pendingTravelSeconds += (args.s || 0) + (args.p || 0) / 1000
         break
-      // Home: the named axes (all of them if none is given) end up at the origin
-      case 'G28': {
+      }
+      case 'G28': { // Home: the named axes (all of them if none is given) end up at the origin
         const all = args.x === undefined && args.y === undefined && args.z === undefined
         this.machineState = {
           ...this.machineState,
@@ -511,30 +559,43 @@ export class GcodeParser {
         }
         break
       }
-      // Absolute positioning
-      case 'G90':
+      case 'G90': { // Absolute positioning
         this.axesRelative = false
         if (this.g90InfluencesExtruder) this.extrusionRelative = false
         break
-        // Relative positioning
-      case 'G91':
+      }
+      case 'G91': { // Relative positioning
         this.axesRelative = true
         if (this.g90InfluencesExtruder) this.extrusionRelative = true
         break
-        // Remaining print time the slicer states
-      case 'M73':
+      }
+      case 'M73': { // Remaining print time the slicer states
         if (args.r !== undefined) this.slicerTimeMarksCollector.addRemaining(this.filePosition, args.r * 60)
         break
-        // Absolute extrusion
-      case 'M82':
+      }
+      case 'M82': { // Absolute extrusion
         this.extrusionRelative = false
         break
-        // Relative extrusion
-      case 'M83':
+      }
+      case 'M83': { // Relative extrusion
         this.extrusionRelative = true
         break
-        // Set position without moving
-      case 'G92':
+      }
+      case 'M104': // Set the nozzle temperature
+      case 'M109': { // Set the nozzle temperature and wait for it to be reached
+        this.currentPropertyValues.temperature = args.s ?? args.r ?? this.currentPropertyValues.temperature
+        break
+      }
+      case 'M106': { // Set the print cooling fan speed, which the printers scale from 0 to 255
+        // Bambu Lab printers number the print cooling fan as P1 and their other fans from P2 up
+        if (args.p === undefined || args.p === 1) this.currentPropertyValues.fanSpeed = (args.s ?? 255) * 100 / 255
+        break
+      }
+      case 'M107': { // Stop the print cooling fan
+        this.currentPropertyValues.fanSpeed = 0
+        break
+      }
+      case 'G92': { // Set position without moving
         this.machineState = {
           ...this.machineState,
           x: args.x ?? this.machineState.x,
@@ -543,6 +604,7 @@ export class GcodeParser {
           e: args.e ?? this.machineState.e
         }
         break
+      }
     }
   }
 
@@ -688,7 +750,8 @@ export class GcodeParser {
     const distance = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z)
     const length = distance || Math.abs(end.e - start.e) || 0
     const travelSeconds = this.pendingTravelSeconds
-    const extrusionSeconds = length / feedrateMmPerSecond(end.f)
+    const feedrate = feedrateMmPerSecond(end.f)
+    const extrusionSeconds = length / feedrate
     this.pendingTravelSeconds = 0
 
     // Attach the travels leading here to the layer
@@ -709,6 +772,7 @@ export class GcodeParser {
     }
 
     // Add the segment to the layer
-    layer.addSegment(sceneStart, sceneEnd, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId, this.currentFeatureTypeId)
+    this.currentPropertyValues.feedrate = feedrate
+    layer.addSegment(sceneStart, sceneEnd, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId, this.currentPropertyValues)
   }
 }
