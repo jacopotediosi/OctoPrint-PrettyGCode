@@ -335,6 +335,8 @@ export class GcodeParser {
   private axesRelative = false
   /** Whether extrusion is relative */
   private extrusionRelative = false
+  /** Millimeters a gcode length unit stands for (a gcode can switch between inches and millimeters) */
+  private mmPerUnit = 1
   /** Whether G90/G91 also switch the extrusion mode, not only the axes */
   private readonly g90InfluencesExtruder: boolean
   /** Transform of the belt printer the gcode is meant for, null for non-belt printers */
@@ -474,6 +476,13 @@ export class GcodeParser {
       args[word[0].toLowerCase()] = Number.isNaN(number) ? parseFloat(text) : number
     }
 
+    // Bring the lengths to millimeters
+    if (this.mmPerUnit !== 1) {
+      for (const word of ['x', 'y', 'z', 'e', 'f', 'i', 'j', 'k', 'r']) {
+        if (args[word] !== undefined) args[word] *= this.mmPerUnit
+      }
+    }
+
     // Axis value from args (absolute/relative aware), or the current one if omitted
     const coord = (key: keyof MachineState): number => {
       if (args[key] === undefined) return this.machineState[key]
@@ -547,6 +556,14 @@ export class GcodeParser {
       }
       case 'G4': { // Dwell: the pause adds to the time of the travel toward the next segment
         this.pendingTravelSeconds += (args.s || 0) + (args.p || 0) / 1000
+        break
+      }
+      case 'G20': { // Lengths given in inches
+        this.mmPerUnit = 25.4
+        break
+      }
+      case 'G21': { // Lengths given in millimeters
+        this.mmPerUnit = 1
         break
       }
       case 'G28': { // Home: the named axes (all of them if none is given) end up at the origin
