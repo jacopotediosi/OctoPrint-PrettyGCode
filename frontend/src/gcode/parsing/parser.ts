@@ -561,7 +561,9 @@ export class GcodeParser {
       case 'G0': // Rapid move
       case 'G1': { // Linear move
         const move: MachineState = { x: coord('x'), y: coord('y'), z: coord('z'), e: coord('e'), f: coord('f') }
-        const extruding = this.extrusionDelta(args, move) > 0
+
+        // Filament pushed without moving in XY unretracts or purges, it lays no line down
+        const extruding = this.extrusionDelta(args, move) > 0 && (move.x !== this.machineState.x || move.y !== this.machineState.y)
 
         // New layer when extrusion moves to a different Z
         if (extruding && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
