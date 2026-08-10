@@ -96,6 +96,8 @@ export class Settings {
   declare showState: boolean
   /** Whether to show the files top window */
   declare showFiles: boolean
+  /** Whether to show the legend top window */
+  declare showLegend: boolean
 
   /* ---- Bottom windows ---- */
 
@@ -113,6 +115,7 @@ export class Settings {
   private static readonly BROWSER_ONLY_DEFAULTS = {
     showState: true,
     showFiles: false,
+    showLegend: false,
     showDashboard: false,
     dashboardHeight: 0,
     showWebcam: false,

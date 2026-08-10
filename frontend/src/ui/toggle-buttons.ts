@@ -1,7 +1,10 @@
 import { MAXIMIZED_CLASS, PAGE_CONTAINER, type PrettyGCodeApp } from '../app'
 
 /** Settings keys of the toggleable windows */
-type WindowKey = 'showState' | 'showFiles' | 'showWebcam' | 'showDashboard'
+type WindowKey = 'showState' | 'showFiles' | 'showLegend' | 'showWebcam' | 'showDashboard'
+
+/** Settings keys of the top left windows */
+const TOP_LEFT_WINDOWS: readonly WindowKey[] = ['showState', 'showFiles', 'showLegend']
 
 /** Last known maximized state */
 let wasMaximized = false
@@ -14,19 +17,25 @@ export function initToggleButtons (app: PrettyGCodeApp): void {
   /**
    * Toggles a window open or closed
    * @param key - Settings key of the window to toggle
-   * @param closes - Settings key of the window to close when the toggled one opens
    */
-  const toggleWindow = (key: WindowKey, closes?: WindowKey): void => {
+  const toggleWindow = (key: WindowKey): void => {
     app.settings[key] = !app.settings[key]
-    if (app.settings[key] && closes) app.settings[closes] = false
+
+    // Opening a top left window closes the other ones
+    const closed = app.settings[key] && TOP_LEFT_WINDOWS.includes(key)
+      ? TOP_LEFT_WINDOWS.filter((window) => window !== key)
+      : []
+    for (const window of closed) app.settings[window] = false
+
     app.settings.save()
-    app.applySettings(closes ? [key, closes] : [key])
+    app.applySettings([key, ...closed])
   }
 
   /* ---- Top left buttons ---- */
 
-  $('.pg-toggle-state').on('click', () => toggleWindow('showState', 'showFiles'))
-  $('.pg-toggle-files').on('click', () => toggleWindow('showFiles', 'showState'))
+  $('.pg-toggle-state').on('click', () => toggleWindow('showState'))
+  $('.pg-toggle-files').on('click', () => toggleWindow('showFiles'))
+  $('.pg-toggle-legend').on('click', () => toggleWindow('showLegend'))
 
   /* ---- Top right buttons ---- */
 

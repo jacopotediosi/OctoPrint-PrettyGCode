@@ -1,5 +1,6 @@
 import { initWebcamOverlay } from './webcam'
 import { initDashboardOverlay } from './dashboard'
+import { clamp } from '../../utils/numbers'
 import type { Settings } from '../../settings'
 
 /** A resizable overlay sized through its height in px */
@@ -33,7 +34,7 @@ export function defaultOverlayHeight (): number {
  * @returns The clamped height in px
  */
 export function clampOverlayHeight (height: number): number {
-  return Math.min(window.innerHeight * MAX_OVERLAY_HEIGHT_FRACTION, Math.max(MIN_OVERLAY_HEIGHT, height))
+  return clamp(height, MIN_OVERLAY_HEIGHT, window.innerHeight * MAX_OVERLAY_HEIGHT_FRACTION)
 }
 
 /**

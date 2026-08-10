@@ -52,8 +52,9 @@ async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode>
     bounds: parser.bounds,
     slicerNozzleDiameter: parser.slicerNozzleDiameter,
     slicerFilamentDiameter: parser.slicerFilamentDiameter,
+    slicerFilamentDensity: parser.slicerFilamentDensity,
     slicerTimeMarks: parser.slicerTimeMarks,
-    featureTypeComments: parser.featureTypeComments,
+    featureTypes: parser.featureTypes,
     objectNames: parser.objectNames
   } satisfies ParsedGcode
 }

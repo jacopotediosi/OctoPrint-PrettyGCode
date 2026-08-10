@@ -1,5 +1,6 @@
 import type { PrettyGCodeApp } from '../../app'
 import { bindStepButton } from './slider-step-button'
+import { clamp } from '../../utils/numbers'
 
 /** Revealed segments the slider is showing */
 let revealedSegments = -1
@@ -19,7 +20,7 @@ export function initSegmentSlider (app: PrettyGCodeApp): void {
    * @param delta - Segments to move by, negative to go back
    */
   const stepSegment = (delta: number): void => {
-    const segment = Math.min(Math.max(app.currentSegmentNumber + delta, 0), app.currentLayerSegmentCount)
+    const segment = clamp(app.currentSegmentNumber + delta, 0, app.currentLayerSegmentCount)
     app.setCurrentSegmentNumber(segment)
   }
 

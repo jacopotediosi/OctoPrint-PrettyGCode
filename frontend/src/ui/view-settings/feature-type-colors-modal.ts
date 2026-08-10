@@ -1,4 +1,5 @@
 import { type FeatureTypeColorPreset, type FeatureTypeColorRule, cloneFeatureTypeColorRules } from '../../gcode/colors/feature-type-colors'
+import { htmlStringToElement } from '../../utils/html'
 import type { Settings } from '../../settings'
 
 /** Handles of the feature type colors modal */
@@ -7,17 +8,6 @@ export interface FeatureTypeColorsModal {
   open: () => void
   /** Resets the colors to their defaults */
   resetToDefault: () => void
-}
-
-/**
- * Turns an HTML string into an element
- * @param markup - HTML with a single root element
- * @returns The element the markup describes
- */
-function htmlStringToElement (markup: string): HTMLElement {
-  const template = document.createElement('template')
-  template.innerHTML = markup.trim()
-  return template.content.firstElementChild as HTMLElement
 }
 
 /** Markup of the feature type colors modal */

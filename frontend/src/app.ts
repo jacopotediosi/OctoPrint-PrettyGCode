@@ -14,10 +14,12 @@ import { updateWebcamOverlay } from './ui/overlays/webcam'
 import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue, applyLayerSliderVisibility } from './ui/sliders/layer-slider'
 import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue, applySegmentSliderVisibility } from './ui/sliders/segment-slider'
 import { initToggleButtons } from './ui/toggle-buttons'
+import { initLegend, updateLegend, applyLegendVisibility } from './ui/legend'
 import { setStatusBarTemperatures, applyStatusBarVisibility } from './ui/status-bar'
 import { showLoadingScreen, hideLoadingScreen } from './ui/notices/loading-screen'
 import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/notices/large-file-confirmation'
 import { emptyGcode, type ParsedGcode } from './gcode/parsing/parser'
+import { clamp } from './utils/numbers'
 import type { BedVolume } from './viewer/bed'
 import type { PrintViewUpdate } from './viewer/viewer'
 
@@ -157,6 +159,7 @@ export class PrettyGCodeApp {
         initSegmentSlider(this)
         initOverlayWindows(this.settings)
         initToggleButtons(this)
+        initLegend(this)
 
         // Apply the loaded settings
         this.applySettings(this.settings.keys())
@@ -255,6 +258,20 @@ export class PrettyGCodeApp {
 
   /* ---- Gcode loading ---- */
 
+  /** Parsed gcode of the currently loaded job */
+  get gcode (): ParsedGcode {
+    return this.parsedGcode ?? emptyGcode()
+  }
+
+  /**
+   * Gets how long a layer takes to print
+   * @param layerNumber - 1-based layer number
+   * @returns The estimated seconds
+   */
+  layerSeconds (layerNumber: number): number {
+    return this.printTimeline.layerSeconds(layerNumber)
+  }
+
   /** Layer count of the loaded gcode */
   get layerCount (): number {
     return this.parsedGcode?.layers.length ?? 0
@@ -312,6 +329,7 @@ export class PrettyGCodeApp {
 
       // Apply the gcode bounds
       this.viewer.applyGcodeBounds(this.parsedGcode.bounds)
+      updateLegend(this)
 
       updateLayerSliderMax(this)
       if (preserveView) {
@@ -447,7 +465,7 @@ export class PrettyGCodeApp {
    * @param segmentNumber - Segments of the current layer to reveal
    */
   setCurrentSegmentNumber (segmentNumber: number): void {
-    this._currentSegmentNumber = Math.min(Math.max(segmentNumber, 0), this.currentLayerSegmentCount)
+    this._currentSegmentNumber = clamp(segmentNumber, 0, this.currentLayerSegmentCount)
     setSegmentSliderValue(this, this._currentSegmentNumber)
   }
 
@@ -507,6 +525,7 @@ export class PrettyGCodeApp {
       this.gcodeModel.recolor()
       this.viewer.requestRender()
     }
+    if (anyOf('colorMode', 'featureTypeColorRules', 'featureTypeDefaultColor')) updateLegend(this)
 
     if (anyOf('darkMode')) {
       $('html').toggleClass('pg-dark', this.settings.darkMode)
@@ -545,6 +564,7 @@ export class PrettyGCodeApp {
         'showCameraControls',
         'showState',
         'showFiles',
+        'showLegend',
         'showDashboard',
         'dashboardHeight',
         'showWebcam',
@@ -573,6 +593,7 @@ export class PrettyGCodeApp {
 
     $('#state_wrapper').toggleClass('pg-hidden', !this.settings.showState)
     $('#files_wrapper').toggleClass('pg-hidden', !this.settings.showFiles)
+    applyLegendVisibility(this.settings.showLegend)
 
     updateDashboardOverlay(this.settings)
     updateWebcamOverlay(this.settings)

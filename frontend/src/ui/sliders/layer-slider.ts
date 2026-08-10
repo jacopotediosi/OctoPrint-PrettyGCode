@@ -1,44 +1,12 @@
 import type { PrettyGCodeApp } from '../../app'
 import { bindStepButton } from './slider-step-button'
+import { clamp } from '../../utils/numbers'
+import { secondsFromNowToClockText, secondsToDurationText } from '../../utils/time'
 
 /** Revealed layer the slider is showing */
 let revealedLayer = -1
 /** Highest layer the slider can reach */
 let maxLayer = -1
-
-/**
- * Spells out how long something takes, in the largest units it fills
- * @param seconds - Duration to spell out
- * @returns The duration as text
- */
-function secondsToDurationText (seconds: number): string {
-  if (seconds < 60) return `${Math.round(seconds)}s`
-
-  const minutes = Math.round(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  const days = Math.floor(hours / 24)
-
-  if (days) return `${days}d ${hours % 24}h`
-  if (hours) return `${hours}h ${minutes % 60}m`
-  return `${minutes}m`
-}
-
-/**
- * Reads the clock a number of seconds from now, on a 24 hour dial
- * @param seconds - Seconds from now
- * @returns The time as text, carrying the date when it falls on another day
- */
-function secondsFromNowToClockText (seconds: number): string {
-  const futureTime = new Date(Date.now() + seconds * 1000)
-  const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
-
-  if (futureTime.toDateString() !== new Date().toDateString()) {
-    options.day = '2-digit'
-    options.month = '2-digit'
-  }
-
-  return futureTime.toLocaleString([], options)
-}
 
 /**
  * Creates the layer slider
@@ -53,7 +21,7 @@ export function initLayerSlider (app: PrettyGCodeApp): void {
    * @param delta - Layers to move by, negative to go down
    */
   const stepLayer = (delta: number): void => {
-    const layer = Math.min(Math.max(app.currentLayerNumber + delta, 0), app.layerCount)
+    const layer = clamp(app.currentLayerNumber + delta, 0, app.layerCount)
     app.setCurrentLayerNumber(layer)
   }
 
@@ -78,7 +46,7 @@ export function initLayerSlider (app: PrettyGCodeApp): void {
 
       const { seconds, stabilized } = untilLayer
       const left = stabilized
-        ? `in ${secondsToDurationText(seconds)} (~${secondsFromNowToClockText(seconds)})`
+        ? `in ${secondsToDurationText(seconds, 'm')} (~${secondsFromNowToClockText(seconds)})`
         : `in ${formatFuzzyPrintTime(seconds)} (still stabilizing)`
 
       return [height, left].join('\n')

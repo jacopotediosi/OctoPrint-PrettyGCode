@@ -14,12 +14,22 @@ export interface ParsedGcode {
   slicerNozzleDiameter: number | null
   /** Filament diameter in mm the slicer states, null when it states none */
   slicerFilamentDiameter: number | null
+  /** Filament density in g/cm3 the slicer states, null when it states none */
+  slicerFilamentDensity: number | null
   /** Print times the slicer states along the file, if any */
   slicerTimeMarks: SlicerTimeMarks | null
-  /** Lowercased feature type comments the gcode states, by feature type id */
-  featureTypeComments: string[]
+  /** Feature types the gcode states, by feature type id */
+  featureTypes: FeatureType[]
   /** Names of the objects marked in the gcode, by object id */
   objectNames: string[]
+}
+
+/** A feature type the gcode states */
+export interface FeatureType {
+  /** Whole comment line stating it, lowercased */
+  comment: string
+  /** Name it carries in that comment, in the slicer's own writing */
+  label: string
 }
 
 /** One parsed layer and its properties */
@@ -87,7 +97,7 @@ export const emptyBounds = (): GcodeBounds => ({ minX: Infinity, minY: Infinity,
  * @returns The empty gcode
  */
 export const emptyGcode = (): ParsedGcode => ({
-  layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, slicerFilamentDiameter: null, slicerTimeMarks: null, featureTypeComments: [], objectNames: []
+  layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, slicerFilamentDiameter: null, slicerFilamentDensity: null, slicerTimeMarks: null, featureTypes: [], objectNames: []
 })
 
 /** A point of the parsed gcode, in scene coordinates */
@@ -137,15 +147,18 @@ const lineByteLength = (line: string): number => NON_ASCII.test(line) ? textEnco
 const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
 
 /**
- * Matches the marker opening a slicer's feature-type comment
+ * Matches a slicer's feature-type comment, capturing the label that follows the marker
  * - ;TYPE:<label>      PrusaSlicer/SuperSlicer/Cura, OrcaSlicer (non-Bambu-Lab printers)
  * - ; FEATURE: <label> Bambu Studio, OrcaSlicer (Bambu Lab printers)
  * - ; feature <label>  Simplify3D
  */
-const FEATURE_TYPE_COMMENT = /;\s*(type:|feature[ :])/i
+const FEATURE_TYPE_COMMENT = /;\s*(?:type:|feature[ :])(.*)/i
 
 /** Matches the filament diameter stated by the slicer, e.g. "; filament_diameter = 1.75" */
 const FILAMENT_DIAMETER_COMMENT = /filament[_ ]?diameter\s*[:=,]\s*([\d.]+)/i
+
+/** Matches the filament density stated by the slicer, e.g. "; filament_density = 1.24" */
+const FILAMENT_DENSITY_COMMENT = /filament[_ ]?density\s*[:=,]\s*([\d.]+)/i
 
 /** Matches the extrusion width the slicer states, e.g. ";WIDTH:0.42" or "; LINE_WIDTH: 0.42" */
 const WIDTH_COMMENT = /;\s*(?:line_)?width:\s*([\d.]+)/i
@@ -359,10 +372,12 @@ export class GcodeParser {
   slicerNozzleDiameter: number | null = null
   /** Filament diameter in mm the slicer states, null when it states none */
   slicerFilamentDiameter: number | null = null
+  /** Filament density in g/cm3 the slicer states, null when it states none */
+  slicerFilamentDensity: number | null = null
   /** Print times the slicer states along the file, if any */
   slicerTimeMarks: SlicerTimeMarks | null = null
-  /** Lowercased feature type comments the gcode states, by feature type id */
-  readonly featureTypeComments: string[] = []
+  /** Feature types the gcode states, by feature type id */
+  readonly featureTypes: FeatureType[] = []
   /** Names of the objects marked in the gcode, by object id */
   readonly objectNames: string[] = []
 
@@ -481,9 +496,12 @@ export class GcodeParser {
       const commentLower = rawLine.toLowerCase()
 
       // Take the feature type from feature-type comments only
-      if (FEATURE_TYPE_COMMENT.test(commentLower)) {
-        const id = this.featureTypeComments.indexOf(commentLower)
-        this.currentPropertyValues.featureTypeId = id >= 0 ? id : this.featureTypeComments.push(commentLower) - 1
+      const featureTypeMatch = rawLine.match(FEATURE_TYPE_COMMENT)
+      if (featureTypeMatch) {
+        const id = this.featureTypes.findIndex((featureType) => featureType.comment === commentLower)
+        this.currentPropertyValues.featureTypeId = id >= 0
+          ? id
+          : this.featureTypes.push({ comment: commentLower, label: featureTypeMatch[1].trim() }) - 1
 
         // First feature type seen, not counting the slicers' own start gcode
         if (!this.featureTypeCommentSeen && !commentLower.includes('custom')) {
@@ -505,10 +523,14 @@ export class GcodeParser {
         if (nozzleMatch) this.slicerNozzleDiameter = parseFloat(nozzleMatch[1])
       }
 
-      // First filament diameter the slicer states wins
+      // First filament diameter and density the slicer states win
       if (this.slicerFilamentDiameter == null) {
-        const filamentMatch = commentLower.match(FILAMENT_DIAMETER_COMMENT)
-        if (filamentMatch) this.slicerFilamentDiameter = parseFloat(filamentMatch[1])
+        const diameterMatch = commentLower.match(FILAMENT_DIAMETER_COMMENT)
+        if (diameterMatch) this.slicerFilamentDiameter = parseFloat(diameterMatch[1])
+      }
+      if (this.slicerFilamentDensity == null) {
+        const densityMatch = commentLower.match(FILAMENT_DENSITY_COMMENT)
+        if (densityMatch) this.slicerFilamentDensity = parseFloat(densityMatch[1])
       }
 
       // Take the elapsed print time the slicer states

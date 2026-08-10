@@ -1,3 +1,6 @@
+import { srgbToLinear } from '../../utils/colors'
+import type { RgbColor } from '../../utils/colors'
+import { clamp } from '../../utils/numbers'
 import type { Layer, ParsedGcode, SegmentProperty } from '../parsing/parser'
 
 /* ---- Color modes ---- */
@@ -5,12 +8,15 @@ import type { Layer, ParsedGcode, SegmentProperty } from '../parsing/parser'
 /** Filament diameter in mm assumed when the slicer states none */
 const DEFAULT_FILAMENT_DIAMETER_MM = 1.75
 
+/** Widest an estimated extrusion may read */
+const WIDEST_ESTIMATED_WIDTH_MM = 2
+/** Widest an estimated extrusion may read for each mm of its height */
+const WIDEST_ESTIMATED_WIDTH_PER_HEIGHT = 4
+
 /** What the color modes need from a gcode to read a layer of it */
 export interface ColorModeContext {
   /** Cross-section area of the filament in square mm */
   filamentArea: number
-  /** Whether the extrusion width has to be worked out from the extruded filament */
-  deriveWidth: boolean
   /** Estimated seconds a layer takes to print */
   layerSeconds: (layerNumber: number) => number
 }
@@ -21,8 +27,12 @@ export interface ColorMode {
   name: string
   /** Unit the colored values are measured in, empty when they have none */
   unit: string
+  /** Decimals the values are read at */
+  decimals: number
   /** Whether the values spread over their range by their ratio instead of their difference */
   logarithmic?: boolean
+  /** Whether the values are durations, read as hours and minutes rather than as a plain number */
+  duration?: boolean
   /** Property a layer's segments take their color from */
   propertyOf: (layer: Layer, layerNumber: number, context: ColorModeContext) => SegmentProperty
 }
@@ -45,10 +55,11 @@ function joinSegmentProperties (first: SegmentProperty, second: SegmentProperty,
     const secondSegment = secondStretch < second.values.length ? second.segmentIndices[secondStretch] : Infinity
 
     segmentIndices.push(Math.min(firstSegment, secondSegment))
-    values.push(combine(first.values[Math.max(firstStretch, 0)], second.values[Math.max(secondStretch, 0)]))
 
     if (firstSegment <= secondSegment) firstStretch++
     if (secondSegment <= firstSegment) secondStretch++
+
+    values.push(combine(first.values[firstStretch - 1] ?? 0, second.values[secondStretch - 1] ?? 0))
   }
 
   return { segmentIndices: Uint32Array.from(segmentIndices), values: Float32Array.from(values) }
@@ -65,34 +76,45 @@ function wholeLayerProperty (value: number): SegmentProperty {
 
 /** The ways of coloring the gcode segments, by id */
 export const COLOR_MODES = {
-  featureType: { name: 'Feature type', unit: '', propertyOf: (layer: Layer) => layer.featureTypeIds },
-  height: { name: 'Height', unit: 'mm', propertyOf: (layer: Layer) => layer.heights },
+  featureType: { name: 'Feature type', unit: '', decimals: 0, propertyOf: (layer: Layer) => layer.featureTypeIds },
+  height: { name: 'Height', unit: 'mm', decimals: 3, propertyOf: (layer: Layer) => layer.heights },
   width: {
     name: 'Width',
     unit: 'mm',
-    propertyOf: (layer: Layer, layerNumber: number, context: ColorModeContext) => context.deriveWidth
-      ? joinSegmentProperties(layer.filamentPerMm, layer.heights, (filamentPerMm, height) =>
-        height > 0 ? filamentPerMm * context.filamentArea / height + height * (1 - Math.PI / 4) : 0)
-      : layer.widths
+    decimals: 3,
+    propertyOf: (layer: Layer, layerNumber: number, context: ColorModeContext) => joinSegmentProperties(
+      layer.widths,
+      joinSegmentProperties(layer.filamentPerMm, layer.heights, (filamentPerMm, height) => {
+        if (height <= 0) return 0
+        const extruded = filamentPerMm * context.filamentArea / height + height * (1 - Math.PI / 4)
+        return Math.min(extruded, Math.max(WIDEST_ESTIMATED_WIDTH_MM, WIDEST_ESTIMATED_WIDTH_PER_HEIGHT * height))
+      }),
+      (stated, extruded) => stated > 0 ? stated : extruded
+    )
   },
-  speed: { name: 'Speed', unit: 'mm/s', propertyOf: (layer: Layer) => layer.feedrates },
-  fanSpeed: { name: 'Fan speed', unit: '%', propertyOf: (layer: Layer) => layer.fanSpeeds },
-  temperature: { name: 'Temperature', unit: '\u00b0C', propertyOf: (layer: Layer) => layer.temperatures },
+  speed: { name: 'Speed', unit: 'mm/s', decimals: 1, propertyOf: (layer: Layer) => layer.feedrates },
+  fanSpeed: { name: 'Fan speed', unit: '%', decimals: 0, propertyOf: (layer: Layer) => layer.fanSpeeds },
+  temperature: { name: 'Temperature', unit: '\u00b0C', decimals: 0, propertyOf: (layer: Layer) => layer.temperatures },
   volumetricFlow: {
     name: 'Volumetric flow rate',
     unit: 'mm\u00b3/s',
+    decimals: 3,
     propertyOf: (layer: Layer, layerNumber: number, context: ColorModeContext) =>
       joinSegmentProperties(layer.filamentPerMm, layer.feedrates, (filamentPerMm, feedrate) => filamentPerMm * context.filamentArea * feedrate)
   },
   layerTime: {
     name: 'Layer time (linear)',
     unit: 's',
+    decimals: 0,
+    duration: true,
     propertyOf: (layer: Layer, layerNumber: number, context: ColorModeContext) => wholeLayerProperty(context.layerSeconds(layerNumber))
   },
   layerTimeLogarithmic: {
     name: 'Layer time (logarithmic)',
     unit: 's',
+    decimals: 0,
     logarithmic: true,
+    duration: true,
     propertyOf: (layer: Layer, layerNumber: number, context: ColorModeContext) => wholeLayerProperty(context.layerSeconds(layerNumber))
   }
 } satisfies Record<string, ColorMode>
@@ -105,11 +127,7 @@ export const COLOR_MODES = {
  */
 export function colorModeContext (gcode: ParsedGcode, layerSeconds: (layerNumber: number) => number): ColorModeContext {
   const diameter = gcode.slicerFilamentDiameter ?? DEFAULT_FILAMENT_DIAMETER_MM
-  return {
-    filamentArea: Math.PI * (diameter / 2) ** 2,
-    deriveWidth: !gcode.layers.some((layer) => layer.widths.values.some((width) => width > 0)),
-    layerSeconds
-  }
+  return { filamentArea: Math.PI * (diameter / 2) ** 2, layerSeconds }
 }
 
 /** Id of a way of coloring the gcode segments */
@@ -129,8 +147,12 @@ export interface SegmentColoring {
 
 /** The lowest and the highest value a property takes over a gcode */
 export interface PropertyRange {
+  /** Lowest value the property takes */
   lowest: number
+  /** Highest value the property takes */
   highest: number
+  /** The values the property takes, empty when it takes more than two of them */
+  values: number[]
 }
 
 /** Colors the values of a range are drawn with, from its lowest to its highest */
@@ -152,20 +174,25 @@ const RANGE_COLORS = [
  * Measures the range a property covers over a whole gcode
  * @param layers - Parsed gcode layers
  * @param propertyOf - Property to read of each layer
+ * @param decimals - Decimals the values are read at
  * @returns The range it covers
  */
-export function propertyRange (layers: Layer[], propertyOf: (layer: Layer, layerNumber: number) => SegmentProperty): PropertyRange {
+export function propertyRange (layers: Layer[], propertyOf: (layer: Layer, layerNumber: number) => SegmentProperty, decimals: number): PropertyRange {
+  const step = 10 ** decimals
   let lowest = Infinity
   let highest = -Infinity
+  const values = new Set<number>()
 
   for (let layerNumber = 1; layerNumber <= layers.length; layerNumber++) {
-    for (const value of propertyOf(layers[layerNumber - 1], layerNumber).values) {
+    for (const rawValue of propertyOf(layers[layerNumber - 1], layerNumber).values) {
+      const value = Math.round(rawValue * step) / step
       if (value < lowest) lowest = value
       if (value > highest) highest = value
+      if (values.size <= 2) values.add(value)
     }
   }
 
-  return { lowest, highest }
+  return { lowest, highest, values: values.size <= 2 ? [...values].sort((a, b) => a - b) : [] }
 }
 
 /**
@@ -176,14 +203,14 @@ export function propertyRange (layers: Layer[], propertyOf: (layer: Layer, layer
  * @returns The color, in linear space
  */
 export function rangeColorAt (value: number, range: PropertyRange, logarithmic = false): RgbColor {
-  const held = Math.min(Math.max(value, range.lowest), range.highest)
+  const held = clamp(value, range.lowest, range.highest)
   const step = logarithmic && range.lowest > 0
     ? Math.log(range.highest / range.lowest) / (RANGE_COLORS.length - 1)
     : (range.highest - range.lowest) / (RANGE_COLORS.length - 1)
   const spread = logarithmic && range.lowest > 0 ? Math.log(held / range.lowest) : held - range.lowest
   const place = step > 0 ? spread / step : 0
 
-  const lower = Math.min(Math.max(Math.floor(place), 0), RANGE_COLORS.length - 1)
+  const lower = clamp(Math.floor(place), 0, RANGE_COLORS.length - 1)
   const upper = Math.min(lower + 1, RANGE_COLORS.length - 1)
   const share = place - lower
 
@@ -192,14 +219,24 @@ export function rangeColorAt (value: number, range: PropertyRange, logarithmic =
   return { r: mix('r'), g: mix('g'), b: mix('b') }
 }
 
-/* ---- Segment colors ---- */
+/**
+ * Picks the values a range is described by, one per color of the palette
+ * @param range - Range to describe
+ * @param logarithmic - True to spread the values by their ratio instead of their difference
+ * @returns The values, from the lowest to the highest
+ */
+export function rangeSteps (range: PropertyRange, logarithmic = false): number[] {
+  if (range.values.length) return range.values
 
-/** An RGB color, with components from 0 to 1 */
-export interface RgbColor {
-  r: number
-  g: number
-  b: number
+  return Array.from({ length: RANGE_COLORS.length }, (_unused, step) => {
+    const share = step / (RANGE_COLORS.length - 1)
+    return logarithmic && range.lowest > 0
+      ? range.lowest * Math.exp(share * Math.log(range.highest / range.lowest))
+      : range.lowest + share * (range.highest - range.lowest)
+  })
 }
+
+/* ---- Segment colors ---- */
 
 /** Brightness the darkest segments are drawn at, as a share of their own color */
 const MIN_BRIGHTNESS = 0.5
@@ -207,13 +244,6 @@ const MIN_BRIGHTNESS = 0.5
 const ANGLE_BRIGHTNESS_RANGE = 0.4
 /** Brightness the odd layers gain, so stacked layers can be told apart */
 const ODD_LAYER_BRIGHTNESS_GAIN = 0.1
-
-/**
- * Converts an sRGB component to linear space
- * @param component - The sRGB component (from 0 to 1)
- * @returns The linear component
- */
-export const srgbToLinear = (component: number): number => component < 0.04045 ? component * 0.0773993808 : Math.pow(component * 0.9478672986 + 0.0521327014, 2.4)
 
 /**
  * Fills the vertex colors a layer's segments are drawn with

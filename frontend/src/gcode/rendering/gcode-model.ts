@@ -4,7 +4,8 @@ import { resolveFeatureTypeColors } from '../colors/feature-type-colors'
 import { COLOR_MODES, colorModeContext, fillLayerVertexColors, propertyRange, rangeColorAt } from '../colors/segment-colors'
 import { TipLine } from './tip-line'
 import type { GcodeLine, GcodeLineMaterial } from './line-materials'
-import type { ColorMode, RgbColor, SegmentColoring } from '../colors/segment-colors'
+import type { ColorMode, SegmentColoring } from '../colors/segment-colors'
+import type { RgbColor } from '../../utils/colors'
 import type { Settings } from '../../settings'
 import { emptyGcode, type Layer, type ParsedGcode, type SegmentProperty } from '../parsing/parser'
 import type { PrintExclusions } from '../exclusions'
@@ -212,19 +213,17 @@ export class GcodeModel {
   /** How the segments take their color, resolved from the current settings */
   private get segmentColoring (): SegmentColoring {
     const mode: ColorMode = COLOR_MODES[this.settings.colorMode]
-    const layerSeconds = (layerNumber: number): number =>
-      this.timeline.estimatedSecondsAtLayer(layerNumber + 1) - this.timeline.estimatedSecondsAtLayer(layerNumber)
-    const context = colorModeContext(this.gcode, layerSeconds)
+    const context = colorModeContext(this.gcode, (layerNumber) => this.timeline.layerSeconds(layerNumber))
     const propertyOf = (layer: Layer, layerNumber: number): SegmentProperty => mode.propertyOf(layer, layerNumber, context)
     let colorAt: (value: number) => RgbColor
 
     if (this.settings.colorMode === 'featureType') {
       // Feature types pick a color rule
-      const colors = resolveFeatureTypeColors(this.gcode.featureTypeComments, this.settings.featureTypeColorRules, this.settings.featureTypeDefaultColor)
+      const colors = resolveFeatureTypeColors(this.gcode.featureTypes, this.settings.featureTypeColorRules, this.settings.featureTypeDefaultColor)
       colorAt = (featureTypeId) => featureTypeId < 0 ? colors.defaultColor : colors.colors[featureTypeId]
     } else {
       // Every other property falls somewhere in a range of values
-      const range = propertyRange(this.gcode.layers, propertyOf)
+      const range = propertyRange(this.gcode.layers, propertyOf, mode.decimals)
       colorAt = (value) => rangeColorAt(value, range, mode.logarithmic)
     }
 

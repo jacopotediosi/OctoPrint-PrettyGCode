@@ -67,6 +67,13 @@
                    data-bind="visible: loginState.hasPermissionKo(access.permissions.SETTINGS), click: showPluginSettings">Change the defaults for every browser</a>
             </p>
         </div>
+        {# ---- Legend ---- #}
+        <div id="pg-legend" class="pg-hidden">
+            <div class="pg-legend-header">Legend</div>
+            <select class="pg-legend-mode"
+                    title="Set the color mode of the G-code model."></select>
+            <div id="pg-legend-rows"></div>
+        </div>
         {# ---- Top buttons ---- #}
         <div class="pg-buttons pg-top-left-buttons">
             <button class="pg-toggle pg-maximized-only pg-toggle-state"
@@ -76,6 +83,9 @@
             <button class="pg-toggle pg-maximized-only pg-toggle-files"
                     title="Toggle file window">
                 <i class="fa-solid fa-folder"></i>
+            </button>
+            <button class="pg-toggle pg-toggle-legend" title="Toggle legend window">
+                <i class="fa-solid fa-swatchbook"></i>
             </button>
         </div>
         <div class="pg-buttons pg-top-right-buttons">

@@ -313,6 +313,15 @@ export class PrintTimeline {
   }
 
   /**
+   * Gets how long a layer takes to print
+   * @param layerNumber - 1-based layer number
+   * @returns The estimated seconds
+   */
+  layerSeconds (layerNumber: number): number {
+    return this.estimatedSecondsAtLayer(layerNumber + 1) - this.estimatedSecondsAtLayer(layerNumber)
+  }
+
+  /**
    * Gets the timeline coordinate reached once a number of segments has been drawn
    * @param segments - Drawn segments passed
    * @returns The coordinate in seconds
