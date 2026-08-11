@@ -16,6 +16,8 @@ export interface ParsedGcode {
   slicerFilamentDiameter: number | null
   /** Filament density in g/cm3 the slicer states, null when it states none */
   slicerFilamentDensity: number | null
+  /** Color the slicer states for each tool, empty where it states none */
+  slicerToolColors: string[]
   /** Print times the slicer states along the file, if any */
   slicerTimeMarks: SlicerTimeMarks | null
   /** Feature types the gcode states, by feature type id */
@@ -40,6 +42,7 @@ export interface Layer {
   durations: Float32Array
   objectIds: Int32Array | null
   featureTypeIds: SegmentProperty
+  toolIds: SegmentProperty
   feedrates: SegmentProperty
   fanSpeeds: SegmentProperty
   temperatures: SegmentProperty
@@ -62,6 +65,8 @@ export interface SegmentProperty {
 export interface SegmentPropertyValues {
   /** Id of the feature type the segment belongs to, -1 for none */
   featureTypeId: number
+  /** Id of the tool the segment is extruded with */
+  toolId: number
   /** Speed of the segment in mm/s */
   feedrate: number
   /** Speed of the print cooling fan in percent */
@@ -97,7 +102,7 @@ export const emptyBounds = (): GcodeBounds => ({ minX: Infinity, minY: Infinity,
  * @returns The empty gcode
  */
 export const emptyGcode = (): ParsedGcode => ({
-  layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, slicerFilamentDiameter: null, slicerFilamentDensity: null, slicerTimeMarks: null, featureTypes: [], objectNames: []
+  layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, slicerFilamentDiameter: null, slicerFilamentDensity: null, slicerToolColors: [], slicerTimeMarks: null, featureTypes: [], objectNames: []
 })
 
 /** A point of the parsed gcode, in scene coordinates */
@@ -169,6 +174,12 @@ const FILAMENT_DIAMETER_COMMENT = /filament[_ ]?diameter\s*[:=,]\s*([\d.]+)/i
 /** Matches the filament density stated by the slicer, e.g. "; filament_density = 1.24" */
 const FILAMENT_DENSITY_COMMENT = /filament[_ ]?density\s*[:=,]\s*([\d.]+)/i
 
+/** Matches the tool colors stated by the slicer, e.g. "; extruder_colour = #800080;#ffffff" */
+const TOOL_COLORS_COMMENT = /(extruder|filament)_colou?r\s*=\s*(.*)/i
+
+/** Matches one color of a tool colors comment, e.g. "#800080" */
+const TOOL_COLOR = /^#[0-9a-f]{6}$/
+
 /** Matches the extrusion width the slicer states, e.g. ";WIDTH:0.42" or "; LINE_WIDTH: 0.42" */
 const WIDTH_COMMENT = /;\s*(?:line_)?width:\s*([\d.]+)/i
 
@@ -177,6 +188,9 @@ const HEIGHT_COMMENT = /;\s*(?:layer_)?height:\s*([\d.]+)/i
 
 /** Prefix, lowercased, of the comment stating the print time elapsed so far */
 const TIME_ELAPSED_COMMENT = ';time_elapsed:'
+
+/** Highest tool number a T command selects */
+const HIGHEST_TOOL_NUMBER = 254
 
 /* ---- Layers ---- */
 
@@ -230,6 +244,7 @@ class OpenLayer {
   private durations = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 2)
   private objectIds: Int32Array | null = null
   private readonly featureTypeIds = new OpenSegmentProperty()
+  private readonly toolIds = new OpenSegmentProperty()
   private readonly feedrates = new OpenSegmentProperty()
   private readonly fanSpeeds = new OpenSegmentProperty()
   private readonly temperatures = new OpenSegmentProperty()
@@ -276,6 +291,7 @@ class OpenLayer {
     if (this.objectIds) this.objectIds[this.segments] = objectId
 
     this.featureTypeIds.add(this.segments, propertyValues.featureTypeId)
+    this.toolIds.add(this.segments, propertyValues.toolId)
     this.feedrates.add(this.segments, propertyValues.feedrate)
     this.fanSpeeds.add(this.segments, propertyValues.fanSpeed)
     this.temperatures.add(this.segments, propertyValues.temperature)
@@ -347,6 +363,7 @@ class OpenLayer {
       durations: this.durations.slice(0, this.segments * 2),
       objectIds: this.objectIds ? this.objectIds.slice(0, this.segments) : null,
       featureTypeIds: this.featureTypeIds.finish(),
+      toolIds: this.toolIds.finish(),
       feedrates: this.feedrates.finish(),
       fanSpeeds: this.fanSpeeds.finish(),
       temperatures: this.temperatures.finish(),
@@ -383,6 +400,16 @@ export class GcodeParser {
   slicerFilamentDiameter: number | null = null
   /** Filament density in g/cm3 the slicer states, null when it states none */
   slicerFilamentDensity: number | null = null
+  /** Color the slicer states for each extruder, empty where it states none */
+  private extruderColors: string[] = []
+  /** Color the slicer states for the filament of each extruder, empty where it states none */
+  private filamentColors: string[] = []
+  /** Color the slicer states for each tool, empty where it states none */
+  get slicerToolColors (): string[] {
+    const tools = Math.max(this.extruderColors.length, this.filamentColors.length)
+    return Array.from({ length: tools }, (_unused, tool) => this.extruderColors[tool] || this.filamentColors[tool] || '')
+  }
+
   /** Print times the slicer states along the file, if any */
   slicerTimeMarks: SlicerTimeMarks | null = null
   /** Feature types the gcode states, by feature type id */
@@ -446,7 +473,7 @@ export class GcodeParser {
   /* ---- Segment properties ---- */
 
   /** Value each property takes on the segments being parsed */
-  private readonly currentPropertyValues: SegmentPropertyValues = { featureTypeId: -1, feedrate: 0, fanSpeed: 0, temperature: 0, width: 0, height: 0, filamentPerMm: 0 }
+  private readonly currentPropertyValues: SegmentPropertyValues = { featureTypeId: -1, toolId: 0, feedrate: 0, fanSpeed: 0, temperature: 0, width: 0, height: 0, filamentPerMm: 0 }
   /** Whether a feature type comment of the printed model has been seen yet */
   private featureTypeCommentSeen = false
   /** Extrusion height the slicer states, null until it states one */
@@ -556,6 +583,16 @@ export class GcodeParser {
       if (this.slicerFilamentDensity == null) {
         const densityMatch = commentLower.match(FILAMENT_DENSITY_COMMENT)
         if (densityMatch) this.slicerFilamentDensity = parseFloat(densityMatch[1])
+      }
+
+      // Tool colors the slicer states, the extruder ones taking over from the filament ones
+      const toolColorsMatch = commentLower.match(TOOL_COLORS_COMMENT)
+      if (toolColorsMatch) {
+        const colors = toolColorsMatch[2].split(';')
+          .map((color) => color.trim().replaceAll('"', ''))
+          .map((color) => TOOL_COLOR.test(color) ? color : '')
+        if (toolColorsMatch[1] === 'extruder') this.extruderColors = colors
+        else this.filamentColors = colors
       }
 
       // Take the elapsed print time the slicer states
@@ -732,6 +769,14 @@ export class GcodeParser {
           y: args.y ?? this.machineState.y,
           z: args.z ?? this.machineState.z,
           e: args.e ?? this.machineState.e
+        }
+        break
+      }
+      default: { // Select the tool
+        if (cmd[0] === 'T') {
+          const tool = +cmd.slice(1)
+          // Numbers above the tools stand for machine commands (T255, T1000, Tx...)
+          if (Number.isInteger(tool) && tool >= 0 && tool <= HIGHEST_TOOL_NUMBER) this.currentPropertyValues.toolId = tool
         }
         break
       }
