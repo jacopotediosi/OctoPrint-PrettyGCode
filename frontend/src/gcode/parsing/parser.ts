@@ -154,6 +154,15 @@ const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
  */
 const FEATURE_TYPE_COMMENT = /;\s*(?:type:|feature[ :])(.*)/i
 
+/**
+ * Matches a slicer's layer change comment
+ * - ;LAYER_CHANGE   PrusaSlicer/SuperSlicer, OrcaSlicer (non-Bambu-Lab printers)
+ * - ; CHANGE_LAYER  Bambu Studio, OrcaSlicer (Bambu Lab printers)
+ * - ;LAYER:<number> Cura, ideaMaker
+ * - ; layer <number> Simplify3D
+ */
+const LAYER_CHANGE_COMMENT = /;\s*(?:layer[_ ]?change|change[_ ]?layer|layer[ :]\d)/i
+
 /** Matches the filament diameter stated by the slicer, e.g. "; filament_diameter = 1.75" */
 const FILAMENT_DIAMETER_COMMENT = /filament[_ ]?diameter\s*[:=,]\s*([\d.]+)/i
 
@@ -235,7 +244,7 @@ class OpenLayer {
   private travelCapacity = OpenLayer.INITIAL_TRAVEL_BUFFERS_CAPACITY
   private travels = 0
 
-  constructor (readonly z: number) {}
+  constructor (public z: number) {}
 
   /**
    * Appends a segment
@@ -413,6 +422,14 @@ export class GcodeParser {
   private currentLayer: OpenLayer | null = null
   /** Layers opened so far */
   private layersOpened = 0
+  /** Whether the gcode states its layer changes */
+  private statesLayerChanges = false
+  /** Whether a stated layer change is waiting for the extrusion opening its layer */
+  private pendingLayerChange = false
+  /** Whether the moves belong to the slicer's own custom gcode */
+  private customGcode = false
+  /** Whether the layer being filled holds the slicer's own custom gcode only */
+  private customLayer = false
 
   /* ---- Travels ---- */
 
@@ -503,12 +520,20 @@ export class GcodeParser {
           ? id
           : this.featureTypes.push({ comment: commentLower, label: featureTypeMatch[1].trim() }) - 1
 
+        this.customGcode = commentLower.includes('custom')
+
         // First feature type seen, not counting the slicers' own start gcode
-        if (!this.featureTypeCommentSeen && !commentLower.includes('custom')) {
+        if (!this.featureTypeCommentSeen && !this.customGcode) {
           this.featureTypeCommentSeen = true
           // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
           this.bounds = emptyBounds()
         }
+      }
+
+      // Layer changes the slicer states, which take over from the Z rule
+      if (LAYER_CHANGE_COMMENT.test(commentLower)) {
+        this.statesLayerChanges = true
+        this.pendingLayerChange = true
       }
 
       // Extrusion width and height the slicer states
@@ -587,10 +612,7 @@ export class GcodeParser {
         // Filament pushed without moving in XY unretracts or purges, it lays no line down
         const extruding = this.extrusionDelta(args, move) > 0 && (move.x !== this.machineState.x || move.y !== this.machineState.y)
 
-        // New layer when extrusion moves to a different Z
-        if (extruding && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
-          this.changeLayer(move)
-        }
+        if (extruding && this.startsLayer(move)) this.changeLayer(move)
 
         // Extrude a segment when the move lays down material, otherwise track the travel time
         if (extruding) this.addSegment(this.machineState, move)
@@ -609,10 +631,7 @@ export class GcodeParser {
         }
         const extruding = this.extrusionDelta(args, move) > 0
 
-        // New layer when extrusion moves to a different Z
-        if (extruding && (this.currentLayer == null || Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM)) {
-          this.changeLayer(move)
-        }
+        if (extruding && this.startsLayer(move)) this.changeLayer(move)
 
         // Center offset from the I/J words, or computed from the radius of an R-form arc
         const offset = args.r !== undefined
@@ -750,11 +769,32 @@ export class GcodeParser {
   }
 
   /**
+   * Tells whether an extruding move belongs to a layer of its own
+   * @param move - Machine state of the move
+   * @returns True when the move opens a layer
+   */
+  private startsLayer (move: MachineState): boolean {
+    if (this.currentLayer == null || this.pendingLayerChange) return true
+    if (this.statesLayerChanges || this.customGcode) return false
+    return Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM
+  }
+
+  /**
    * Opens a new layer and makes it current
    * @param move - Machine state starting the layer
    * @returns The new layer
    */
   private changeLayer (move: MachineState): OpenLayer {
+    this.pendingLayerChange = false
+
+    // The slicer's custom gcode joins the layer coming after it instead of filling one of its own
+    if (this.customLayer && this.currentLayer) {
+      this.customLayer = false
+      this.currentLayer.z = move.z
+      this.layerHeight = move.z
+      return this.currentLayer
+    }
+
     this.sealLayer()
     this.layersOpened++
 
@@ -762,6 +802,7 @@ export class GcodeParser {
     const height = move.z - (this.layers.length ? this.layers[this.layers.length - 1].z : 0)
     if (height > 0) this.layerHeight = height
 
+    this.customLayer = this.customGcode
     this.currentLayer = new OpenLayer(move.z)
     return this.currentLayer
   }
@@ -861,6 +902,7 @@ export class GcodeParser {
 
     // Open a layer if none is active yet
     const layer = this.currentLayer ?? this.changeLayer(start)
+    if (!this.customGcode) this.customLayer = false
 
     // Estimated seconds of the travel leading here and of the segment itself
     const distance = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z)
