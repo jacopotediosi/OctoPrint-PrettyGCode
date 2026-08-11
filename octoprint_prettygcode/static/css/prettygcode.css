@@ -38,9 +38,10 @@
     --pg-z-webcam: 2003;
     --pg-z-bottom-buttons: 2004;
     --pg-z-camera-controls: 2005;
-    --pg-z-top-windows: 2006;
-    --pg-z-top-buttons: 2007;
-    --pg-z-sliders: 2008;
+    --pg-z-top-left-windows: 2006;
+    --pg-z-view-settings: 2007;
+    --pg-z-top-buttons: 2008;
+    --pg-z-sliders: 2009;
     --pg-z-resize-handles: 2020;
     --pg-z-modals-backdrop: 2100;
     --pg-z-modals: 2101;
@@ -196,7 +197,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     overflow: visible;
 }
 .pg-maximized #pg-view-settings {
-    z-index: var(--pg-z-top-windows);
+    z-index: var(--pg-z-view-settings);
 }
 .pg-view-settings-panel .lil-gui {
     --font-size: 14px;
@@ -338,7 +339,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     box-shadow: var(--pg-shadow);
 }
 .pg-maximized #pg-legend {
-    z-index: var(--pg-z-top-windows);
+    z-index: var(--pg-z-top-left-windows);
 }
 .pg-legend-mode {
     width: 100%;
@@ -496,7 +497,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     flex-direction: column;
     box-shadow: var(--pg-shadow);
     background: var(--pg-window-background);
-    z-index: var(--pg-z-top-windows);
+    z-index: var(--pg-z-top-left-windows);
 }
 .pg-maximized #files_wrapper {
     max-width: 80%;
