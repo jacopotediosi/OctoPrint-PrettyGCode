@@ -1,7 +1,5 @@
-import { featureTypeUsage, resolveFeatureTypeColors } from '../gcode/colors/feature-type-colors'
-import type { FeatureTypeUsage } from '../gcode/colors/feature-type-colors'
-import { COLOR_MODES, colorModeContext, propertyRange, rangeColorAt, rangeSteps } from '../gcode/colors/segment-colors'
-import type { ColorMode, ColorModeContext, ColorModeId } from '../gcode/colors/segment-colors'
+import { COLOR_MODES, colorModeContext, propertyRange, propertyRangeColorAt, propertyRangeSteps, propertyValueUsage } from '../gcode/colors/segment-colors'
+import type { ColorMode, ColorModeContext, ColorModeId, PropertyFixedColors, PropertyValueUsage } from '../gcode/colors/segment-colors'
 import { rgbColorToHexString, type RgbColor } from '../utils/colors'
 import { htmlStringToElement } from '../utils/html'
 import { secondsToDurationText } from '../utils/time'
@@ -58,38 +56,37 @@ function createRow (color: RgbColor, label: string, values: string[]): HTMLEleme
 }
 
 /**
- * Builds the rows describing the feature types of the loaded gcode
+ * Builds the rows describing the values a color mode paints one by one
  * @param app - Application instance
+ * @param mode - Color mode to describe
  * @param context - What the color modes read the gcode with
- * @returns The rows, from the most used feature type to the least
+ * @param fixedColors - Colors the values of the mode's property are fixed to
+ * @returns The rows, from the most used value to the least
  */
-function featureTypeRows (app: PrettyGCodeApp, context: ColorModeContext): LegendRows {
+function fixedColorRows (app: PrettyGCodeApp, mode: ColorMode, context: ColorModeContext, fixedColors: PropertyFixedColors): LegendRows {
   const gcode = app.gcode
-  const colors = resolveFeatureTypeColors(gcode.featureTypes, app.settings.featureTypeColorRules, app.settings.featureTypeDefaultColor)
 
   // Weighing the filament takes a diameter and a density only some slicers state
-  const density = gcode.slicerFilamentDiameter != null ? gcode.slicerFilamentDensity : null
+  const density = mode.measuresFilamentUsage && gcode.slicerFilamentDiameter != null ? gcode.slicerFilamentDensity : null
 
-  // Tells whether a feature type matched a color rule, the others sharing the default color
-  const matched = (used: FeatureTypeUsage): boolean => (colors.ruleIndices[used.featureTypeId] ?? -1) >= 0
+  // Tells whether a value has a color of its own, the others sharing the default one
+  const colored = (used: PropertyValueUsage): boolean => fixedColors.colors[used.value] !== undefined
 
-  const usage = featureTypeUsage(gcode)
-    .sort((first, second) => Number(matched(second)) - Number(matched(first)) || second.timeShare - first.timeShare)
+  const usage = propertyValueUsage(gcode.layers, (layer, layerNumber) => mode.propertyOf(layer, layerNumber, context))
+  if (mode.measuresFilamentUsage) {
+    usage.sort((first, second) => Number(colored(second)) - Number(colored(first)) || second.timeShare - first.timeShare)
+  }
 
   const rows = usage.map((used) => {
-    const featureType = gcode.featureTypes[used.featureTypeId]
-    const values = [(used.timeShare * 100).toFixed(1) + ' %', (used.filamentMm / 1000).toFixed(2) + ' m']
+    const values = mode.measuresFilamentUsage ? [(used.timeShare * 100).toFixed(1) + ' %', (used.filamentMm / 1000).toFixed(2) + ' m'] : []
     if (density != null) values.push((used.filamentMm * context.filamentArea * density / 1000).toFixed(1) + ' g')
 
-    return createRow(
-      featureType ? colors.colors[used.featureTypeId] : colors.defaultColor,
-      featureType ? featureType.label : 'Other',
-      values
-    )
+    return createRow(fixedColors.colors[used.value] ?? fixedColors.defaultColor, fixedColors.nameOf(used.value), values)
   })
 
-  const columnNames = ['Feature type', 'Percentage', 'Used filament']
-  return { rows: [createColumnNamesRow(columnNames), ...rows], valueColumns: density != null ? 3 : 2 }
+  const columnNames = mode.measuresFilamentUsage ? [mode.name, 'Percentage', 'Used filament'] : [mode.name]
+  const valueColumns = mode.measuresFilamentUsage ? (density != null ? 3 : 2) : 0
+  return { rows: [createColumnNamesRow(columnNames), ...rows], valueColumns }
 }
 
 /**
@@ -102,8 +99,8 @@ function featureTypeRows (app: PrettyGCodeApp, context: ColorModeContext): Legen
 function rangeRows (app: PrettyGCodeApp, mode: ColorMode, context: ColorModeContext): LegendRows {
   const range = propertyRange(app.gcode.layers, (layer, layerNumber) => mode.propertyOf(layer, layerNumber, context), mode.decimals)
 
-  const rows = rangeSteps(range, mode.logarithmic).map((value) =>
-    createRow(rangeColorAt(value, range, mode.logarithmic), mode.duration ? secondsToDurationText(value, 's') : value.toFixed(mode.decimals) + ' ' + mode.unit, [])
+  const rows = propertyRangeSteps(range, mode.logarithmic).map((value) =>
+    createRow(propertyRangeColorAt(value, range, mode.logarithmic), mode.duration ? secondsToDurationText(value, 's') : value.toFixed(mode.decimals) + ' ' + mode.unit, [])
   ).reverse()
 
   return { rows, valueColumns: 0 }
@@ -118,8 +115,9 @@ export function updateLegend (app: PrettyGCodeApp): void {
   const mode: ColorMode = COLOR_MODES[app.settings.colorMode]
   const context = colorModeContext(app.gcode, (layerNumber) => app.layerSeconds(layerNumber))
 
-  const { rows, valueColumns } = app.settings.colorMode === 'featureType'
-    ? featureTypeRows(app, context)
+  const fixedColors = mode.fixedColors?.(app.gcode, app.settings)
+  const { rows, valueColumns } = fixedColors
+    ? fixedColorRows(app, mode, context, fixedColors)
     : rangeRows(app, mode, context)
 
   rowsContainer.style.gridTemplateColumns = `auto minmax(0, 1fr)${' auto'.repeat(valueColumns)}`

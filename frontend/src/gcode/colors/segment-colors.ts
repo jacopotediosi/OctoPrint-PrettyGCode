@@ -1,7 +1,10 @@
+import { resolveFeatureTypeColors } from './feature-type-colors'
+import { resolveToolColors } from './tool-colors'
 import { srgbToLinear } from '../../utils/colors'
 import type { RgbColor } from '../../utils/colors'
 import { clamp } from '../../utils/numbers'
 import type { Layer, ParsedGcode, SegmentProperty } from '../parsing/parser'
+import type { Settings } from '../../settings'
 
 /* ---- Color modes ---- */
 
@@ -35,6 +38,10 @@ export interface ColorMode {
   duration?: boolean
   /** Property a layer's segments take their color from */
   propertyOf: (layer: Layer, layerNumber: number, context: ColorModeContext) => SegmentProperty
+  /** Colors the values of that property are fixed to, absent for the modes spreading them over a range */
+  fixedColors?: (gcode: ParsedGcode, settings: Settings) => PropertyFixedColors
+  /** Whether the filament usage of each value of that property is measured */
+  measuresFilamentUsage?: boolean
 }
 
 /**
@@ -76,7 +83,15 @@ function wholeLayerProperty (value: number): SegmentProperty {
 
 /** The ways of coloring the gcode segments, by id */
 export const COLOR_MODES = {
-  featureType: { name: 'Feature type', unit: '', decimals: 0, propertyOf: (layer: Layer) => layer.featureTypeIds },
+  featureType: {
+    name: 'Feature type',
+    unit: '',
+    decimals: 0,
+    propertyOf: (layer: Layer) => layer.featureTypeIds,
+    fixedColors: (gcode: ParsedGcode, settings: Settings) =>
+      resolveFeatureTypeColors(gcode.featureTypes, settings.featureTypeColorRules, settings.featureTypeDefaultColor),
+    measuresFilamentUsage: true
+  },
   height: { name: 'Height', unit: 'mm', decimals: 3, propertyOf: (layer: Layer) => layer.heights },
   width: {
     name: 'Width',
@@ -116,6 +131,14 @@ export const COLOR_MODES = {
     logarithmic: true,
     duration: true,
     propertyOf: (layer: Layer, layerNumber: number, context: ColorModeContext) => wholeLayerProperty(context.layerSeconds(layerNumber))
+  },
+  tool: {
+    name: 'Tool',
+    unit: '',
+    decimals: 0,
+    propertyOf: (layer: Layer) => layer.toolIds,
+    fixedColors: (gcode: ParsedGcode) => resolveToolColors(gcode.slicerToolColors),
+    measuresFilamentUsage: true
   }
 } satisfies Record<string, ColorMode>
 
@@ -143,7 +166,17 @@ export interface SegmentColoring {
   colorAt: (value: number) => RgbColor
 }
 
-/* ---- Value ranges ---- */
+/* ---- Property values ---- */
+
+/** The colors the values of a property are fixed to, one each, and the names they go by */
+export interface PropertyFixedColors {
+  /** Color fixed for each value the property takes, undefined where none is */
+  colors: Array<RgbColor | undefined>
+  /** Color of the values no color is fixed for */
+  defaultColor: RgbColor
+  /** Name a value goes by */
+  nameOf: (value: number) => string
+}
 
 /** The lowest and the highest value a property takes over a gcode */
 export interface PropertyRange {
@@ -155,8 +188,8 @@ export interface PropertyRange {
   values: number[]
 }
 
-/** Colors the values of a range are drawn with, from its lowest to its highest */
-const RANGE_COLORS = [
+/** Colors the values of a property range are drawn with, from its lowest to its highest */
+const PROPERTY_RANGE_COLORS = [
   { r: 11, g: 44, b: 122 },
   { r: 19, g: 89, b: 133 },
   { r: 28, g: 136, b: 145 },
@@ -196,40 +229,93 @@ export function propertyRange (layers: Layer[], propertyOf: (layer: Layer, layer
 }
 
 /**
- * Picks the color a value of a range is drawn with
+ * Picks the color a value of a property range is drawn with
  * @param value - Value to color
- * @param range - Range the value belongs to
+ * @param range - Property range the value belongs to
  * @param logarithmic - True to spread the values by their ratio instead of their difference
  * @returns The color, in linear space
  */
-export function rangeColorAt (value: number, range: PropertyRange, logarithmic = false): RgbColor {
+export function propertyRangeColorAt (value: number, range: PropertyRange, logarithmic = false): RgbColor {
   const held = clamp(value, range.lowest, range.highest)
   const step = logarithmic && range.lowest > 0
-    ? Math.log(range.highest / range.lowest) / (RANGE_COLORS.length - 1)
-    : (range.highest - range.lowest) / (RANGE_COLORS.length - 1)
+    ? Math.log(range.highest / range.lowest) / (PROPERTY_RANGE_COLORS.length - 1)
+    : (range.highest - range.lowest) / (PROPERTY_RANGE_COLORS.length - 1)
   const spread = logarithmic && range.lowest > 0 ? Math.log(held / range.lowest) : held - range.lowest
   const place = step > 0 ? spread / step : 0
 
-  const lower = clamp(Math.floor(place), 0, RANGE_COLORS.length - 1)
-  const upper = Math.min(lower + 1, RANGE_COLORS.length - 1)
+  const lower = clamp(Math.floor(place), 0, PROPERTY_RANGE_COLORS.length - 1)
+  const upper = Math.min(lower + 1, PROPERTY_RANGE_COLORS.length - 1)
   const share = place - lower
 
   const mix = (component: 'r' | 'g' | 'b'): number =>
-    srgbToLinear(RANGE_COLORS[lower][component] * (1 - share) + RANGE_COLORS[upper][component] * share)
+    srgbToLinear(PROPERTY_RANGE_COLORS[lower][component] * (1 - share) + PROPERTY_RANGE_COLORS[upper][component] * share)
   return { r: mix('r'), g: mix('g'), b: mix('b') }
 }
 
+/** How much of a print the segments holding one value of a property take */
+export interface PropertyValueUsage {
+  /** Value the segments hold */
+  value: number
+  /** Share of the extrusion time, from 0 to 1 */
+  timeShare: number
+  /** Filament the segments extrude, in mm */
+  filamentMm: number
+}
+
 /**
- * Picks the values a range is described by, one per color of the palette
- * @param range - Range to describe
+ * Measures how much of a gcode the segments holding each value of a property take
+ * @param layers - Parsed gcode layers
+ * @param propertyOf - Property to read of each layer
+ * @returns The usage of every value the property takes, in value order
+ */
+export function propertyValueUsage (layers: Layer[], propertyOf: (layer: Layer, layerNumber: number) => SegmentProperty): PropertyValueUsage[] {
+  let highestValue = -1
+  for (let layerNumber = 1; layerNumber <= layers.length; layerNumber++) {
+    for (const value of propertyOf(layers[layerNumber - 1], layerNumber).values) highestValue = Math.max(highestValue, value)
+  }
+
+  const seconds = new Float64Array(highestValue + 2)
+  const filament = new Float64Array(highestValue + 2)
+
+  for (let layerNumber = 1; layerNumber <= layers.length; layerNumber++) {
+    const layer = layers[layerNumber - 1]
+    const { vertices, durations, filamentPerMm } = layer
+    const property = propertyOf(layer, layerNumber)
+    const segments = vertices.length / 6
+    let propertyStretch = 0
+    let filamentStretch = 0
+
+    for (let segment = 0; segment < segments; segment++) {
+      while (propertyStretch + 1 < property.values.length && property.segmentIndices[propertyStretch + 1] <= segment) propertyStretch++
+      while (filamentStretch + 1 < filamentPerMm.values.length && filamentPerMm.segmentIndices[filamentStretch + 1] <= segment) filamentStretch++
+
+      const vertex = segment * 6
+      const length = Math.hypot(vertices[vertex + 3] - vertices[vertex], vertices[vertex + 4] - vertices[vertex + 1], vertices[vertex + 5] - vertices[vertex + 2])
+      const slot = property.values[propertyStretch] + 1
+      seconds[slot] += durations[segment * 2 + 1]
+      filament[slot] += filamentPerMm.values[filamentStretch] * length
+    }
+  }
+
+  const totalSeconds = seconds.reduce((total, value) => total + value, 0)
+  const usage: PropertyValueUsage[] = []
+  for (let slot = 0; slot < seconds.length; slot++) {
+    if (seconds[slot] > 0) usage.push({ value: slot - 1, timeShare: totalSeconds > 0 ? seconds[slot] / totalSeconds : 0, filamentMm: filament[slot] })
+  }
+  return usage
+}
+
+/**
+ * Picks the values a property range is described by, one per color of the palette
+ * @param range - Property range to describe
  * @param logarithmic - True to spread the values by their ratio instead of their difference
  * @returns The values, from the lowest to the highest
  */
-export function rangeSteps (range: PropertyRange, logarithmic = false): number[] {
+export function propertyRangeSteps (range: PropertyRange, logarithmic = false): number[] {
   if (range.values.length) return range.values
 
-  return Array.from({ length: RANGE_COLORS.length }, (_unused, step) => {
-    const share = step / (RANGE_COLORS.length - 1)
+  return Array.from({ length: PROPERTY_RANGE_COLORS.length }, (_unused, step) => {
+    const share = step / (PROPERTY_RANGE_COLORS.length - 1)
     return logarithmic && range.lowest > 0
       ? range.lowest * Math.exp(share * Math.log(range.highest / range.lowest))
       : range.lowest + share * (range.highest - range.lowest)

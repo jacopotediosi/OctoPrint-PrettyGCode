@@ -1,7 +1,6 @@
 import * as THREE from '../../three-exports'
 import { isThickLine, isThickMaterial, makeThickMaterial, makeThinMaterial } from './line-materials'
-import { resolveFeatureTypeColors } from '../colors/feature-type-colors'
-import { COLOR_MODES, colorModeContext, fillLayerVertexColors, propertyRange, rangeColorAt } from '../colors/segment-colors'
+import { COLOR_MODES, colorModeContext, fillLayerVertexColors, propertyRange, propertyRangeColorAt } from '../colors/segment-colors'
 import { TipLine } from './tip-line'
 import type { GcodeLine, GcodeLineMaterial } from './line-materials'
 import type { ColorMode, SegmentColoring } from '../colors/segment-colors'
@@ -217,14 +216,14 @@ export class GcodeModel {
     const propertyOf = (layer: Layer, layerNumber: number): SegmentProperty => mode.propertyOf(layer, layerNumber, context)
     let colorAt: (value: number) => RgbColor
 
-    if (this.settings.colorMode === 'featureType') {
-      // Feature types pick a color rule
-      const colors = resolveFeatureTypeColors(this.gcode.featureTypes, this.settings.featureTypeColorRules, this.settings.featureTypeDefaultColor)
-      colorAt = (featureTypeId) => featureTypeId < 0 ? colors.defaultColor : colors.colors[featureTypeId]
+    const fixedColors = mode.fixedColors?.(this.gcode, this.settings)
+    if (fixedColors) {
+      // The values of these properties each have a color of their own
+      colorAt = (value) => fixedColors.colors[value] ?? fixedColors.defaultColor
     } else {
       // Every other property falls somewhere in a range of values
       const range = propertyRange(this.gcode.layers, propertyOf, mode.decimals)
-      colorAt = (value) => rangeColorAt(value, range, mode.logarithmic)
+      colorAt = (value) => propertyRangeColorAt(value, range, mode.logarithmic)
     }
 
     return { mode, propertyOf, colorAt }
