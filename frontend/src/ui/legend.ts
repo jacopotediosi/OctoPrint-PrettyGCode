@@ -1,5 +1,5 @@
-import { COLOR_MODES, colorModeContext, propertyRange, propertyRangeColorAt, propertyRangeSteps, propertyValueUsage } from '../gcode/colors/segment-colors'
-import type { ColorMode, ColorModeContext, ColorModeId, PropertyFixedColors, PropertyValueUsage } from '../gcode/colors/segment-colors'
+import { COLOR_MODES, colorModeContext, propertyRange, propertyRangeColorAt, propertyRangeSteps, propertyValueUsage } from '../gcode/colors/segment'
+import type { ColorMode, ColorModeContext, ColorModeId, PropertyFixedColors, PropertyValueUsage } from '../gcode/colors/segment'
 import { rgbColorToHexString, type RgbColor } from '../utils/colors'
 import { htmlStringToElement } from '../utils/html'
 import { secondsToDurationText } from '../utils/time'
@@ -61,7 +61,7 @@ function createRow (color: RgbColor, label: string, values: string[]): HTMLEleme
  * @param mode - Color mode to describe
  * @param context - What the color modes read the gcode with
  * @param fixedColors - Colors the values of the mode's property are fixed to
- * @returns The rows, from the most used value to the least
+ * @returns The rows, last printed first where the values run with the print, most used first otherwise
  */
 function fixedColorRows (app: PrettyGCodeApp, mode: ColorMode, context: ColorModeContext, fixedColors: PropertyFixedColors): LegendRows {
   const gcode = app.gcode
@@ -73,7 +73,9 @@ function fixedColorRows (app: PrettyGCodeApp, mode: ColorMode, context: ColorMod
   const colored = (used: PropertyValueUsage): boolean => fixedColors.colors[used.value] !== undefined
 
   const usage = propertyValueUsage(gcode.layers, (layer, layerNumber) => mode.propertyOf(layer, layerNumber, context))
-  if (mode.measuresFilamentUsage) {
+  if (fixedColors.inPrintOrder) {
+    usage.reverse()
+  } else {
     usage.sort((first, second) => Number(colored(second)) - Number(colored(first)) || second.timeShare - first.timeShare)
   }
 

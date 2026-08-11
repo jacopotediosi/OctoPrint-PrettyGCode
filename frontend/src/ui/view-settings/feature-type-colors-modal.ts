@@ -1,4 +1,4 @@
-import { type FeatureTypeColorPreset, type FeatureTypeColorRule, cloneFeatureTypeColorRules } from '../../gcode/colors/feature-type-colors'
+import { type FeatureTypeColorPreset, type FeatureTypeColorRule, cloneFeatureTypeColorRules } from '../../gcode/colors/feature-type'
 import { htmlStringToElement } from '../../utils/html'
 import type { Settings } from '../../settings'
 

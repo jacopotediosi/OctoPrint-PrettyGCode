@@ -200,7 +200,7 @@ const TOOL_COLOR = /^#[0-9a-f]{6}$/
  * - ;COLOR_CHANGE,T<n>,#rrggbb  PrusaSlicer/SuperSlicer, OrcaSlicer (non-Bambu-Lab printers)
  * - ; COLOR_CHANGE,T<n>,#rrggbb Bambu Studio, OrcaSlicer (Bambu Lab printers)
  */
-const COLOR_CHANGE_COMMENT = /;\s*color_change(.*)/i
+const COLOR_CHANGE_COMMENT = /;\s*color_change(?!\w)(.*)/i
 
 /** Matches the extrusion width the slicer states, e.g. ";WIDTH:0.42" or "; LINE_WIDTH: 0.42" */
 const WIDTH_COMMENT = /;\s*(?:line_)?width:\s*([\d.]+)/i

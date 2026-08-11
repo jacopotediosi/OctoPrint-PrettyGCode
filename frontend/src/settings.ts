@@ -1,8 +1,8 @@
 import type { NavigationModeKey, ProjectionMode } from './viewer/navigation'
 import type { NozzleStyle } from './viewer/nozzle'
 import type { TravelScope } from './gcode/rendering/gcode-model'
-import type { FeatureTypeColorRule } from './gcode/colors/feature-type-colors'
-import type { ColorModeId } from './gcode/colors/segment-colors'
+import type { FeatureTypeColorRule } from './gcode/colors/feature-type'
+import type { ColorModeId } from './gcode/colors/segment'
 
 /** localStorage key holding the settings */
 const STORAGE_KEY = 'pg-settings'

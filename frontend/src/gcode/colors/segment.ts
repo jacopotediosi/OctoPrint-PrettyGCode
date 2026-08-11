@@ -1,5 +1,6 @@
-import { resolveFeatureTypeColors } from './feature-type-colors'
-import { resolveToolColors } from './tool-colors'
+import { FIRST_COLOR_CHANGE_VALUE, resolveColorPrintColors } from './color-print'
+import { resolveFeatureTypeColors } from './feature-type'
+import { resolveToolColors } from './tool'
 import { srgbToLinear } from '../../utils/colors'
 import type { RgbColor } from '../../utils/colors'
 import { clamp } from '../../utils/numbers'
@@ -139,6 +140,15 @@ export const COLOR_MODES = {
     propertyOf: (layer: Layer) => layer.toolIds,
     fixedColors: (gcode: ParsedGcode) => resolveToolColors(gcode.slicerToolColors),
     measuresFilamentUsage: true
+  },
+  colorPrint: {
+    name: 'Color Print',
+    unit: '',
+    decimals: 0,
+    propertyOf: (layer: Layer) => joinSegmentProperties(layer.toolIds, layer.colorChangeIds,
+      (toolId, colorChangeId) => colorChangeId < 0 ? toolId : FIRST_COLOR_CHANGE_VALUE + colorChangeId),
+    fixedColors: (gcode: ParsedGcode) => resolveColorPrintColors(gcode),
+    measuresFilamentUsage: true
   }
 } satisfies Record<string, ColorMode>
 
@@ -176,6 +186,8 @@ export interface PropertyFixedColors {
   defaultColor: RgbColor
   /** Name a value goes by */
   nameOf: (value: number) => string
+  /** Whether the values run in the order the print takes them */
+  inPrintOrder?: boolean
 }
 
 /** The lowest and the highest value a property takes over a gcode */

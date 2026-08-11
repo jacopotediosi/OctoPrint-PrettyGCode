@@ -1,0 +1,58 @@
+import { resolveToolColors, FALLBACK_FILAMENT_COLORS } from './tool'
+import { hexStringToLinearColor, type RgbColor } from '../../utils/colors'
+import type { PropertyFixedColors } from './segment'
+import type { ParsedGcode } from '../parsing/parser'
+
+/** Value the first color change takes, the lower ones standing for the tools printing before any change */
+export const FIRST_COLOR_CHANGE_VALUE = 256
+
+/** Height in mm a color change may miss the layer it takes effect at by */
+const COLOR_CHANGE_EPSILON_MM = 0.0011
+
+/**
+ * Picks the color and the name every stretch of a color printed gcode goes by
+ * @param gcode - Parsed gcode to read
+ * @returns The picked colors
+ */
+export function resolveColorPrintColors (gcode: ParsedGcode): PropertyFixedColors {
+  const toolColors = resolveToolColors(gcode.slicerToolColors)
+  const colors: Array<RgbColor | undefined> = [...toolColors.colors]
+
+  gcode.colorChanges.forEach((change, index) => {
+    colors[FIRST_COLOR_CHANGE_VALUE + index] = hexStringToLinearColor(change.color || FALLBACK_FILAMENT_COLORS[index % FALLBACK_FILAMENT_COLORS.length])
+  })
+
+  // Heights every change prints from, and the last ones printed before it
+  const layerHeights = gcode.layers.map((layer) => layer.z).sort((first, second) => first - second)
+  const changeHeights = gcode.colorChanges.map((change) => {
+    const layer = layerHeights.findIndex((height) => height >= change.z - COLOR_CHANGE_EPSILON_MM)
+    return { from: layer < 0 ? change.z : layerHeights[layer], upTo: layer > 0 ? layerHeights[layer - 1] : 0 }
+  })
+
+  /**
+   * Finds the color change a tool takes after another one
+   * @param toolId - Id of the tool to follow
+   * @param change - Index of the color change to start from, -1 to start from the top of the print
+   * @returns The index of the next change of that tool, -1 when it changes no more
+   */
+  const nextChange = (toolId: number, change: number): number =>
+    gcode.colorChanges.findIndex((next, index) => index > change && next.toolId === toolId)
+
+  return {
+    colors,
+    defaultColor: toolColors.defaultColor,
+    inPrintOrder: true,
+    nameOf: (value: number) => {
+      const change = value < FIRST_COLOR_CHANGE_VALUE ? -1 : value - FIRST_COLOR_CHANGE_VALUE
+      const toolId = change < 0 ? value : gcode.colorChanges[change].toolId
+      const next = nextChange(toolId, change)
+
+      // Only a gcode printing with several tools names them apart
+      const tool = gcode.slicerToolColors.length > 1 ? toolColors.nameOf(toolId) + ' ' : ''
+
+      if (change < 0) return tool + (next < 0 ? 'default color' : `up to ${changeHeights[next].upTo.toFixed(2)} mm`)
+      if (next < 0) return tool + `above ${changeHeights[change].from.toFixed(2)} mm`
+      return tool + `from ${changeHeights[change].from.toFixed(2)} to ${changeHeights[next].upTo.toFixed(2)} mm`
+    }
+  }
+}

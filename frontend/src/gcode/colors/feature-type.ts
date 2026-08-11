@@ -1,5 +1,5 @@
 import { hexStringToLinearColor } from '../../utils/colors'
-import type { PropertyFixedColors } from './segment-colors'
+import type { PropertyFixedColors } from './segment'
 import type { FeatureType } from '../parsing/parser'
 
 /** One feature type color rule: keywords to look for in comments, and the color to paint their segments */
