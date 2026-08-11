@@ -1,5 +1,6 @@
-import { emptyGcode } from './parser'
-import type { ParsedGcode } from './parser'
+import { emptyGcode } from './parsed-gcode'
+import { jobFileUrl } from '../../octoprint/rest-api'
+import type { ParsedGcode } from './parsed-gcode'
 import type { GcodeParseReply, GcodeParseRequest } from './parser-worker'
 
 /** URL of the gcode parser worker */
@@ -30,7 +31,7 @@ export async function loadGcodeFile (jobPath: string, objectTag: string | undefi
   if (!jobPath) return emptyGcode()
 
   // The worker resolves relative URLs against its own script, so the download URL is made absolute here
-  const fileUrl = new URL(OctoPrint.files.downloadPath('local', jobPath), location.href).href
+  const fileUrl = new URL(jobFileUrl(jobPath), location.href).href
 
   // Create the parser worker
   const worker = new Worker(PARSER_WORKER_URL)

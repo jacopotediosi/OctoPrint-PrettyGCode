@@ -1,7 +1,8 @@
 import GUI, { type Controller } from 'lil-gui'
 import { NAVIGATION_MODES } from '../../viewer/navigation'
 import { initFeatureTypeColorsModal } from './feature-type-colors-modal'
-import type { FeatureTypeColorPreset } from '../../gcode/colors/feature-type'
+import { addSettingResetButtons, type ResetEntry } from './setting-reset-buttons'
+import type { FeatureTypeColorPreset } from '../../gcode/colors/fixed-colors/feature-type'
 import type { Settings, SettingKey } from '../../settings'
 import type { PrettyGCodeApp } from '../../app'
 
@@ -11,6 +12,28 @@ export interface ViewSettingsPanel {
   refresh: () => void
 }
 
+/** What a view settings panel edits and where it is built */
+interface ViewSettingsPanelDefinition {
+  /** Element holding the panel header and receiving the controls */
+  container: HTMLElement
+  /** Settings the panel edits */
+  settings: Settings
+  /** Callback called after a setting change */
+  onChange?: () => void
+  /** Application to update live, absent to only edit the values */
+  app?: PrettyGCodeApp
+}
+
+/** What a setting row lets the user pick, beyond a plain value */
+interface OptionChoices {
+  /** Values the row lets pick, by label */
+  choices?: Record<string, string>
+  /** Lowest and highest value the row takes, and the step between them */
+  range?: [min: number, max: number, step: number]
+  /** Whether the row picks a color */
+  color?: boolean
+}
+
 /**
  * Builds the panel editing the view settings of this browser
  * @param app - Application instance
@@ -18,30 +41,48 @@ export interface ViewSettingsPanel {
  */
 export function initViewSettingsPanel (app: PrettyGCodeApp): ViewSettingsPanel {
   const container = document.getElementById('pg-view-settings')!
-  return buildViewSettingsPanel(container, app.settings, () => app.settings.save(), app)
+  return buildViewSettingsPanel({ container, settings: app.settings, onChange: () => app.settings.save(), app })
 }
 
 /**
  * Builds a view settings panel
- * @param container - Element holding the panel header and receiving the controls
- * @param settings - Settings the panel edits
- * @param onChange - Callback called after a setting change, null for none
- * @param app - Application to update live, null to only edit the values
+ * @param def - Element to build the panel in, settings it edits and what to update on a change
  * @returns The created panel
  */
-export function buildViewSettingsPanel (container: HTMLElement, settings: Settings, onChange: (() => void) | null, app: PrettyGCodeApp | null): ViewSettingsPanel {
+export function buildViewSettingsPanel ({ container, settings, onChange, app }: ViewSettingsPanelDefinition): ViewSettingsPanel {
   const gui = new GUI({ autoPlace: false })
 
+  /** Callbacks bringing a row back in sync with the settings */
   const refreshers: Array<() => void> = []
-  const refreshResets = (): void => refreshers.forEach((refresh) => refresh())
+
+  /** Brings every row back in sync with the settings */
+  const refreshRows = (): void => refreshers.forEach((refresh) => refresh())
+
   gui.onChange(() => {
     onChange?.()
-    refreshResets()
+    refreshRows()
   })
   gui.onFinishChange((event) => app?.applySettings([event.property as SettingKey]))
 
-  const option = (folder: GUI, prop: SettingKey, name: string, help: string): Controller => {
-    const controller = folder.add(settings, prop).name(name)
+  /**
+   * Adds a row editing a setting
+   * @param folder - Folder holding the row
+   * @param prop - Setting the row edits
+   * @param name - Label shown for the row
+   * @param help - Text shown when hovering the row
+   * @param picks - What the row lets the user pick, beyond a plain value
+   * @returns The row controller
+   */
+  const option = (folder: GUI, prop: SettingKey, name: string, help: string, picks: OptionChoices = {}): Controller => {
+    const { choices, range, color } = picks
+
+    let controller: Controller
+    if (color) controller = folder.addColor(settings, prop)
+    else if (choices) controller = folder.add(settings, prop, choices)
+    else if (range) controller = folder.add(settings, prop, ...range)
+    else controller = folder.add(settings, prop)
+
+    controller.name(name)
     controller.domElement.title = help
     return controller
   }
@@ -90,11 +131,21 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
   const cameraFolder = gui.addFolder('Camera')
 
   const navigationOptions = Object.fromEntries(Object.entries(NAVIGATION_MODES).map(([key, mode]) => [mode.name, key]))
-  const navigation = cameraFolder.add(settings, 'navigationMode', navigationOptions).name('Navigation mode')
-  navigation.domElement.title = 'Set which mouse buttons rotate, pan and zoom the 3D view.'
+  option(
+    cameraFolder,
+    'navigationMode',
+    'Navigation mode',
+    'Set which mouse buttons rotate, pan and zoom the 3D view.',
+    { choices: navigationOptions }
+  )
 
-  const projection = cameraFolder.add(settings, 'projectionMode', { Perspective: 'perspective', Orthographic: 'orthographic' }).name('Projection mode')
-  projection.domElement.title = 'Set whether the 3D view is drawn with a perspective or an orthographic projection.'
+  option(
+    cameraFolder,
+    'projectionMode',
+    'Projection mode',
+    'Set whether the 3D view is drawn with a perspective or an orthographic projection.',
+    { choices: { Perspective: 'perspective', Orthographic: 'orthographic' } }
+  )
 
   option(
     cameraFolder,
@@ -114,34 +165,58 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
 
   const printerFolder = gui.addFolder('Printer')
 
-  const beltPrinter = option(
+  option(
     printerFolder,
     'beltPrinter',
     'Belt printer',
     'Set whether the printer prints onto a moving belt.'
   )
 
-  const beltPrinterGantryAngle = printerFolder.add(settings, 'beltPrinterGantryAngle', 1, 89, 1).name('Gantry angle')
-  beltPrinterGantryAngle.domElement.title = 'Set the angle between the belt and the printer gantry.'
+  const beltPrinterGantryAngle = option(
+    printerFolder,
+    'beltPrinterGantryAngle',
+    'Gantry angle',
+    'Set the angle between the belt and the printer gantry.',
+    { range: [1, 89, 1] }
+  )
 
-  beltPrinter.onFinishChange(() => beltPrinterGantryAngle.show(settings.beltPrinter))
-  beltPrinterGantryAngle.show(settings.beltPrinter)
+  refreshers.push(() => beltPrinterGantryAngle.show(settings.beltPrinter))
 
   /* ---- Nozzle ---- */
 
   const nozzleFolder = gui.addFolder('Nozzle')
 
-  const nozzleStyle = nozzleFolder.add(settings, 'nozzleStyle', { None: 'none', '3D model': 'model', Dot: 'dot' }).name('Nozzle style')
-  nozzleStyle.domElement.title = 'Set the marker shown at the current print position.'
+  option(
+    nozzleFolder,
+    'nozzleStyle',
+    'Nozzle style',
+    'Set the marker shown at the current print position.',
+    { choices: { None: 'none', '3D model': 'model', Dot: 'dot' } }
+  )
 
-  const nozzleSize = nozzleFolder.add(settings, 'nozzleSize', 50, 200, 5).name('Nozzle size')
-  nozzleSize.domElement.title = 'Set the size of the nozzle marker, in percent of its default.'
+  const nozzleSize = option(
+    nozzleFolder,
+    'nozzleSize',
+    'Nozzle size',
+    'Set the size of the nozzle marker, in percent of its default.',
+    { range: [50, 200, 5] }
+  )
 
-  const nozzleColor = nozzleFolder.addColor(settings, 'nozzleColor').name('Nozzle color')
-  nozzleColor.domElement.title = 'Set the color of the nozzle marker.'
+  const nozzleColor = option(
+    nozzleFolder,
+    'nozzleColor',
+    'Nozzle color',
+    'Set the color of the nozzle marker.',
+    { color: true }
+  )
 
-  const nozzleTransparency = nozzleFolder.add(settings, 'nozzleTransparency', 0, 100, 1).name('Nozzle transparency')
-  nozzleTransparency.domElement.title = 'Set how transparent the nozzle marker at the current print position is.'
+  const nozzleTransparency = option(
+    nozzleFolder,
+    'nozzleTransparency',
+    'Nozzle transparency',
+    'Set how transparent the nozzle marker at the current print position is.',
+    { range: [0, 100, 1] }
+  )
 
   const nozzleReflection = option(
     nozzleFolder,
@@ -150,27 +225,34 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     'Reflect the surrounding scene on the nozzle 3D model.'
   )
 
-  const refreshNozzleControls = (): void => {
+  refreshers.push(() => {
     nozzleSize.show(settings.nozzleStyle !== 'none')
     nozzleColor.show(settings.nozzleStyle !== 'none')
     nozzleTransparency.show(settings.nozzleStyle !== 'none')
     nozzleReflection.show(settings.nozzleStyle === 'model')
-  }
-  nozzleStyle.onFinishChange(refreshNozzleControls)
-  refreshNozzleControls()
+  })
 
   /* ---- Travel moves ---- */
 
   const travelMovesFolder = gui.addFolder('Travel moves')
 
-  const travelScope = travelMovesFolder.add(settings, 'travelScope', { Off: 'none', 'Displayed layer': 'displayedLayer', 'Whole model': 'wholeModel' }).name('Travel moves')
-  travelScope.domElement.title = 'Set where the non-extruding moves between printed lines are drawn.'
+  option(
+    travelMovesFolder,
+    'travelScope',
+    'Travel moves',
+    'Set where the non-extruding moves between printed lines are drawn.',
+    { choices: { Off: 'none', 'Displayed layer': 'displayedLayer', 'Whole model': 'wholeModel' } }
+  )
 
-  const travelColor = travelMovesFolder.addColor(settings, 'travelColor').name('Travel color')
-  travelColor.domElement.title = 'Set the color of the travel moves.'
+  const travelColor = option(
+    travelMovesFolder,
+    'travelColor',
+    'Travel color',
+    'Set the color of the travel moves.',
+    { color: true }
+  )
 
-  travelScope.onFinishChange(() => travelColor.show(settings.travelScope !== 'none'))
-  travelColor.show(settings.travelScope !== 'none')
+  refreshers.push(() => travelColor.show(settings.travelScope !== 'none'))
 
   /* ---- Gcode model ---- */
 
@@ -183,8 +265,13 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     'Display lines with thickness, based on nozzle size.'
   )
 
-  const highlightIntensity = gcodeModelFolder.add(settings, 'highlightIntensity', 0, 100, 1).name('Highlight layer')
-  highlightIntensity.domElement.title = 'Set how strongly the topmost displayed layer is shaded.'
+  option(
+    gcodeModelFolder,
+    'highlightIntensity',
+    'Highlight layer',
+    'Set how strongly the topmost displayed layer is shaded.',
+    { range: [0, 100, 1] }
+  )
 
   option(
     gcodeModelFolder,
@@ -197,16 +284,16 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
   const featureTypeColorsModal = initFeatureTypeColorsModal(settings, featureTypeColorPresets, () => {
     onChange?.()
     app?.applySettings(['featureTypeColorRules', 'featureTypeDefaultColor'])
-    refreshResets()
+    refreshRows()
   })
-  const customizeFeatureTypeColors = gcodeModelFolder.add({ customize: () => featureTypeColorsModal.open() }, 'customize').name('Feature type colors…')
+  const customizeFeatureTypeColors = gcodeModelFolder.add({ customize: () => featureTypeColorsModal.open() }, 'customize').name('Feature type colors...')
   customizeFeatureTypeColors.domElement.title = 'Customize the colors of the G-code feature types.'
 
   /* ---- Bed ---- */
 
   const bedFolder = gui.addFolder('Bed')
 
-  const bed = option(
+  option(
     bedFolder,
     'showBed',
     'Bed',
@@ -227,17 +314,9 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
     'Show the markers of the excluded regions.'
   )
 
-  bed.onFinishChange(() => mirror.show(settings.showBed))
-  mirror.show(settings.showBed)
+  refreshers.push(() => mirror.show(settings.showBed))
 
   /* ---- Reset buttons ---- */
-
-  /**
-   * Gets the setting a row edits
-   * @param controller - Controller of a setting row
-   * @returns Name of that setting
-   */
-  const keyOf = (controller: Controller): SettingKey => controller.property as SettingKey
 
   /**
    * Tells whether the feature type colors are at their default
@@ -245,71 +324,22 @@ export function buildViewSettingsPanel (container: HTMLElement, settings: Settin
    */
   const featureTypeColorsAtDefault = (): boolean => settings.isDefault('featureTypeDefaultColor') && settings.isDefault('featureTypeColorRules')
 
-  /**
-   * Builds a reset button
-   * @param title - Tooltip of the button
-   * @returns The button, with no click handler attached
-   */
-  const makeResetButton = (title: string): HTMLButtonElement => {
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.className = 'pg-reset'
-    button.title = title
-    const icon = document.createElement('i')
-    icon.className = 'fa-solid fa-arrow-rotate-left'
-    button.append(icon)
-    return button
-  }
-
-  // How to reset a setting row and tell whether it is at its default
-  type ResetEntry = { controller: Controller, atDefault: () => boolean, resetToDefault: () => void }
-
   // Rows that reset through their own logic instead of loading a default value
   const customResets: ResetEntry[] = [
     { controller: customizeFeatureTypeColors, atDefault: featureTypeColorsAtDefault, resetToDefault: featureTypeColorsModal.resetToDefault }
   ]
-  const customControllers = new Set(customResets.map((entry) => entry.controller))
 
-  // One reset entry per setting row, the custom ones keeping their own logic
-  const resetEntries: ResetEntry[] = [
-    ...gui.controllersRecursive()
-      .filter((controller) => !customControllers.has(controller))
-      .map((controller) => ({
-        controller,
-        atDefault: () => settings.isDefault(keyOf(controller)),
-        resetToDefault: () => { controller.load(settings.defaultOf(keyOf(controller))) }
-      })),
-    ...customResets
-  ]
-
-  // One reset button at the right of each setting's row, disabled while the setting is at its default
-  for (const { controller, atDefault, resetToDefault } of resetEntries) {
-    const button = makeResetButton('Reset this setting to its default value')
-    button.addEventListener('click', resetToDefault)
-    controller.domElement.append(button)
-    refreshers.push(() => { button.disabled = atDefault() })
-  }
-
-  // Panel header has a "reset all settings" button, disabled while all are at their default
-  const resetAll = makeResetButton('Reset all settings to their default values')
-  resetAll.classList.add('pg-reset-all')
-  resetAll.addEventListener('click', () => resetEntries.forEach((entry) => entry.resetToDefault()))
-  container.querySelector('.pg-view-settings-header')!.append(resetAll)
-  refreshers.push(() => { resetAll.disabled = resetEntries.every((entry) => entry.atDefault()) })
+  refreshers.push(...addSettingResetButtons({ gui, container, settings, customResets }))
 
   container.append(gui.domElement)
-  refreshResets()
+  refreshRows()
 
   /* ---- Return ---- */
 
   return {
     refresh: () => {
       gui.controllersRecursive().forEach((controller) => controller.updateDisplay())
-      beltPrinterGantryAngle.show(settings.beltPrinter)
-      refreshNozzleControls()
-      travelColor.show(settings.travelScope !== 'none')
-      mirror.show(settings.showBed)
-      refreshResets()
+      refreshRows()
     }
   }
 }

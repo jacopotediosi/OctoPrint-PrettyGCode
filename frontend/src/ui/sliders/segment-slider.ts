@@ -2,6 +2,13 @@ import type { PrettyGCodeApp } from '../../app'
 import { bindStepButton } from './slider-step-button'
 import { clamp } from '../../utils/numbers'
 
+/** Markup of the segment slider and its step buttons */
+const SLIDER_MARKUP = `
+  <button id="pg-segment-step-back-button" class="pg-step-button pg-segment-step-button btn" title="Segment back" disabled><i class="fa-solid fa-chevron-left"></i></button>
+  <button id="pg-segment-step-forward-button" class="pg-step-button pg-segment-step-button btn" title="Segment forward" disabled><i class="fa-solid fa-chevron-right"></i></button>
+  <div id="pg-segment-slider"></div>
+`
+
 /** Revealed segments the slider is showing */
 let revealedSegments = -1
 /** Highest segment the slider can reach */
@@ -25,11 +32,7 @@ export function initSegmentSlider (app: PrettyGCodeApp): void {
   }
 
   // Create HTML elements, slider last so its handle paints over the step buttons
-  $('.pg-view').append(
-    '<button id="pg-segment-step-back-button" class="pg-step-button pg-segment-step-button btn" title="Segment back" disabled><i class="fa-solid fa-chevron-left"></i></button>',
-    '<button id="pg-segment-step-forward-button" class="pg-step-button pg-segment-step-button btn" title="Segment forward" disabled><i class="fa-solid fa-chevron-right"></i></button>',
-    '<div id="pg-segment-slider"></div>'
-  )
+  $('.pg-view').append(SLIDER_MARKUP)
 
   // Initialize the slider
   $('#pg-segment-slider').slider({
@@ -69,10 +72,10 @@ export function initSegmentSlider (app: PrettyGCodeApp): void {
 
 /**
  * Shows or hides the segment slider
- * @param show - True to show the segment slider
+ * @param visible - True to show the segment slider
  */
-export function applySegmentSliderVisibility (show: boolean): void {
-  $('#pg-segment-slider-ui, .pg-segment-step-button').toggleClass('pg-hidden', !show)
+export function applySegmentSliderVisibility (visible: boolean): void {
+  $('#pg-segment-slider-ui, .pg-segment-step-button').toggleClass('pg-hidden', !visible)
 }
 
 /**

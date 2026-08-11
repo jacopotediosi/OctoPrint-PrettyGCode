@@ -472,7 +472,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     margin-top: 12px;
 }
 
-/* === Top overlay windows === */
+/* === Top left windows === */
 .pg-legend-header,
 .pg-maximized #state_wrapper::after,
 .pg-maximized #files_wrapper::after {
@@ -522,7 +522,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-maximized #state_wrapper::after { content: "State"; }
 .pg-maximized #files_wrapper::after { content: "Files"; }
 
-/* === Bottom overlay windows === */
+/* === Bottom windows === */
 .pg-maximized #pg-webcam,
 .pg-maximized #tab_plugin_dashboard {
     display: block;
@@ -532,7 +532,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     background: var(--pg-window-background);
     border-radius: var(--pg-window-radius);
 }
-/* Webcam overlay */
+/* Webcam window */
 #pg-webcam {
     display: none;
 }
@@ -545,7 +545,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     margin-top: 0;
     border-radius: var(--pg-window-radius);
 }
-/* Dashboard overlay */
+/* Dashboard window */
 .pg-maximized #tab_plugin_dashboard {
     left: var(--pg-margin-left);
     z-index: var(--pg-z-dashboard);
@@ -559,7 +559,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     display: none;
 }
 
-/* === Overlay windows resize handles === */
+/* === Window resize handles === */
 .pg-resize-handle {
     display: none;
     position: absolute;

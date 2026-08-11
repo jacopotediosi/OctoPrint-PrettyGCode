@@ -3,6 +3,13 @@ import { bindStepButton } from './slider-step-button'
 import { clamp } from '../../utils/numbers'
 import { secondsFromNowToClockText, secondsToDurationText } from '../../utils/time'
 
+/** Markup of the layer slider and its step buttons */
+const SLIDER_MARKUP = `
+  <button id="pg-layer-step-up-button" class="pg-step-button pg-layer-step-button btn" title="Layer up" disabled><i class="fa-solid fa-chevron-up"></i></button>
+  <button id="pg-layer-step-down-button" class="pg-step-button pg-layer-step-button btn" title="Layer down" disabled><i class="fa-solid fa-chevron-down"></i></button>
+  <div id="pg-layer-slider"></div>
+`
+
 /** Revealed layer the slider is showing */
 let revealedLayer = -1
 /** Highest layer the slider can reach */
@@ -26,11 +33,7 @@ export function initLayerSlider (app: PrettyGCodeApp): void {
   }
 
   // Create HTML elements, slider last so its handle paints over the step buttons
-  $('.pg-view').append(
-    '<button id="pg-layer-step-up-button" class="pg-step-button pg-layer-step-button btn" title="Layer up" disabled><i class="fa-solid fa-chevron-up"></i></button>',
-    '<button id="pg-layer-step-down-button" class="pg-step-button pg-layer-step-button btn" title="Layer down" disabled><i class="fa-solid fa-chevron-down"></i></button>',
-    '<div id="pg-layer-slider"></div>'
-  )
+  $('.pg-view').append(SLIDER_MARKUP)
 
   // Initialize the slider
   $('#pg-layer-slider').slider({
@@ -83,10 +86,10 @@ export function initLayerSlider (app: PrettyGCodeApp): void {
 
 /**
  * Shows or hides the layer slider
- * @param show - True to show the layer slider
+ * @param visible - True to show the layer slider
  */
-export function applyLayerSliderVisibility (show: boolean): void {
-  $('#pg-layer-slider-ui, .pg-layer-step-button').toggleClass('pg-hidden', !show)
+export function applyLayerSliderVisibility (visible: boolean): void {
+  $('#pg-layer-slider-ui, .pg-layer-step-button').toggleClass('pg-hidden', !visible)
 }
 
 /**

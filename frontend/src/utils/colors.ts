@@ -2,8 +2,11 @@ import { clamp } from './numbers'
 
 /** An RGB color, with components from 0 to 1 */
 export interface RgbColor {
+  /** Red component */
   r: number
+  /** Green component */
   g: number
+  /** Blue component */
   b: number
 }
 

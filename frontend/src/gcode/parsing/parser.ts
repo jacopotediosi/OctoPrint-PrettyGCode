@@ -1,142 +1,13 @@
 import { arcOffsetFromRadius, interpolateArc } from './arc-interpolation'
 import { BeltPrinterTransform } from '../printer-transform/belt-printer-transform'
-import { SlicerTimeMarksCollector, type SlicerTimeMarks } from './slicer-time-marks'
-
-/* ---- Parse result ---- */
-
-/** A parsed gcode */
-export interface ParsedGcode {
-  /** Parsed layers (segment endpoints, feature types...) */
-  layers: Layer[]
-  /** Bounding box of the extruded gcode */
-  bounds: GcodeBounds
-  /** Nozzle diameter the slicer states, if any */
-  slicerNozzleDiameter: number | null
-  /** Filament diameter in mm the slicer states, null when it states none */
-  slicerFilamentDiameter: number | null
-  /** Filament density in g/cm3 the slicer states, null when it states none */
-  slicerFilamentDensity: number | null
-  /** Color the slicer states for each tool, empty where it states none */
-  slicerToolColors: string[]
-  /** Color changes the gcode states, in the order it states them */
-  colorChanges: ColorChange[]
-  /** Print times the slicer states along the file, if any */
-  slicerTimeMarks: SlicerTimeMarks | null
-  /** Feature types the gcode states, by feature type id */
-  featureTypes: FeatureType[]
-  /** Names of the objects marked in the gcode, by object id */
-  objectNames: string[]
-}
-
-/** A color change the gcode states */
-export interface ColorChange {
-  /** Id of the tool it changes the color of */
-  toolId: number
-  /** Color the tool prints with from there on, empty when the gcode states none */
-  color: string
-  /** Height in mm it takes effect at */
-  z: number
-}
-
-/** A feature type the gcode states */
-export interface FeatureType {
-  /** Whole comment line stating it, lowercased */
-  comment: string
-  /** Name it carries in that comment, in the slicer's own writing */
-  label: string
-}
-
-/** One parsed layer and its properties */
-export interface Layer {
-  vertices: Float32Array
-  z: number
-  filePositions: Uint32Array
-  durations: Float32Array
-  objectIds: Int32Array | null
-  featureTypeIds: SegmentProperty
-  toolIds: SegmentProperty
-  colorChangeIds: SegmentProperty
-  feedrates: SegmentProperty
-  fanSpeeds: SegmentProperty
-  temperatures: SegmentProperty
-  widths: SegmentProperty
-  heights: SegmentProperty
-  filamentPerMm: SegmentProperty
-  travelVertices: Float32Array
-  travelSegmentIndices: Uint32Array
-}
-
-/** A property of the segments, recorded only where it changes */
-export interface SegmentProperty {
-  /** Segment of the layer each property value starts at */
-  segmentIndices: Uint32Array
-  /** Value the property takes from that segment on */
-  values: Float32Array
-}
-
-/** The value each property takes on one segment */
-export interface SegmentPropertyValues {
-  /** Id of the feature type the segment belongs to, -1 for none */
-  featureTypeId: number
-  /** Id of the tool the segment is extruded with */
-  toolId: number
-  /** Index of the color change the segment is extruded after, -1 before the first one of its tool */
-  colorChangeId: number
-  /** Speed of the segment in mm/s */
-  feedrate: number
-  /** Speed of the print cooling fan in percent */
-  fanSpeed: number
-  /** Nozzle temperature in degrees Celsius */
-  temperature: number
-  /** Width of the extruded line in mm, 0 when the slicer states none */
-  width: number
-  /** Height of the extruded line in mm */
-  height: number
-  /** Filament in mm the segment extrudes over each mm of its length */
-  filamentPerMm: number
-}
-
-/** Box the parsed gcode fits in */
-export interface GcodeBounds {
-  minX: number
-  minY: number
-  minZ: number
-  maxX: number
-  maxY: number
-  maxZ: number
-}
-
-/**
- * Builds empty bounds
- * @returns The empty bounds
- */
-export const emptyBounds = (): GcodeBounds => ({ minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity })
-
-/**
- * Builds an empty parse result
- * @returns The empty gcode
- */
-export const emptyGcode = (): ParsedGcode => ({
-  layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, slicerFilamentDiameter: null, slicerFilamentDensity: null, slicerToolColors: [], colorChanges: [], slicerTimeMarks: null, featureTypes: [], objectNames: []
-})
-
-/** A point of the parsed gcode, in scene coordinates */
-export interface ScenePoint {
-  x: number
-  y: number
-  z: number
-}
+import { OpenLayer } from './open-layer'
+import { emptyBounds } from './parsed-gcode'
+import type { ColorChange, FeatureType, Layer, MachineState, ParsedGcode, ScenePoint, SegmentPropertyValues } from './parsed-gcode'
+import { COLOR_CHANGE_COMMENT_PATTERN, FEATURE_TYPE_COMMENT_PATTERN, HEIGHT_COMMENT_PATTERN, LAYER_CHANGE_COMMENT_PATTERN, TIME_ELAPSED_COMMENT_PREFIX, TOOL_COLOR_PATTERN, WIDTH_COMMENT_PATTERN } from './slicer-comments'
+import { SlicerConfigCollector } from './slicer-config'
+import { SlicerTimeMarksCollector } from './slicer-time-marks'
 
 /* ---- Machine state ---- */
-
-/** Machine state the parser tracks */
-export interface MachineState {
-  x: number
-  y: number
-  z: number
-  e: number
-  f: number
-}
 
 /** Initial machine state */
 const INITIAL_MACHINE_STATE: MachineState = Object.freeze({ x: 0, y: 0, z: 0, e: 0, f: 0 })
@@ -151,7 +22,7 @@ const feedrateMmPerSecond = (feedrate: number): number => (feedrate > 0 ? feedra
 /* ---- Gcode text ---- */
 
 /** Matches non-ASCII characters, whose lines need real encoding to be measured */
-const NON_ASCII = /[\u0080-\uffff]/
+const NON_ASCII_PATTERN = /[\u0080-\uffff]/
 
 /** Encoder measuring lines in bytes */
 const textEncoder = new TextEncoder()
@@ -161,245 +32,7 @@ const textEncoder = new TextEncoder()
  * @param line - Line to measure
  * @returns Its length in bytes
  */
-const lineByteLength = (line: string): number => NON_ASCII.test(line) ? textEncoder.encode(line).length : line.length
-
-/** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */
-const NOZZLE_DIAMETER_COMMENT = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
-
-/**
- * Matches a slicer's feature-type comment, capturing the label that follows the marker
- * - ;TYPE:<label>      PrusaSlicer/SuperSlicer/Cura, OrcaSlicer (non-Bambu-Lab printers)
- * - ; FEATURE: <label> Bambu Studio, OrcaSlicer (Bambu Lab printers)
- * - ; feature <label>  Simplify3D
- */
-const FEATURE_TYPE_COMMENT = /;\s*(?:type:|feature[ :])(.*)/i
-
-/**
- * Matches a slicer's layer change comment
- * - ;LAYER_CHANGE   PrusaSlicer/SuperSlicer, OrcaSlicer (non-Bambu-Lab printers)
- * - ; CHANGE_LAYER  Bambu Studio, OrcaSlicer (Bambu Lab printers)
- * - ;LAYER:<number> Cura, ideaMaker
- * - ; layer <number> Simplify3D
- */
-const LAYER_CHANGE_COMMENT = /;\s*(?:layer[_ ]?change|change[_ ]?layer|layer[ :]\d)/i
-
-/** Matches the filament diameter stated by the slicer, e.g. "; filament_diameter = 1.75" */
-const FILAMENT_DIAMETER_COMMENT = /filament[_ ]?diameter\s*[:=,]\s*([\d.]+)/i
-
-/** Matches the filament density stated by the slicer, e.g. "; filament_density = 1.24" */
-const FILAMENT_DENSITY_COMMENT = /filament[_ ]?density\s*[:=,]\s*([\d.]+)/i
-
-/** Matches the tool colors stated by the slicer, e.g. "; extruder_colour = #800080;#ffffff" */
-const TOOL_COLORS_COMMENT = /(extruder|filament)_colou?r\s*=\s*(.*)/i
-
-/** Matches one color a slicer states for a tool, e.g. "#800080" */
-const TOOL_COLOR = /^#[0-9a-f]{6}$/
-
-/**
- * Matches a slicer's color change comment, capturing the tool and the color it states after it
- * - ;COLOR_CHANGE,T<n>,#rrggbb  PrusaSlicer/SuperSlicer, OrcaSlicer (non-Bambu-Lab printers)
- * - ; COLOR_CHANGE,T<n>,#rrggbb Bambu Studio, OrcaSlicer (Bambu Lab printers)
- */
-const COLOR_CHANGE_COMMENT = /;\s*color_change(?!\w)(.*)/i
-
-/** Matches the extrusion width the slicer states, e.g. ";WIDTH:0.42" or "; LINE_WIDTH: 0.42" */
-const WIDTH_COMMENT = /;\s*(?:line_)?width:\s*([\d.]+)/i
-
-/** Matches the extrusion height the slicer states, e.g. ";HEIGHT:0.2" or "; LAYER_HEIGHT: 0.2" */
-const HEIGHT_COMMENT = /;\s*(?:layer_)?height:\s*([\d.]+)/i
-
-/** Prefix, lowercased, of the comment stating the print time elapsed so far */
-const TIME_ELAPSED_COMMENT = ';time_elapsed:'
-
-/** Highest tool number a T command selects */
-const HIGHEST_TOOL_NUMBER = 254
-
-/* ---- Layers ---- */
-
-/** Share the extrusion of a segment may differ by before it counts as a change, keeping the rounding of E out of the record */
-const FILAMENT_PER_MM_TOLERANCE = 0.02
-
-/** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
-const LAYER_EPSILON_MM = 0.04
-
-/** A property of the segments being filled, kept only where it changes */
-class OpenSegmentProperty {
-  private readonly segmentIndices: number[] = []
-  private readonly values: number[] = []
-
-  /**
-   * @param tolerance - Share of the last recorded value a new one may differ by and still count as the same
-   */
-  constructor (private readonly tolerance: number = 0) {}
-
-  /**
-   * Records the value the property takes on a segment
-   * @param segment - Segment index within the layer
-   * @param value - Value the property takes there
-   */
-  add (segment: number, value: number): void {
-    const recorded = this.values[this.values.length - 1]
-    if (Math.abs(value - recorded) <= this.tolerance * Math.abs(recorded)) return
-
-    this.segmentIndices.push(segment)
-    this.values.push(value)
-  }
-
-  /**
-   * Builds the property from the values recorded so far
-   * @returns The built property
-   */
-  finish (): SegmentProperty {
-    return { segmentIndices: Uint32Array.from(this.segmentIndices), values: Float32Array.from(this.values) }
-  }
-}
-
-/** A layer being filled with segments and with the travels leading to them */
-class OpenLayer {
-  /** Initial size of segment buffers */
-  private static readonly INITIAL_BUFFERS_CAPACITY = 1024
-  /** Initial size of travel buffers */
-  private static readonly INITIAL_TRAVEL_BUFFERS_CAPACITY = 128
-
-  private vertices = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 6)
-  private filePositions = new Uint32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY)
-  private durations = new Float32Array(OpenLayer.INITIAL_BUFFERS_CAPACITY * 2)
-  private objectIds: Int32Array | null = null
-  private readonly featureTypeIds = new OpenSegmentProperty()
-  private readonly toolIds = new OpenSegmentProperty()
-  private readonly colorChangeIds = new OpenSegmentProperty()
-  private readonly feedrates = new OpenSegmentProperty()
-  private readonly fanSpeeds = new OpenSegmentProperty()
-  private readonly temperatures = new OpenSegmentProperty()
-  private readonly widths = new OpenSegmentProperty()
-  private readonly heights = new OpenSegmentProperty()
-  private readonly filamentPerMm = new OpenSegmentProperty(FILAMENT_PER_MM_TOLERANCE)
-  private capacity = OpenLayer.INITIAL_BUFFERS_CAPACITY
-  private segments = 0
-
-  private travelVertices = new Float32Array(OpenLayer.INITIAL_TRAVEL_BUFFERS_CAPACITY * 6)
-  private travelSegmentIndices = new Uint32Array(OpenLayer.INITIAL_TRAVEL_BUFFERS_CAPACITY)
-  private travelCapacity = OpenLayer.INITIAL_TRAVEL_BUFFERS_CAPACITY
-  private travels = 0
-
-  constructor (public z: number) {}
-
-  /**
-   * Appends a segment
-   * @param start - Segment start point
-   * @param end - Segment end point
-   * @param filePosition - Byte offset of the segment's line in the file
-   * @param travelSeconds - Estimated travel time leading to the segment
-   * @param extrusionSeconds - Estimated time extruding the segment
-   * @param objectId - Id of the object the segment belongs to, -1 for none
-   * @param propertyValues - Value each property takes on the segment
-   */
-  addSegment (start: ScenePoint, end: ScenePoint, filePosition: number, travelSeconds: number, extrusionSeconds: number, objectId: number, propertyValues: SegmentPropertyValues): void {
-    if (this.segments === this.capacity) this.growSegments()
-
-    const vertex = this.segments * 6
-    this.vertices[vertex] = start.x
-    this.vertices[vertex + 1] = start.y
-    this.vertices[vertex + 2] = start.z
-    this.vertices[vertex + 3] = end.x
-    this.vertices[vertex + 4] = end.y
-    this.vertices[vertex + 5] = end.z
-
-    this.filePositions[this.segments] = filePosition
-    this.durations[this.segments * 2] = travelSeconds
-    this.durations[this.segments * 2 + 1] = extrusionSeconds
-
-    // Start storing object ids at the first segment that belongs to one
-    if (objectId >= 0 && !this.objectIds) this.objectIds = new Int32Array(this.capacity).fill(-1)
-    if (this.objectIds) this.objectIds[this.segments] = objectId
-
-    this.featureTypeIds.add(this.segments, propertyValues.featureTypeId)
-    this.toolIds.add(this.segments, propertyValues.toolId)
-    this.colorChangeIds.add(this.segments, propertyValues.colorChangeId)
-    this.feedrates.add(this.segments, propertyValues.feedrate)
-    this.fanSpeeds.add(this.segments, propertyValues.fanSpeed)
-    this.temperatures.add(this.segments, propertyValues.temperature)
-    this.widths.add(this.segments, propertyValues.width)
-    this.heights.add(this.segments, propertyValues.height)
-    this.filamentPerMm.add(this.segments, propertyValues.filamentPerMm)
-
-    this.segments++
-  }
-
-  /**
-   * Appends the travels leading to the segment the layer takes next
-   * @param vertices - Travel endpoints as flat XYZ triplets
-   * @param travels - Travels the vertices hold
-   */
-  addTravels (vertices: Float32Array, travels: number): void {
-    while (this.travels + travels > this.travelCapacity) this.growTravels()
-
-    this.travelVertices.set(vertices.subarray(0, travels * 6), this.travels * 6)
-    this.travelSegmentIndices.fill(this.segments, this.travels, this.travels + travels)
-    this.travels += travels
-  }
-
-  /** Doubles the capacity of the segment buffers */
-  private growSegments (): void {
-    this.capacity *= 2
-
-    const vertices = new Float32Array(this.capacity * 6)
-    vertices.set(this.vertices)
-    this.vertices = vertices
-
-    const filePositions = new Uint32Array(this.capacity)
-    filePositions.set(this.filePositions)
-    this.filePositions = filePositions
-
-    const durations = new Float32Array(this.capacity * 2)
-    durations.set(this.durations)
-    this.durations = durations
-
-    if (this.objectIds) {
-      const objectIds = new Int32Array(this.capacity).fill(-1)
-      objectIds.set(this.objectIds)
-      this.objectIds = objectIds
-    }
-  }
-
-  /** Doubles the capacity of the travel buffers */
-  private growTravels (): void {
-    this.travelCapacity *= 2
-
-    const travelVertices = new Float32Array(this.travelCapacity * 6)
-    travelVertices.set(this.travelVertices)
-    this.travelVertices = travelVertices
-
-    const travelSegmentIndices = new Uint32Array(this.travelCapacity)
-    travelSegmentIndices.set(this.travelSegmentIndices)
-    this.travelSegmentIndices = travelSegmentIndices
-  }
-
-  /**
-   * Finishes the layer
-   * @returns The finished layer
-   */
-  finish (): Layer {
-    return {
-      z: this.z,
-      vertices: this.vertices.slice(0, this.segments * 6),
-      filePositions: this.filePositions.slice(0, this.segments),
-      durations: this.durations.slice(0, this.segments * 2),
-      objectIds: this.objectIds ? this.objectIds.slice(0, this.segments) : null,
-      featureTypeIds: this.featureTypeIds.finish(),
-      toolIds: this.toolIds.finish(),
-      colorChangeIds: this.colorChangeIds.finish(),
-      feedrates: this.feedrates.finish(),
-      fanSpeeds: this.fanSpeeds.finish(),
-      temperatures: this.temperatures.finish(),
-      widths: this.widths.finish(),
-      heights: this.heights.finish(),
-      filamentPerMm: this.filamentPerMm.finish(),
-      travelVertices: this.travelVertices.slice(0, this.travels * 6),
-      travelSegmentIndices: this.travelSegmentIndices.slice(0, this.travels)
-    }
-  }
-}
+const lineByteLength = (line: string): number => NON_ASCII_PATTERN.test(line) ? textEncoder.encode(line).length : line.length
 
 /* ---- Parser ---- */
 
@@ -408,41 +41,29 @@ const scratchStart: ScenePoint = { x: 0, y: 0, z: 0 }
 /** Scratch point reused for the scene end of each move */
 const scratchEnd: ScenePoint = { x: 0, y: 0, z: 0 }
 
+/** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
+const LAYER_EPSILON_MM = 0.04
+
 /** Travel length below which the move is not drawn */
 const MIN_TRAVEL_LENGTH_MM = 0.5
+
+/** Highest tool number a T command selects */
+const HIGHEST_TOOL_NUMBER = 254
 
 /** Streaming gcode parser: feed it byte chunks to get layers of segments with feature types, file positions and time estimates */
 export class GcodeParser {
   /* ---- Parse result ---- */
 
-  /** Parsed layers: segment endpoints, feature types, file positions and estimated durations */
-  readonly layers: Layer[] = []
+  /** Parsed layers, in the order the gcode prints them */
+  private readonly layers: Layer[] = []
   /** Bounding box of the extruded gcode */
-  bounds = emptyBounds()
-  /** Nozzle diameter the slicer states, if any */
-  slicerNozzleDiameter: number | null = null
-  /** Filament diameter in mm the slicer states, null when it states none */
-  slicerFilamentDiameter: number | null = null
-  /** Filament density in g/cm3 the slicer states, null when it states none */
-  slicerFilamentDensity: number | null = null
-  /** Color the slicer states for each extruder, empty where it states none */
-  private extruderColors: string[] = []
-  /** Color the slicer states for the filament of each extruder, empty where it states none */
-  private filamentColors: string[] = []
-  /** Color the slicer states for each tool, empty where it states none */
-  get slicerToolColors (): string[] {
-    const tools = Math.max(this.extruderColors.length, this.filamentColors.length)
-    return Array.from({ length: tools }, (_unused, tool) => this.extruderColors[tool] || this.filamentColors[tool] || '')
-  }
-
+  private bounds = emptyBounds()
   /** Color changes the gcode states, in the order it states them */
-  readonly colorChanges: ColorChange[] = []
-  /** Print times the slicer states along the file, if any */
-  slicerTimeMarks: SlicerTimeMarks | null = null
+  private readonly colorChanges: ColorChange[] = []
   /** Feature types the gcode states, by feature type id */
-  readonly featureTypes: FeatureType[] = []
+  private readonly featureTypes: FeatureType[] = []
   /** Names of the objects marked in the gcode, by object id */
-  readonly objectNames: string[] = []
+  private readonly objectNames: string[] = []
 
   /* ---- Gcode text ---- */
 
@@ -519,6 +140,11 @@ export class GcodeParser {
   /** Id of the object the parsed segments belong to, -1 for none */
   private currentObjectId = -1
 
+  /* ---- Slicer config ---- */
+
+  /** Collector of the print settings the slicer states along the file */
+  private readonly slicerConfigCollector = new SlicerConfigCollector()
+
   /* ---- Slicer time marks ---- */
 
   /** Collector of the print times the slicer states along the file */
@@ -534,6 +160,8 @@ export class GcodeParser {
     this.g90InfluencesExtruder = g90InfluencesExtruder
     this.printerTransform = beltPrinterGantryAngle == null ? null : new BeltPrinterTransform(beltPrinterGantryAngle)
   }
+
+  /* ---- Gcode text ---- */
 
   /**
    * Parses the next chunk of gcode bytes; chunks may split lines anywhere
@@ -567,81 +195,82 @@ export class GcodeParser {
 
     // Parse comments
     const commentStart = rawLine.indexOf(';')
-    if (commentStart >= 0) {
-      const commentLower = rawLine.toLowerCase()
+    if (commentStart >= 0) this.parseComment(rawLine, commentStart)
 
-      // Take the feature type from feature-type comments only
-      const featureTypeMatch = rawLine.match(FEATURE_TYPE_COMMENT)
-      if (featureTypeMatch) {
-        const id = this.featureTypes.findIndex((featureType) => featureType.comment === commentLower)
-        this.currentPropertyValues.featureTypeId = id >= 0
-          ? id
-          : this.featureTypes.push({ comment: commentLower, label: featureTypeMatch[1].trim() }) - 1
+    // Parse gcode cmd and args
+    const args: Record<string, number> = {}
+    const cmd = this.parseCommand(rawLine, commentStart, args)
+    this.applyCommand(cmd, args, rawLine)
+  }
 
-        this.customGcode = commentLower.includes('custom')
+  /* ---- Comments ---- */
 
-        // First feature type seen, not counting the slicers' own start gcode
-        if (!this.featureTypeCommentSeen && !this.customGcode) {
-          this.featureTypeCommentSeen = true
-          // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
-          this.bounds = emptyBounds()
-        }
-      }
+  /**
+   * Parses the comment of a line, taking the values the slicer states in it
+   * @param rawLine - Gcode line holding the comment
+   * @param commentStart - Offset the comment starts at
+   */
+  private parseComment (rawLine: string, commentStart: number): void {
+    const commentLower = rawLine.toLowerCase()
 
-      // Layer changes the slicer states, which take over from the Z rule
-      if (LAYER_CHANGE_COMMENT.test(commentLower)) {
-        this.statesLayerChanges = true
-        this.pendingLayerChange = true
-      }
+    // Take the feature type from feature-type comments only
+    const featureTypeMatch = rawLine.match(FEATURE_TYPE_COMMENT_PATTERN)
+    if (featureTypeMatch) {
+      const id = this.featureTypes.findIndex((featureType) => featureType.comment === commentLower)
+      this.currentPropertyValues.featureTypeId = id >= 0
+        ? id
+        : this.featureTypes.push({ comment: commentLower, label: featureTypeMatch[1].trim() }) - 1
 
-      // Extrusion width and height the slicer states
-      const widthMatch = commentLower.match(WIDTH_COMMENT)
-      if (widthMatch) this.currentPropertyValues.width = parseFloat(widthMatch[1])
-      const heightMatch = commentLower.match(HEIGHT_COMMENT)
-      if (heightMatch) this.slicerHeight = parseFloat(heightMatch[1])
+      this.customGcode = commentLower.includes('custom')
 
-      // First nozzle diameter the slicer states wins
-      if (this.slicerNozzleDiameter == null) {
-        const nozzleMatch = commentLower.match(NOZZLE_DIAMETER_COMMENT)
-        if (nozzleMatch) this.slicerNozzleDiameter = parseFloat(nozzleMatch[1])
-      }
-
-      // First filament diameter and density the slicer states win
-      if (this.slicerFilamentDiameter == null) {
-        const diameterMatch = commentLower.match(FILAMENT_DIAMETER_COMMENT)
-        if (diameterMatch) this.slicerFilamentDiameter = parseFloat(diameterMatch[1])
-      }
-      if (this.slicerFilamentDensity == null) {
-        const densityMatch = commentLower.match(FILAMENT_DENSITY_COMMENT)
-        if (densityMatch) this.slicerFilamentDensity = parseFloat(densityMatch[1])
-      }
-
-      // Tool colors the slicer states, the extruder ones taking over from the filament ones
-      const toolColorsMatch = commentLower.match(TOOL_COLORS_COMMENT)
-      if (toolColorsMatch) {
-        const colors = toolColorsMatch[2].split(';')
-          .map((color) => color.trim().replaceAll('"', ''))
-          .map((color) => TOOL_COLOR.test(color) ? color : '')
-        if (toolColorsMatch[1] === 'extruder') this.extruderColors = colors
-        else this.filamentColors = colors
-      }
-
-      // Color changes the gcode states, the command carrying one out counting for the same change
-      const colorChangeMatch = commentLower.match(COLOR_CHANGE_COMMENT)
-      if (colorChangeMatch) {
-        const tokens = colorChangeMatch[1].split(',').map((token) => token.trim())
-        const tool = tokens[1]?.startsWith('t') ? parseInt(tokens[1].slice(1)) : this.currentPropertyValues.toolId
-        this.addColorChange(tool, TOOL_COLOR.test(tokens[2] ?? '') ? tokens[2] : '')
-        this.statedColorChange = true
-      }
-
-      // Take the elapsed print time the slicer states
-      if (commentLower.startsWith(TIME_ELAPSED_COMMENT, commentStart)) {
-        this.slicerTimeMarksCollector.addElapsed(this.filePosition, parseFloat(rawLine.slice(commentStart + TIME_ELAPSED_COMMENT.length)))
+      // First feature type seen, not counting the slicers' own start gcode
+      if (!this.featureTypeCommentSeen && !this.customGcode) {
+        this.featureTypeCommentSeen = true
+        // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
+        this.bounds = emptyBounds()
       }
     }
 
-    // Parse gcode cmd and args
+    // Layer changes the slicer states, which take over from the Z rule
+    if (LAYER_CHANGE_COMMENT_PATTERN.test(commentLower)) {
+      this.statesLayerChanges = true
+      this.pendingLayerChange = true
+    }
+
+    // Extrusion width and height the slicer states
+    const widthMatch = commentLower.match(WIDTH_COMMENT_PATTERN)
+    if (widthMatch) this.currentPropertyValues.width = parseFloat(widthMatch[1])
+    const heightMatch = commentLower.match(HEIGHT_COMMENT_PATTERN)
+    if (heightMatch) this.slicerHeight = parseFloat(heightMatch[1])
+
+    // Print settings the slicer states
+    this.slicerConfigCollector.addComment(commentLower)
+
+    // Color changes the gcode states, the command carrying one out counting for the same change
+    const colorChangeMatch = commentLower.match(COLOR_CHANGE_COMMENT_PATTERN)
+    if (colorChangeMatch) {
+      const tokens = colorChangeMatch[1].split(',').map((token) => token.trim())
+      const tool = tokens[1]?.startsWith('t') ? parseInt(tokens[1].slice(1)) : this.currentPropertyValues.toolId
+      this.addColorChange(tool, TOOL_COLOR_PATTERN.test(tokens[2] ?? '') ? tokens[2] : '')
+      this.statedColorChange = true
+    }
+
+    // Take the elapsed print time the slicer states
+    if (commentLower.startsWith(TIME_ELAPSED_COMMENT_PREFIX, commentStart)) {
+      this.slicerTimeMarksCollector.addElapsed(this.filePosition, parseFloat(rawLine.slice(commentStart + TIME_ELAPSED_COMMENT_PREFIX.length)))
+    }
+  }
+
+  /* ---- Commands ---- */
+
+  /**
+   * Parses the command a line carries and the arguments that follow it
+   * @param rawLine - Gcode line, comment included
+   * @param commentStart - Offset the comment starts at, -1 for a line carrying none
+   * @param args - Object each argument is written into, by lowercased word
+   * @returns The command, uppercased, empty when the line carries none
+   */
+  private parseCommand (rawLine: string, commentStart: number, args: Record<string, number>): string {
     // Temporary workaround for https://github.com/OctoPrint/OctoPrint/issues/5438: the babel-polyfill
     // library OctoPrint ships replaces the browser's own trim with a far slower one, so the line
     // bounds are found here without using it
@@ -653,7 +282,6 @@ export class GcodeParser {
 
     const tokens = rawLine.slice(lineStart, lineStop).split(' ')
     const cmd = tokens[0].toUpperCase()
-    const args: Record<string, number> = {}
     for (let token = 1; token < tokens.length; token++) {
       const word = tokens[token]
       if (!word) continue
@@ -673,7 +301,17 @@ export class GcodeParser {
       }
     }
 
-    // Axis value from args (absolute/relative aware), or the current one if omitted
+    return cmd
+  }
+
+  /**
+   * Applies a command to the tracked machine state, adding the segments it prints
+   * @param cmd - Command to apply, uppercased
+   * @param args - Arguments the command carries, by lowercased word
+   * @param rawLine - Gcode line the command comes from
+   */
+  private applyCommand (cmd: string, args: Record<string, number>, rawLine: string): void {
+    // Axis value the args give, or the current one when they give none
     const coord = (key: keyof MachineState): number => {
       if (args[key] === undefined) return this.machineState[key]
       if (key === 'f') return args.f
@@ -772,6 +410,16 @@ export class GcodeParser {
         if (this.g90InfluencesExtruder) this.extrusionRelative = true
         break
       }
+      case 'G92': { // Set position without moving
+        this.machineState = {
+          ...this.machineState,
+          x: args.x ?? this.machineState.x,
+          y: args.y ?? this.machineState.y,
+          z: args.z ?? this.machineState.z,
+          e: args.e ?? this.machineState.e
+        }
+        break
+      }
       case 'M73': { // Remaining print time the slicer states
         if (args.r !== undefined) this.slicerTimeMarksCollector.addRemaining(this.filePosition, args.r * 60)
         break
@@ -807,16 +455,6 @@ export class GcodeParser {
         else this.addColorChange(this.currentPropertyValues.toolId, '')
         break
       }
-      case 'G92': { // Set position without moving
-        this.machineState = {
-          ...this.machineState,
-          x: args.x ?? this.machineState.x,
-          y: args.y ?? this.machineState.y,
-          z: args.z ?? this.machineState.z,
-          e: args.e ?? this.machineState.e
-        }
-        break
-      }
       default: { // Select the tool
         if (cmd[0] === 'T') {
           const tool = +cmd.slice(1)
@@ -842,8 +480,10 @@ export class GcodeParser {
     return this.extrusionRelative ? args.e : move.e - this.machineState.e
   }
 
+  /* ---- Object markers ---- */
+
   /**
-   * Parse the object marker, updating the current object id
+   * Parses the object marker, updating the current object id
    * @param rawLine - Object marker line, starting with "@"
    */
   private parseObjectMarker (rawLine: string): void {
@@ -861,6 +501,8 @@ export class GcodeParser {
     }
   }
 
+  /* ---- Segment properties ---- */
+
   /**
    * Records a color change of a tool, which the segments it extrudes from there on carry
    * @param toolId - Id of the tool it changes the color of
@@ -872,6 +514,8 @@ export class GcodeParser {
     this.toolColorChanges[toolId] = colorChangeId
     if (toolId === this.currentPropertyValues.toolId) this.currentPropertyValues.colorChangeId = colorChangeId
   }
+
+  /* ---- Layers ---- */
 
   /**
    * Tells whether an extruding move belongs to a layer of its own
@@ -919,32 +563,7 @@ export class GcodeParser {
     this.currentLayer = null
   }
 
-  /** Finishes parsing */
-  finish (): void {
-    // Parse the last line of a file that does not end with a newline
-    if (this.pendingLine) {
-      this.filePosition += lineByteLength(this.pendingLine)
-      this.parseLine(this.pendingLine)
-      this.pendingLine = ''
-    }
-
-    this.sealLayer()
-    this.slicerTimeMarks = this.slicerTimeMarksCollector.getMarks()
-    if (this.printerTransform) this.slidePrintToBeltOrigin()
-  }
-
-  /** Slides the print along the belt so it starts at the belt origin, where the printed shape trails behind it */
-  private slidePrintToBeltOrigin (): void {
-    const offset = -this.bounds.minY
-    if (!Number.isFinite(offset)) return
-
-    for (const { vertices, travelVertices } of this.layers) {
-      for (let y = 1; y < vertices.length; y += 3) vertices[y] += offset
-      for (let y = 1; y < travelVertices.length; y += 3) travelVertices[y] += offset
-    }
-    this.bounds.minY += offset
-    this.bounds.maxY += offset
-  }
+  /* ---- Travels ---- */
 
   /**
    * Adds a non-extruding move, whose time is charged to the gap before the next segment
@@ -978,6 +597,8 @@ export class GcodeParser {
       this.pendingTravels++
     }
   }
+
+  /* ---- Segments ---- */
 
   /**
    * Grows the model bounds to contain a point
@@ -1039,5 +660,51 @@ export class GcodeParser {
     this.currentPropertyValues.height = this.slicerHeight ?? this.layerHeight
     this.currentPropertyValues.filamentPerMm = distance > 0 ? (end.e - start.e) * this.flowFactor / distance : 0
     layer.addSegment(sceneStart, sceneEnd, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId, this.currentPropertyValues)
+  }
+
+  /* ---- Parse result ---- */
+
+  /**
+   * Finishes parsing
+   * @returns The parsed gcode
+   */
+  finish (): ParsedGcode {
+    // Parse the last line of a file that does not end with a newline
+    if (this.pendingLine) {
+      this.filePosition += lineByteLength(this.pendingLine)
+      this.parseLine(this.pendingLine)
+      this.pendingLine = ''
+    }
+
+    this.sealLayer()
+    if (this.printerTransform) this.slidePrintToBeltOrigin()
+
+    const slicerConfig = this.slicerConfigCollector.getConfig()
+
+    return {
+      layers: this.layers,
+      bounds: this.bounds,
+      slicerNozzleDiameter: slicerConfig.nozzleDiameter,
+      slicerFilamentDiameter: slicerConfig.filamentDiameter,
+      slicerFilamentDensity: slicerConfig.filamentDensity,
+      slicerToolColors: slicerConfig.toolColors,
+      colorChanges: this.colorChanges,
+      slicerTimeMarks: this.slicerTimeMarksCollector.getMarks(),
+      featureTypes: this.featureTypes,
+      objectNames: this.objectNames
+    }
+  }
+
+  /** Slides the print along the belt so it starts at the belt origin, where the printed shape trails behind it */
+  private slidePrintToBeltOrigin (): void {
+    const offset = -this.bounds.minY
+    if (!Number.isFinite(offset)) return
+
+    for (const { vertices, travelVertices } of this.layers) {
+      for (let y = 1; y < vertices.length; y += 3) vertices[y] += offset
+      for (let y = 1; y < travelVertices.length; y += 3) travelVertices[y] += offset
+    }
+    this.bounds.minY += offset
+    this.bounds.maxY += offset
   }
 }

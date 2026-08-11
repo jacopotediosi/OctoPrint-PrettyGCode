@@ -1,4 +1,5 @@
-import { GcodeParser, type ParsedGcode } from './parser'
+import type { ParsedGcode } from './parsed-gcode'
+import { GcodeParser } from './parser'
 
 /** Gcode parse request */
 export interface GcodeParseRequest {
@@ -44,21 +45,9 @@ async function parseGcodeFile (request: GcodeParseRequest): Promise<ParsedGcode>
       if (done) break
       parser.parse(value)
     }
-    parser.finish()
   }
 
-  return {
-    layers: parser.layers,
-    bounds: parser.bounds,
-    slicerNozzleDiameter: parser.slicerNozzleDiameter,
-    slicerFilamentDiameter: parser.slicerFilamentDiameter,
-    slicerFilamentDensity: parser.slicerFilamentDensity,
-    slicerToolColors: parser.slicerToolColors,
-    colorChanges: parser.colorChanges,
-    slicerTimeMarks: parser.slicerTimeMarks,
-    featureTypes: parser.featureTypes,
-    objectNames: parser.objectNames
-  } satisfies ParsedGcode
+  return parser.finish()
 }
 
 /** Answers a gcode parse request, transferring the parsed buffers to the main thread */

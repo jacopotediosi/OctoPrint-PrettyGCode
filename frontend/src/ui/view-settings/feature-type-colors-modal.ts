@@ -1,4 +1,4 @@
-import { type FeatureTypeColorPreset, type FeatureTypeColorRule, cloneFeatureTypeColorRules } from '../../gcode/colors/feature-type'
+import { type FeatureTypeColorPreset, type FeatureTypeColorRule, cloneFeatureTypeColorRules } from '../../gcode/colors/fixed-colors/feature-type'
 import { htmlStringToElement } from '../../utils/html'
 import type { Settings } from '../../settings'
 
@@ -203,7 +203,7 @@ export function initFeatureTypeColorsModal (settings: Settings, colorPresets: Fe
   /** Opens the modal */
   const open = (): void => { fillInputs(); refreshControls(); $(modal).modal('show') }
 
-  /** Reset to the default colors */
+  /** Resets the colors to their defaults */
   const resetToDefault = (): void => replaceColors(settings.defaultOf('featureTypeDefaultColor'), cloneFeatureTypeColorRules(settings.defaultOf('featureTypeColorRules')))
 
   // Control listeners

@@ -1,7 +1,7 @@
 // This file is snake_case because names mirror on purpose the original C++ sources from which the functions are copied from
 /* eslint camelcase: "off" */
 
-import type { MachineState } from './parser'
+import type { MachineState } from './parsed-gcode'
 
 /** Firmware arc segmentation parameters */
 const arcParams = {

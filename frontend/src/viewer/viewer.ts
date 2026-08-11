@@ -2,9 +2,10 @@ import * as THREE from '../three-exports'
 import { Bed } from './bed'
 import { Camera } from './camera'
 import { Nozzle } from './nozzle'
-import type { GcodeBounds } from '../gcode/parsing/parser'
+import type { GcodeBounds, ScenePoint } from '../gcode/parsing/parsed-gcode'
 import type { BedVolume } from './bed'
-import type { NavigationModeKey, ProjectionMode } from './navigation'
+import type { ProjectionMode } from './camera'
+import type { NavigationModeKey } from './navigation'
 import type { Settings } from '../settings'
 
 /** Light theme background color */
@@ -12,10 +13,12 @@ const LIGHT_BACKGROUND = 0xe9e9e9
 /** Dark theme background color */
 const DARK_BACKGROUND = 0x000000
 
-/** Per-frame print view outcome: whether the scene changed and the nozzle position to show */
+/** Per-frame print view outcome */
 export interface PrintViewUpdate {
+  /** Whether the scene changed and has to be drawn again */
   needRender: boolean
-  nozzlePosition: THREE.Vector3 | null
+  /** Nozzle position to show, null to move the nozzle back to the origin */
+  nozzlePosition: ScenePoint | null
 }
 
 /** The plugin's 3D view: renders the bed, the gcode model and the nozzle */
@@ -244,14 +247,6 @@ export class Viewer {
   }
 
   /**
-   * Shows or hides the print bed
-   * @param visible - True to show the bed
-   */
-  applyBedVisibility (visible: boolean): void {
-    this.bed.applyVisibility(visible)
-  }
-
-  /**
    * Points the camera back at what it frames
    * @param enableTransition - True to animate the move
    */
@@ -279,20 +274,21 @@ export class Viewer {
   /* ---- Apply settings ---- */
 
   /**
-   * Repaints the scene background in the light or dark theme
-   * @param darkMode - True for the dark theme
+   * Shows or hides the print bed
+   * @param visible - True to show the bed
    */
-  applyBackground (darkMode: boolean): void {
-    this.scene.background = new THREE.Color(darkMode ? DARK_BACKGROUND : LIGHT_BACKGROUND)
-    this.requestRender()
+  applyBedVisibility (visible: boolean): void {
+    this.bed.applyVisibility(visible)
   }
 
   /**
-   * Repaints the view cube in the light or dark theme
+   * Repaints the 3D view in the light or dark theme
    * @param darkMode - True for the dark theme
    */
-  applyViewCubeTheme (darkMode: boolean): void {
+  applyTheme (darkMode: boolean): void {
+    this.scene.background = new THREE.Color(darkMode ? DARK_BACKGROUND : LIGHT_BACKGROUND)
     this.camera.applyViewCubeTheme(darkMode)
+    this.rebuildBed()
     this.requestRender()
   }
 

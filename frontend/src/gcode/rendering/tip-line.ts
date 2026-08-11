@@ -1,6 +1,8 @@
 import * as THREE from '../../three-exports'
-import { isThickLine, isThickMaterial } from './line-materials'
-import type { GcodeLine, GcodeLineMaterial } from './line-materials'
+import { isThickLine } from './gcode-line'
+import { isThickMaterial } from './line-materials'
+import type { GcodeLine } from './gcode-line'
+import type { GcodeLineMaterial } from './line-materials'
 import type { PrintTimeline, TimelineSpot } from '../timeline/print-timeline'
 
 /** The growing tip drawn along the segment the nozzle is currently laying down */
@@ -70,7 +72,7 @@ export class TipLine {
   /**
    * Grows the tip up to a timeline position
    * @param spot - Timeline position
-   * @param layerColors - Vertex colors of every layer, in the layers' order
+   * @param layerColors - Segment colors of every layer, in the layers' order
    */
   update (spot: TimelineSpot, layerColors: Uint8ClampedArray[]): void {
     if (!this.line) return

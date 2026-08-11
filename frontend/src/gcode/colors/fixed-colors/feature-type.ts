@@ -1,10 +1,12 @@
-import { hexStringToLinearColor } from '../../utils/colors'
-import type { PropertyFixedColors } from './segment'
-import type { FeatureType } from '../parsing/parser'
+import { hexStringToLinearColor } from '../../../utils/colors'
+import type { PropertyFixedColors } from '../property-fixed-colors'
+import type { FeatureType } from '../../parsing/parsed-gcode'
 
-/** One feature type color rule: keywords to look for in comments, and the color to paint their segments */
+/** Rule coloring the gcode wherever a feature type comment holds one of its keywords */
 export interface FeatureTypeColorRule {
+  /** Keywords to look for in the feature type comments */
   keywords: string[]
+  /** Color to paint the matching segments, as "#rrggbb" */
   color: string
 }
 

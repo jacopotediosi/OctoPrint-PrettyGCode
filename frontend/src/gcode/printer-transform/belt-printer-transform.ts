@@ -1,4 +1,4 @@
-import type { MachineState, ScenePoint } from '../parsing/parser'
+import type { MachineState, ScenePoint } from '../parsing/parsed-gcode'
 
 /**
  * Coordinate transform of a belt printer: its head hangs from a gantry tilted over a moving belt, so

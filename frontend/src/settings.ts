@@ -1,8 +1,9 @@
-import type { NavigationModeKey, ProjectionMode } from './viewer/navigation'
+import type { ProjectionMode } from './viewer/camera'
+import type { NavigationModeKey } from './viewer/navigation'
 import type { NozzleStyle } from './viewer/nozzle'
 import type { TravelScope } from './gcode/rendering/gcode-model'
-import type { FeatureTypeColorRule } from './gcode/colors/feature-type'
-import type { ColorModeId } from './gcode/colors/segment'
+import type { FeatureTypeColorRule } from './gcode/colors/fixed-colors/feature-type'
+import type { ColorModeId } from './gcode/colors/color-modes'
 
 /** localStorage key holding the settings */
 const STORAGE_KEY = 'pg-settings'
@@ -90,26 +91,28 @@ export class Settings {
   /** Whether to show the markers of the excluded regions */
   declare showExclusionMarker: boolean
 
-  /* ---- Top windows ---- */
+  /* ---- Top left windows ---- */
 
-  /** Whether to show the state top window */
+  /** Whether to show the state top left window */
   declare showState: boolean
-  /** Whether to show the files top window */
+  /** Whether to show the files top left window */
   declare showFiles: boolean
-  /** Whether to show the legend top window */
+  /** Whether to show the legend top left window */
   declare showLegend: boolean
 
   /* ---- Bottom windows ---- */
 
-  /** Whether to show the dashboard overlay */
+  /** Whether to show the dashboard window */
   declare showDashboard: boolean
-  /** Dashboard overlay height in px, 0 for the default */
+  /** Dashboard window height in px, 0 for the default */
   declare dashboardHeight: number
 
-  /** Whether to show the webcam overlay */
+  /** Whether to show the webcam window */
   declare showWebcam: boolean
-  /** Webcam overlay height in px, 0 for the default */
+  /** Webcam window height in px, 0 for the default */
   declare webcamHeight: number
+
+  /* ---- Defaults ---- */
 
   /** Default of the settings the server does not configure */
   private static readonly BROWSER_ONLY_DEFAULTS = {
@@ -157,7 +160,7 @@ export class Settings {
     return this.set(defaults, saved)
   }
 
-  /** Persists in the browser the settings */
+  /** Saves the settings in this browser */
   save (): void {
     const changed = Object.fromEntries(
       (Object.keys(this.defaults) as SettingKey[]).filter((key) => !this.isDefault(key)).map((key) => [key, this[key]])

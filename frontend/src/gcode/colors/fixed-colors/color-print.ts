@@ -1,13 +1,24 @@
 import { resolveToolColors, FALLBACK_FILAMENT_COLORS } from './tool'
-import { hexStringToLinearColor, type RgbColor } from '../../utils/colors'
-import type { PropertyFixedColors } from './segment'
-import type { ParsedGcode } from '../parsing/parser'
+import { hexStringToLinearColor, type RgbColor } from '../../../utils/colors'
+import type { PropertyFixedColors } from '../property-fixed-colors'
+import type { Layer, ParsedGcode, SegmentProperty } from '../../parsing/parsed-gcode'
+import { joinSegmentProperties } from '../../parsing/segment-properties'
 
 /** Value the first color change takes, the lower ones standing for the tools printing before any change */
-export const FIRST_COLOR_CHANGE_VALUE = 256
+const FIRST_COLOR_CHANGE_VALUE = 256
 
 /** Height in mm a color change may miss the layer it takes effect at by */
 const COLOR_CHANGE_EPSILON_MM = 0.0011
+
+/**
+ * Works out what each segment of a layer takes its color from
+ * @param layer - Parsed layer
+ * @returns The property, holding the tool of a segment printed before that tool changed color and the color change of one printed after it
+ */
+export function colorPrintProperty (layer: Layer): SegmentProperty {
+  return joinSegmentProperties(layer.toolIds, layer.colorChangeIds,
+    (toolId, colorChangeId) => colorChangeId < 0 ? toolId : FIRST_COLOR_CHANGE_VALUE + colorChangeId)
+}
 
 /**
  * Picks the color and the name every stretch of a color printed gcode goes by
