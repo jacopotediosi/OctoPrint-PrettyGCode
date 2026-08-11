@@ -18,12 +18,24 @@ export interface ParsedGcode {
   slicerFilamentDensity: number | null
   /** Color the slicer states for each tool, empty where it states none */
   slicerToolColors: string[]
+  /** Color changes the gcode states, in the order it states them */
+  colorChanges: ColorChange[]
   /** Print times the slicer states along the file, if any */
   slicerTimeMarks: SlicerTimeMarks | null
   /** Feature types the gcode states, by feature type id */
   featureTypes: FeatureType[]
   /** Names of the objects marked in the gcode, by object id */
   objectNames: string[]
+}
+
+/** A color change the gcode states */
+export interface ColorChange {
+  /** Id of the tool it changes the color of */
+  toolId: number
+  /** Color the tool prints with from there on, empty when the gcode states none */
+  color: string
+  /** Height in mm it takes effect at */
+  z: number
 }
 
 /** A feature type the gcode states */
@@ -43,6 +55,7 @@ export interface Layer {
   objectIds: Int32Array | null
   featureTypeIds: SegmentProperty
   toolIds: SegmentProperty
+  colorChangeIds: SegmentProperty
   feedrates: SegmentProperty
   fanSpeeds: SegmentProperty
   temperatures: SegmentProperty
@@ -67,6 +80,8 @@ export interface SegmentPropertyValues {
   featureTypeId: number
   /** Id of the tool the segment is extruded with */
   toolId: number
+  /** Index of the color change the segment is extruded after, -1 before the first one of its tool */
+  colorChangeId: number
   /** Speed of the segment in mm/s */
   feedrate: number
   /** Speed of the print cooling fan in percent */
@@ -102,7 +117,7 @@ export const emptyBounds = (): GcodeBounds => ({ minX: Infinity, minY: Infinity,
  * @returns The empty gcode
  */
 export const emptyGcode = (): ParsedGcode => ({
-  layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, slicerFilamentDiameter: null, slicerFilamentDensity: null, slicerToolColors: [], slicerTimeMarks: null, featureTypes: [], objectNames: []
+  layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, slicerFilamentDiameter: null, slicerFilamentDensity: null, slicerToolColors: [], colorChanges: [], slicerTimeMarks: null, featureTypes: [], objectNames: []
 })
 
 /** A point of the parsed gcode, in scene coordinates */
@@ -177,8 +192,15 @@ const FILAMENT_DENSITY_COMMENT = /filament[_ ]?density\s*[:=,]\s*([\d.]+)/i
 /** Matches the tool colors stated by the slicer, e.g. "; extruder_colour = #800080;#ffffff" */
 const TOOL_COLORS_COMMENT = /(extruder|filament)_colou?r\s*=\s*(.*)/i
 
-/** Matches one color of a tool colors comment, e.g. "#800080" */
+/** Matches one color a slicer states for a tool, e.g. "#800080" */
 const TOOL_COLOR = /^#[0-9a-f]{6}$/
+
+/**
+ * Matches a slicer's color change comment, capturing the tool and the color it states after it
+ * - ;COLOR_CHANGE,T<n>,#rrggbb  PrusaSlicer/SuperSlicer, OrcaSlicer (non-Bambu-Lab printers)
+ * - ; COLOR_CHANGE,T<n>,#rrggbb Bambu Studio, OrcaSlicer (Bambu Lab printers)
+ */
+const COLOR_CHANGE_COMMENT = /;\s*color_change(.*)/i
 
 /** Matches the extrusion width the slicer states, e.g. ";WIDTH:0.42" or "; LINE_WIDTH: 0.42" */
 const WIDTH_COMMENT = /;\s*(?:line_)?width:\s*([\d.]+)/i
@@ -245,6 +267,7 @@ class OpenLayer {
   private objectIds: Int32Array | null = null
   private readonly featureTypeIds = new OpenSegmentProperty()
   private readonly toolIds = new OpenSegmentProperty()
+  private readonly colorChangeIds = new OpenSegmentProperty()
   private readonly feedrates = new OpenSegmentProperty()
   private readonly fanSpeeds = new OpenSegmentProperty()
   private readonly temperatures = new OpenSegmentProperty()
@@ -292,6 +315,7 @@ class OpenLayer {
 
     this.featureTypeIds.add(this.segments, propertyValues.featureTypeId)
     this.toolIds.add(this.segments, propertyValues.toolId)
+    this.colorChangeIds.add(this.segments, propertyValues.colorChangeId)
     this.feedrates.add(this.segments, propertyValues.feedrate)
     this.fanSpeeds.add(this.segments, propertyValues.fanSpeed)
     this.temperatures.add(this.segments, propertyValues.temperature)
@@ -364,6 +388,7 @@ class OpenLayer {
       objectIds: this.objectIds ? this.objectIds.slice(0, this.segments) : null,
       featureTypeIds: this.featureTypeIds.finish(),
       toolIds: this.toolIds.finish(),
+      colorChangeIds: this.colorChangeIds.finish(),
       feedrates: this.feedrates.finish(),
       fanSpeeds: this.fanSpeeds.finish(),
       temperatures: this.temperatures.finish(),
@@ -410,6 +435,8 @@ export class GcodeParser {
     return Array.from({ length: tools }, (_unused, tool) => this.extruderColors[tool] || this.filamentColors[tool] || '')
   }
 
+  /** Color changes the gcode states, in the order it states them */
+  readonly colorChanges: ColorChange[] = []
   /** Print times the slicer states along the file, if any */
   slicerTimeMarks: SlicerTimeMarks | null = null
   /** Feature types the gcode states, by feature type id */
@@ -473,9 +500,13 @@ export class GcodeParser {
   /* ---- Segment properties ---- */
 
   /** Value each property takes on the segments being parsed */
-  private readonly currentPropertyValues: SegmentPropertyValues = { featureTypeId: -1, toolId: 0, feedrate: 0, fanSpeed: 0, temperature: 0, width: 0, height: 0, filamentPerMm: 0 }
+  private readonly currentPropertyValues: SegmentPropertyValues = { featureTypeId: -1, toolId: 0, colorChangeId: -1, feedrate: 0, fanSpeed: 0, temperature: 0, width: 0, height: 0, filamentPerMm: 0 }
   /** Whether a feature type comment of the printed model has been seen yet */
   private featureTypeCommentSeen = false
+  /** Index of the last color change of each tool, by tool id */
+  private readonly toolColorChanges: number[] = []
+  /** Whether a stated color change is waiting for the command carrying it out */
+  private statedColorChange = false
   /** Extrusion height the slicer states, null until it states one */
   private slicerHeight: number | null = null
   /** Height of the layer being filled, taken from its step in Z */
@@ -593,6 +624,15 @@ export class GcodeParser {
           .map((color) => TOOL_COLOR.test(color) ? color : '')
         if (toolColorsMatch[1] === 'extruder') this.extruderColors = colors
         else this.filamentColors = colors
+      }
+
+      // Color changes the gcode states, the command carrying one out counting for the same change
+      const colorChangeMatch = commentLower.match(COLOR_CHANGE_COMMENT)
+      if (colorChangeMatch) {
+        const tokens = colorChangeMatch[1].split(',').map((token) => token.trim())
+        const tool = tokens[1]?.startsWith('t') ? parseInt(tokens[1].slice(1)) : this.currentPropertyValues.toolId
+        this.addColorChange(tool, TOOL_COLOR.test(tokens[2] ?? '') ? tokens[2] : '')
+        this.statedColorChange = true
       }
 
       // Take the elapsed print time the slicer states
@@ -762,6 +802,11 @@ export class GcodeParser {
         if (args.s !== undefined && args.t === undefined) this.flowFactor = args.s / 100
         break
       }
+      case 'M600': { // Change the filament color
+        if (this.statedColorChange) this.statedColorChange = false
+        else this.addColorChange(this.currentPropertyValues.toolId, '')
+        break
+      }
       case 'G92': { // Set position without moving
         this.machineState = {
           ...this.machineState,
@@ -776,7 +821,10 @@ export class GcodeParser {
         if (cmd[0] === 'T') {
           const tool = +cmd.slice(1)
           // Numbers above the tools stand for machine commands (T255, T1000, Tx...)
-          if (Number.isInteger(tool) && tool >= 0 && tool <= HIGHEST_TOOL_NUMBER) this.currentPropertyValues.toolId = tool
+          if (Number.isInteger(tool) && tool >= 0 && tool <= HIGHEST_TOOL_NUMBER) {
+            this.currentPropertyValues.toolId = tool
+            this.currentPropertyValues.colorChangeId = this.toolColorChanges[tool] ?? -1
+          }
         }
         break
       }
@@ -811,6 +859,18 @@ export class GcodeParser {
       const id = this.objectNames.indexOf(name)
       this.currentObjectId = id >= 0 ? id : this.objectNames.push(name) - 1
     }
+  }
+
+  /**
+   * Records a color change of a tool, which the segments it extrudes from there on carry
+   * @param toolId - Id of the tool it changes the color of
+   * @param color - Color the tool prints with from there on, empty when the gcode states none
+   */
+  private addColorChange (toolId: number, color: string): void {
+    const colorChangeId = this.colorChanges.push({ toolId, color, z: this.machineState.z }) - 1
+
+    this.toolColorChanges[toolId] = colorChangeId
+    if (toolId === this.currentPropertyValues.toolId) this.currentPropertyValues.colorChangeId = colorChangeId
   }
 
   /**
