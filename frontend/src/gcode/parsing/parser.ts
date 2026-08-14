@@ -50,6 +50,29 @@ const MIN_TRAVEL_LENGTH_MM = 0.5
 /** Highest tool number a T command selects */
 const HIGHEST_TOOL_NUMBER = 254
 
+/** Words giving a length, by the commands carrying them */
+const LENGTH_WORDS_BY_COMMANDS = [
+  {
+    commands: new Set(['G0', 'G1', 'G2', 'G3', 'G28', 'G92']),
+    words: [
+      'x', // position along the X axis
+      'y', // position along the Y axis
+      'z', // position along the Z axis
+      'e', // extruder position
+      'f' // feedrate
+    ]
+  },
+  {
+    commands: new Set(['G2', 'G3']),
+    words: [
+      'i', // X offset from start to arc center
+      'j', // Y offset from start to arc center
+      'k', // Z offset from start to arc center
+      'r' // radius of the arc
+    ]
+  }
+]
+
 /** Streaming gcode parser: feed it byte chunks to get layers of segments with feature types, file positions and time estimates */
 export class GcodeParser {
   /* ---- Parse result ---- */
@@ -296,8 +319,11 @@ export class GcodeParser {
 
     // Bring the lengths to millimeters
     if (this.mmPerUnit !== 1) {
-      for (const word of ['x', 'y', 'z', 'e', 'f', 'i', 'j', 'k', 'r']) {
-        if (args[word] !== undefined) args[word] *= this.mmPerUnit
+      for (const { commands, words } of LENGTH_WORDS_BY_COMMANDS) {
+        if (!commands.has(cmd)) continue
+        for (const word of words) {
+          if (args[word] !== undefined) args[word] *= this.mmPerUnit
+        }
       }
     }
 
