@@ -199,7 +199,7 @@ export class PrettyGCodeApp {
    * @param data - Message payload
    */
   onDataUpdaterPluginMessage (plugin: string, data: PluginMessagePayload): void {
-    if (this.exclusions.applyPluginMessage(plugin, data)) this.updateExclusions()
+    if (this.exclusions.applyPluginMessage(plugin, data) && this.viewInitialized) this.updateGcodeView()
   }
 
   /**
@@ -282,16 +282,10 @@ export class PrettyGCodeApp {
       this.parsedGcode = parsedGcode
       this.exclusions.setGcodeObjectNames(this.parsedGcode.objectNames)
 
-      // Index the timeline and build the model
-      this.printTimeline.build(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
-      this.observedPrintSpeed.restart()
-      this.gcodeModel.build(this.parsedGcode)
-
-      // Apply the gcode bounds
       this.viewer.applyGcodeBounds(this.parsedGcode.bounds)
-      updateLegend(this)
 
-      updateLayerSliderMax(this)
+      this.updateGcodeView()
+
       if (preserveView) {
         // Keep the current layer
         this.setCurrentLayerNumber(Math.min(this.currentLayerNumber || this.layerCount, this.layerCount))
@@ -308,14 +302,23 @@ export class PrettyGCodeApp {
     }
   }
 
-  /** Empties the 3D view of the loaded gcode */
+  /** Empties the view of the loaded gcode */
   private unloadGcode (): void {
     this.parsedGcode = null
-    this.printTimeline.build([], null)
+    this.updateGcodeView()
+  }
+
+  /** (Re)indexes the loaded gcode and brings the view up to date */
+  private updateGcodeView (): void {
+    const gcode = this.parsedGcode ?? emptyGcode()
+
+    this.printTimeline.build(gcode.layers, gcode.slicerTimeMarks)
     this.observedPrintSpeed.restart()
-    this.gcodeModel.build(emptyGcode())
+    this.gcodeModel.build(gcode)
+    updateLegend(this)
     updateLayerSliderMax(this)
     updateSegmentSliderMax(this)
+    this.updateLayerHighlight()
     this.viewer.requestRender()
   }
 
@@ -323,17 +326,7 @@ export class PrettyGCodeApp {
 
   /** Fetches the current exclusions and applies them to the view */
   private async fetchExclusions (): Promise<void> {
-    if (await this.exclusions.fetch()) this.updateExclusions()
-  }
-
-  /** (Re)applies the current exclusions to the timeline and the model */
-  private updateExclusions (): void {
-    if (!this.viewInitialized || !this.parsedGcode) return
-
-    this.printTimeline.build(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
-    this.observedPrintSpeed.restart()
-    this.gcodeModel.rebuild()
-    this.updateLayerHighlight()
+    if (await this.exclusions.fetch()) this.updateGcodeView()
   }
 
   /* ---- Print tracking ---- */
