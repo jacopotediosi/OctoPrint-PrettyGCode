@@ -5,7 +5,7 @@ import type { PrettyGCodeApp } from '../app'
  * @param app - Application instance
  */
 export function initCameraControls (app: PrettyGCodeApp): void {
-  $('.pg-reset-view').on('click', () => app.resetView())
+  $('.pg-reset-camera-view').on('click', () => app.resetCameraView())
 }
 
 /**

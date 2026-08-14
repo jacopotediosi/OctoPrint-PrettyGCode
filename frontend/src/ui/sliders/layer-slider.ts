@@ -104,7 +104,7 @@ export function updateLayerSliderMax (app: PrettyGCodeApp): void {
     $('#pg-layer-slider').slider(app.layerCount ? 'enable' : 'disable')
   }
 
-  setLayerSliderValue(app, app.layerCount)
+  setLayerSliderValue(app, app.currentLayerNumber)
 }
 
 /**

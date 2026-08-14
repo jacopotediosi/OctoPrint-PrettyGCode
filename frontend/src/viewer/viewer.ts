@@ -13,8 +13,8 @@ const LIGHT_BACKGROUND = 0xe9e9e9
 /** Dark theme background color */
 const DARK_BACKGROUND = 0x000000
 
-/** Per-frame print view outcome */
-export interface PrintViewUpdate {
+/** Per-frame print progress outcome */
+export interface PrintProgressUpdate {
   /** Whether the scene changed and has to be drawn again */
   needRender: boolean
   /** Nozzle position to show, null to move the nozzle back to the origin */
@@ -56,8 +56,8 @@ export class Viewer {
   /** The 3D scene */
   private readonly scene = new THREE.Scene()
 
-  /** Callback advancing the print view each frame */
-  private readonly onFrame: (deltaSeconds: number) => PrintViewUpdate
+  /** Callback advancing the print progress each frame */
+  private readonly onFrame: (deltaSeconds: number) => PrintProgressUpdate
 
   /** The camera */
   private camera!: Camera
@@ -86,9 +86,9 @@ export class Viewer {
    * @param settings - Plugin frontend settings
    * @param getBedVolume - Getter of the current print bed geometry
    * @param getNozzleDiameter - Getter of the current nozzle diameter in mm
-   * @param onFrame - Callback advancing the print view each frame, run before rendering
+   * @param onFrame - Callback advancing the print progress each frame, run before rendering
    */
-  constructor (settings: Settings, getBedVolume: () => BedVolume, getNozzleDiameter: () => number, onFrame: (deltaSeconds: number) => PrintViewUpdate) {
+  constructor (settings: Settings, getBedVolume: () => BedVolume, getNozzleDiameter: () => number, onFrame: (deltaSeconds: number) => PrintProgressUpdate) {
     this.settings = settings
     this.getBedVolume = getBedVolume
     this.getNozzleDiameter = getNozzleDiameter
@@ -170,12 +170,12 @@ export class Viewer {
     let needRender = this.forceRender
     this.forceRender = false
 
-    // Update and get the print view
-    const printView = this.onFrame(deltaSeconds)
-    if (printView.needRender) needRender = true
+    // Update and get the print progress
+    const printProgress = this.onFrame(deltaSeconds)
+    if (printProgress.needRender) needRender = true
 
     // Update the nozzle
-    if (this.nozzle.update(printView.nozzlePosition, this.getNozzleDiameter(), this.renderer, needRender)) needRender = true
+    if (this.nozzle.update(printProgress.nozzlePosition, this.getNozzleDiameter(), this.renderer, needRender)) needRender = true
 
     // Update the camera
     if (this.camera.update(deltaSeconds)) needRender = true
@@ -259,7 +259,7 @@ export class Viewer {
    * Moves the camera to the default view
    * @param enableTransition - True to animate the move
    */
-  applyDefaultView (enableTransition = false): void {
+  applyDefaultCameraView (enableTransition = false): void {
     this.camera.applyDefaultView(this.getBedVolume(), enableTransition)
   }
 

@@ -26,7 +26,7 @@ import { cancelObjectTag, defaultViewSettings, g90InfluencesExtruder, largeFileT
 import type { PrinterProfilesViewModel, SettingsViewModel } from './octoprint/view-models'
 import type { PluginMessagePayload, PrinterDataPayload, PrinterState } from './octoprint/push-payloads'
 import type { BedVolume } from './viewer/bed'
-import type { PrintViewUpdate } from './viewer/viewer'
+import type { PrintProgressUpdate } from './viewer/viewer'
 
 /** Main plugin container, orchestrating all its components */
 export class PrettyGCodeApp {
@@ -42,7 +42,7 @@ export class PrettyGCodeApp {
   /** Plugin frontend settings */
   readonly settings = new Settings()
   /** The 3D view */
-  private readonly viewer = new Viewer(this.settings, () => this.bedVolume, () => this.nozzleDiameter, (deltaSeconds) => this.updatePrintView(deltaSeconds))
+  private readonly viewer = new Viewer(this.settings, () => this.bedVolume, () => this.nozzleDiameter, (deltaSeconds) => this.advancePrintProgress(deltaSeconds))
   /** Print exclusions of the loaded gcode */
   private readonly exclusions = new PrintExclusions(this.settings)
   /** Print timeline of the loaded gcode */
@@ -199,7 +199,7 @@ export class PrettyGCodeApp {
    * @param data - Message payload
    */
   onDataUpdaterPluginMessage (plugin: string, data: PluginMessagePayload): void {
-    if (this.exclusions.applyPluginMessage(plugin, data) && this.viewInitialized) this.updateGcodeView()
+    if (this.exclusions.applyPluginMessage(plugin, data) && this.viewInitialized) this.updateView()
   }
 
   /**
@@ -249,9 +249,8 @@ export class PrettyGCodeApp {
   /**
    * Loads a job file and displays it in the 3D view
    * @param jobPath - Server path of the job file
-   * @param preserveView - Whether to keep the current layer and camera instead of framing the whole model
    */
-  private async loadGcode (jobPath: string, preserveView = false): Promise<void> {
+  private async loadGcode (jobPath: string): Promise<void> {
     // Supersede the load in flight and clear the view
     const sequence = ++this.loadSequence
     hideLoadingScreen()
@@ -265,7 +264,7 @@ export class PrettyGCodeApp {
       cancelGcodeLoad()
       showLargeFileConfirmation(this.currentJobSize, () => {
         this.largeFileApproved = true
-        this.loadGcode(jobPath, preserveView)
+        this.loadGcode(jobPath)
       })
       return
     }
@@ -274,26 +273,23 @@ export class PrettyGCodeApp {
     showLoadingScreen()
 
     try {
+      // Parse the file, stopping if a newer load has started meanwhile
       const parsedGcode = await loadGcodeFile(jobPath, cancelObjectTag(this.settingsVM), g90InfluencesExtruder(this.settingsVM), this.parsedBeltPrinterGantryAngle)
-
-      // Stop if a newer load has started
       if (sequence !== this.loadSequence) return
 
+      // Take the parsed gcode
       this.parsedGcode = parsedGcode
       this.exclusions.setGcodeObjectNames(this.parsedGcode.objectNames)
 
+      // Fit the camera limits to the model
       this.viewer.applyGcodeBounds(this.parsedGcode.bounds)
 
-      this.updateGcodeView()
+      // Index and draw the new gcode
+      this.updateView()
 
-      if (preserveView) {
-        // Keep the current layer
-        this.setCurrentLayerNumber(Math.min(this.currentLayerNumber || this.layerCount, this.layerCount))
-      } else {
-        // Show the whole model: current layer at the top and the camera reset to the default view
-        this.setCurrentLayerNumber(this.layerCount)
-        this.resetView()
-      }
+      // Show the whole model: current layer at the top and the camera reset to the default view
+      this.setCurrentLayerNumber(this.layerCount)
+      this.resetCameraView()
       this.viewer.requestRender()
     } catch (error) {
       if (sequence === this.loadSequence) console.error('PrettyGCode: gcode load failed', error)
@@ -305,11 +301,20 @@ export class PrettyGCodeApp {
   /** Empties the view of the loaded gcode */
   private unloadGcode (): void {
     this.parsedGcode = null
-    this.updateGcodeView()
+    this.updateView()
   }
 
+  /* ---- Exclusions ---- */
+
+  /** Fetches the current exclusions and applies them to the view */
+  private async fetchExclusions (): Promise<void> {
+    if (await this.exclusions.fetch()) this.updateView()
+  }
+
+  /* ---- View updates ---- */
+
   /** (Re)indexes the loaded gcode and brings the view up to date */
-  private updateGcodeView (): void {
+  private updateView (): void {
     const gcode = this.parsedGcode ?? emptyGcode()
 
     this.printTimeline.build(gcode.layers, gcode.slicerTimeMarks)
@@ -322,11 +327,10 @@ export class PrettyGCodeApp {
     this.viewer.requestRender()
   }
 
-  /* ---- Exclusions ---- */
-
-  /** Fetches the current exclusions and applies them to the view */
-  private async fetchExclusions (): Promise<void> {
-    if (await this.exclusions.fetch()) this.updateGcodeView()
+  /** (Re)applies the layer highlight setting to the displayed layer */
+  private updateLayerHighlight (): void {
+    this.gcodeModel.highlightLayer(this.currentLayerNumber)
+    this.viewer.requestRender()
   }
 
   /* ---- Print tracking ---- */
@@ -336,7 +340,7 @@ export class PrettyGCodeApp {
    * @param deltaSeconds - Seconds elapsed since the previous call
    * @returns Whether the scene changed and the nozzle position to show, if any
    */
-  private updatePrintView (deltaSeconds: number): PrintViewUpdate {
+  private advancePrintProgress (deltaSeconds: number): PrintProgressUpdate {
     const state = this.currentPrinterState
     const tracking = state && !this.manualSliding && (state.flags.printing || state.flags.paused)
 
@@ -448,8 +452,8 @@ export class PrettyGCodeApp {
   }
 
   /** Resets the camera to the default view */
-  resetView (): void {
-    this.viewer.applyDefaultView(true)
+  resetCameraView (): void {
+    this.viewer.applyDefaultCameraView(true)
   }
 
   /**
@@ -511,12 +515,6 @@ export class PrettyGCodeApp {
       )
     ) this.updateWindowStates()
 
-    this.viewer.requestRender()
-  }
-
-  /** (Re)applies the layer highlight setting to the displayed layer */
-  private updateLayerHighlight (): void {
-    this.gcodeModel.highlightLayer(this.currentLayerNumber)
     this.viewer.requestRender()
   }
 
