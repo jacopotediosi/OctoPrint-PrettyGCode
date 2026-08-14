@@ -18,6 +18,7 @@ import { setStatusBarTemperatures, applyStatusBarVisibility } from './ui/status-
 import { showLoadingScreen, hideLoadingScreen } from './ui/notices/loading-screen'
 import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/notices/large-file-confirmation'
 import { emptyGcode, type ParsedGcode, type ScenePoint } from './gcode/parsing/parsed-gcode'
+import type { SegmentColoring } from './gcode/colors/color-modes'
 import { clamp } from './utils/numbers'
 import { applyPageTheme, initPageLayout, PG_SETTINGS_TAB, PG_TAB } from './ui/page-layout'
 import { updateTopLeftWindows } from './ui/windows/top-left-windows'
@@ -230,18 +231,9 @@ export class PrettyGCodeApp {
 
   /* ---- Gcode loading ---- */
 
-  /** Parsed gcode of the currently loaded job */
-  get gcode (): ParsedGcode {
-    return this.parsedGcode ?? emptyGcode()
-  }
-
-  /**
-   * Gets how long a layer takes to print
-   * @param layerNumber - 1-based layer number
-   * @returns The estimated seconds
-   */
-  layerSeconds (layerNumber: number): number {
-    return this.printTimeline.layerSeconds(layerNumber)
+  /** How the segments of the loaded gcode take their color */
+  get segmentColoring (): SegmentColoring {
+    return this.gcodeModel.segmentColoring
   }
 
   /** Layer count of the loaded gcode */

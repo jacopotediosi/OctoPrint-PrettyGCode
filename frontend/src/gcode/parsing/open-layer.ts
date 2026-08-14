@@ -26,7 +26,9 @@ class OpenSegmentProperty {
    */
   add (segment: number, value: number): void {
     const recorded = this.values[this.values.length - 1]
-    if (Math.abs(value - recorded) <= this.tolerance * Math.abs(recorded)) return
+
+    // A value equal to the last recorded one, or within its tolerance, leaves the property unchanged
+    if (recorded === value || Math.abs(value - recorded) <= this.tolerance * Math.abs(recorded)) return
 
     this.segmentIndices.push(segment)
     this.values.push(value)

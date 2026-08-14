@@ -72,6 +72,9 @@ export class GcodeModel {
   /** Gcode the model was last built from */
   private gcode: ParsedGcode = emptyGcode()
 
+  /** How the segments take their color */
+  private _segmentColoring: SegmentColoring
+
   /** Segment colors of each layer the model was last built from */
   private layerColors: Uint8ClampedArray[] = []
 
@@ -120,6 +123,7 @@ export class GcodeModel {
     this.settings = settings
     this.getNozzleDiameter = getNozzleDiameter
     this.timeline = timeline
+    this._segmentColoring = this.resolveSegmentColoring()
 
     this.mirrorThickMaterial = makeThickMaterial(mirrorBoundsPlanes)
     this.mirrorThinMaterial = makeThinMaterial(mirrorBoundsPlanes)
@@ -183,9 +187,9 @@ export class GcodeModel {
 
     this.updateLineWidth()
 
-    const coloring = this.segmentColoring
+    this._segmentColoring = this.resolveSegmentColoring()
     for (const { layerNumber, firstGlobalIndex, excludedFlags } of this.timeline.drawnLayers) {
-      this.addLayerLines(gcode.layers[layerNumber - 1], layerNumber, firstGlobalIndex, excludedFlags, coloring)
+      this.addLayerLines(gcode.layers[layerNumber - 1], layerNumber, firstGlobalIndex, excludedFlags)
     }
 
     this.rebuildTravelLines()
@@ -200,17 +204,25 @@ export class GcodeModel {
 
   /* ---- Colors ---- */
 
-  /** How the segments take their color, resolved from the current settings */
-  private get segmentColoring (): SegmentColoring {
+  /** How the segments take their color */
+  get segmentColoring (): SegmentColoring {
+    return this._segmentColoring
+  }
+
+  /**
+   * Resolves how the segments take their color from the gcode and the current settings
+   * @returns The resolved coloring
+   */
+  private resolveSegmentColoring (): SegmentColoring {
     return resolveSegmentColoring(this.gcode, this.settings, (layerNumber) => this.timeline.layerSeconds(layerNumber))
   }
 
   /** Applies the current colors to the model's lines */
   recolor (): void {
-    const coloring = this.segmentColoring
+    this._segmentColoring = this.resolveSegmentColoring()
     for (const { layerNumber } of this.timeline.drawnLayers) {
       const layer = this.gcode.layers[layerNumber - 1]
-      fillSegmentColors(layer, layerNumber, coloring.propertyOf(layer, layerNumber), coloring.colorAt, this.layerColors[layerNumber - 1])
+      fillSegmentColors(layer, layerNumber, this._segmentColoring.propertyOf(layer, layerNumber), this._segmentColoring.colorAt, this.layerColors[layerNumber - 1])
     }
 
     this.linesGroup.traverse((child) => {
@@ -246,14 +258,13 @@ export class GcodeModel {
    * @param layerNumber - 1-based layer number
    * @param firstGlobalIndex - Global segment index the layer starts at
    * @param excludedFlags - One flag per segment, 1 where excluded from printing and 0 otherwise, null when none is
-   * @param coloring - How the segments take their color
    */
-  private addLayerLines (layer: Layer, layerNumber: number, firstGlobalIndex: number, excludedFlags: Uint8Array | null, coloring: SegmentColoring): void {
+  private addLayerLines (layer: Layer, layerNumber: number, firstGlobalIndex: number, excludedFlags: Uint8Array | null): void {
     // Skip empty layers
     if (layer.vertices.length <= 2) return
 
     const colors = new Uint8ClampedArray(layer.vertices.length)
-    fillSegmentColors(layer, layerNumber, coloring.propertyOf(layer, layerNumber), coloring.colorAt, colors)
+    fillSegmentColors(layer, layerNumber, this._segmentColoring.propertyOf(layer, layerNumber), this._segmentColoring.colorAt, colors)
     this.layerColors[layerNumber - 1] = colors
 
     // Layers untouched by exclusions go in whole

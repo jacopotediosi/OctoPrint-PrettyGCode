@@ -1,4 +1,4 @@
-import { COLOR_MODES, resolveSegmentColoring } from '../../gcode/colors/color-modes'
+import { COLOR_MODES } from '../../gcode/colors/color-modes'
 import type { ColorModeId } from '../../gcode/colors/color-modes'
 import { rgbColorToHexString, type RgbColor } from '../../utils/colors'
 import { htmlStringToElement } from '../../utils/html'
@@ -61,7 +61,7 @@ function createRow (color: RgbColor, label: string, values: string[]): HTMLEleme
  */
 export function updateLegend (app: PrettyGCodeApp): void {
   const rowsContainer = document.getElementById('pg-legend-rows')!
-  const { columnNames, entries } = resolveSegmentColoring(app.gcode, app.settings, (layerNumber) => app.layerSeconds(layerNumber)).legend()
+  const { columnNames, entries } = app.segmentColoring.legend()
 
   const rows = entries.map((entry) => createRow(entry.color, entry.label, entry.values))
   if (columnNames.length) rows.unshift(createColumnNamesRow(columnNames))
