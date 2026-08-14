@@ -11,11 +11,11 @@ export interface PropertyRangeColors {
   steps: number[]
 }
 
-/** The lowest and the highest value a property takes over a gcode */
+/** The range a property covers over a gcode */
 interface PropertyRange {
-  /** Lowest value the property takes */
+  /** Value the spread runs from */
   lowest: number
-  /** Highest value the property takes */
+  /** Value the spread runs to */
   highest: number
   /** The values the property takes, empty when it takes more than two of them */
   values: number[]
@@ -41,11 +41,13 @@ const PROPERTY_RANGE_COLORS = [
  * @param layers - Parsed gcode layers
  * @param propertyOf - Property to read of each layer
  * @param decimals - Decimals the values are read at
+ * @param logarithmic - True to spread the values by their ratio instead of their difference
  * @returns The range it covers
  */
-function propertyRange (layers: Layer[], propertyOf: (layer: Layer, layerNumber: number) => SegmentProperty, decimals: number): PropertyRange {
+function propertyRange (layers: Layer[], propertyOf: (layer: Layer, layerNumber: number) => SegmentProperty, decimals: number, logarithmic: boolean): PropertyRange {
   const step = 10 ** decimals
   let lowest = Infinity
+  let lowestPositive = Infinity
   let highest = -Infinity
   const values = new Set<number>()
 
@@ -53,12 +55,18 @@ function propertyRange (layers: Layer[], propertyOf: (layer: Layer, layerNumber:
     for (const rawValue of propertyOf(layers[layerNumber - 1], layerNumber).values) {
       const value = Math.round(rawValue * step) / step
       if (value < lowest) lowest = value
+      if (value > 0 && value < lowestPositive) lowestPositive = value
       if (value > highest) highest = value
       if (values.size <= 2) values.add(value)
     }
   }
 
-  return { lowest, highest, values: values.size <= 2 ? [...values].sort((a, b) => a - b) : [] }
+  return {
+    // A logarithmic spread has to start above zero
+    lowest: logarithmic && lowestPositive < Infinity ? lowestPositive : lowest,
+    highest,
+    values: values.size <= 2 ? [...values].sort((a, b) => a - b) : []
+  }
 }
 
 /**
@@ -111,7 +119,7 @@ function propertyRangeSteps (range: PropertyRange, logarithmic = false): number[
  * @returns The picked colors
  */
 export function resolveRangeColors (layers: Layer[], propertyOf: (layer: Layer, layerNumber: number) => SegmentProperty, decimals: number, logarithmic = false): PropertyRangeColors {
-  const range = propertyRange(layers, propertyOf, decimals)
+  const range = propertyRange(layers, propertyOf, decimals, logarithmic)
 
   return {
     colorAt: (value: number) => propertyRangeColorAt(value, range, logarithmic),
