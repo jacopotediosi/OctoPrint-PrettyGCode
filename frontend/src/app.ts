@@ -342,31 +342,28 @@ export class PrettyGCodeApp {
    */
   private advancePrintProgress (deltaSeconds: number): PrintProgressUpdate {
     const state = this.currentPrinterState
-    const tracking = state && !this.manualSliding && (state.flags.printing || state.flags.paused)
+    const trackingLivePrint = state && !this.manualSliding && (state.flags.printing || state.flags.paused)
 
     let needRender = false
     let nozzlePosition: ScenePoint | null = null
-    let revealedLayer: number | null = null
 
-    if (tracking) {
+    if (trackingLivePrint) {
       // Reveal gcode up to where the nozzle has passed
       const spot = this.printTimeline.advance(this.currentFilePosition, deltaSeconds)
       if (spot) {
         this.gcodeModel.revealTo(spot)
         const { layerNumber, segmentNumber } = this.printTimeline.revealPosition(spot.segmentIndex)
         this.setReveal(layerNumber, segmentNumber)
-        revealedLayer = layerNumber
       }
       needRender = true
       nozzlePosition = this.printTimeline.getNozzlePosition()
     } else {
-      // Reveal gcode up to the selected within-layer position
+      // Reveal gcode up to the selected position
       needRender = this.gcodeModel.syncToLayerSegment(this.currentLayerNumber, this.currentSegmentNumber)
-      if (needRender) revealedLayer = this.currentLayerNumber
     }
 
     // Highlight the revealed layer
-    if (revealedLayer != null) this.gcodeModel.highlightLayer(revealedLayer)
+    this.gcodeModel.highlightLayer(this.currentLayerNumber)
 
     return { needRender, nozzlePosition }
   }
