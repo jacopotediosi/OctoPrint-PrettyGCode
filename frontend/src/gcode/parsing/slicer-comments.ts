@@ -13,7 +13,7 @@ export const FEATURE_TYPE_COMMENT_PATTERN = /;\s*(?:type:|feature[ :])(.*)/i
  * - ;LAYER:<number> Cura, ideaMaker
  * - ; layer <number> Simplify3D
  */
-export const LAYER_CHANGE_COMMENT_PATTERN = /;\s*(?:layer[_ ]?change|change[_ ]?layer|layer[ :]\d)/i
+export const LAYER_CHANGE_COMMENT_PATTERN = /^;\s*(?:layer[_ ]?change|change[_ ]?layer|layer[ :]\d)/i
 
 /** Matches one color a slicer states for a tool, e.g. "#800080" */
 export const TOOL_COLOR_PATTERN = /^#[0-9a-f]{6}$/

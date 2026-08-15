@@ -1,16 +1,16 @@
 import { TOOL_COLOR_PATTERN } from './slicer-comments'
 
 /** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */
-const NOZZLE_DIAMETER_COMMENT_PATTERN = /nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
+const NOZZLE_DIAMETER_COMMENT_PATTERN = /;\s*nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
 
 /** Matches the filament diameter stated by the slicer, e.g. "; filament_diameter = 1.75" */
-const FILAMENT_DIAMETER_COMMENT_PATTERN = /filament[_ ]?diameter\s*[:=,]\s*([\d.]+)/i
+const FILAMENT_DIAMETER_COMMENT_PATTERN = /;\s*filament[_ ]?diameter\s*[:=,]\s*([\d.]+)/i
 
 /** Matches the filament density stated by the slicer, e.g. "; filament_density = 1.24" */
-const FILAMENT_DENSITY_COMMENT_PATTERN = /filament[_ ]?density\s*[:=,]\s*([\d.]+)/i
+const FILAMENT_DENSITY_COMMENT_PATTERN = /;\s*filament[_ ]?density\s*[:=,]\s*([\d.]+)/i
 
 /** Matches the tool colors stated by the slicer, e.g. "; extruder_colour = #800080;#ffffff" */
-const TOOL_COLORS_COMMENT_PATTERN = /(extruder|filament)_colou?r\s*=\s*(.*)/i
+const TOOL_COLORS_COMMENT_PATTERN = /;\s*(extruder|filament)_colou?r\s*=\s*(.*)/i
 
 /** Print settings a slicer states in the configuration block of its gcode */
 export interface SlicerConfig {
