@@ -3,7 +3,7 @@ import { BeltPrinterTransform } from '../printer-transform/belt-printer-transfor
 import { OpenLayer } from './open-layer'
 import { emptyBounds } from './parsed-gcode'
 import type { ColorChange, FeatureType, Layer, MachineState, ParsedGcode, ScenePoint, SegmentPropertyValues } from './parsed-gcode'
-import { COLOR_CHANGE_COMMENT_PATTERN, FEATURE_TYPE_COMMENT_PATTERN, HEIGHT_COMMENT_PATTERN, LAYER_CHANGE_COMMENT_PATTERN, TIME_ELAPSED_COMMENT_PREFIX, TOOL_COLOR_PATTERN, WIDTH_COMMENT_PATTERN } from './slicer-comments'
+import { BELT_HEIGHT_COMMENT_PATTERN, COLOR_CHANGE_COMMENT_PATTERN, FEATURE_TYPE_COMMENT_PATTERN, HEIGHT_COMMENT_PATTERN, LAYER_CHANGE_COMMENT_PATTERN, TIME_ELAPSED_COMMENT_PREFIX, TOOL_COLOR_PATTERN, WIDTH_COMMENT_PATTERN } from './slicer-comments'
 import { SlicerConfigCollector } from './slicer-config'
 import { SlicerTimeMarksCollector } from './slicer-time-marks'
 
@@ -265,6 +265,8 @@ export class GcodeParser {
     if (widthMatch) this.currentPropertyValues.width = parseFloat(widthMatch[1])
     const heightMatch = commentLower.match(HEIGHT_COMMENT_PATTERN)
     if (heightMatch) this.slicerHeight = parseFloat(heightMatch[1])
+    const beltHeightMatch = commentLower.match(BELT_HEIGHT_COMMENT_PATTERN)
+    if (beltHeightMatch) this.slicerHeight = parseFloat(beltHeightMatch[1])
 
     // Print settings the slicer states
     this.slicerConfigCollector.addComment(commentLower)
