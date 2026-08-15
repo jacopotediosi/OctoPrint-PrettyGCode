@@ -142,7 +142,6 @@ export class Viewer {
   private createRenderer (canvas: HTMLCanvasElement, antialias: boolean): void {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias, logarithmicDepthBuffer: true })
     this.antialias = antialias
-    this.renderer.setPixelRatio(window.devicePixelRatio)
     this.renderer.localClippingEnabled = true // Needed for the gcode reflection on the bed surface
 
     // Redraw when the browser restores the WebGL context
@@ -211,19 +210,21 @@ export class Viewer {
   }
 
   /**
-   * Matches the rendering size to the canvas display size
-   * @returns True if the size changed
+   * Matches the rendering resolution to the canvas display size and pixel density
+   * @returns True if the resolution changed
    */
   private resizeCanvasToDisplaySize (): boolean {
-    // Get new canvas size
+    // Get new canvas size and pixel density
     const width = this.canvasWidth
     const height = this.canvasHeight
+    const pixelRatio = window.devicePixelRatio
 
-    // Skip if already at the display size
+    // Skip if already at the display size and pixel density
     const current = this.renderer.getSize(new THREE.Vector2())
-    if (current.width === width && current.height === height) return false
+    if (current.width === width && current.height === height && this.renderer.getPixelRatio() === pixelRatio) return false
 
     // Resize canvas
+    this.renderer.setPixelRatio(pixelRatio)
     this.renderer.setSize(width, height, false)
 
     // Refit the cameras to the new size
