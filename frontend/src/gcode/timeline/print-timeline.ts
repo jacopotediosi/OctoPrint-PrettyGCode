@@ -157,6 +157,15 @@ export class PrintTimeline {
   }
 
   /**
+   * Locates the reveal position a file position has got to
+   * @param filePosition - Bytes of the file sent to the printer
+   * @returns The 1-based layer and its revealed segments
+   */
+  revealPositionAt (filePosition: number): { layerNumber: number, segmentNumber: number } {
+    return this.revealPosition(this.segmentsReadAt(filePosition))
+  }
+
+  /**
    * Finds the layer holding the last revealed segment
    * @param segmentIndex - Global index of the reveal position
    * @returns The 1-based layer number, or 0 before the first segment

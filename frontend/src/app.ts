@@ -218,8 +218,15 @@ export class PrettyGCodeApp {
     }
 
     // Live printer state and progress
+    const wasBusy = this.isPrinterBusy(this.currentPrinterState)
     this.currentPrinterState = data.state
     this.currentFilePosition = data.progress.filepos
+
+    // Reveal everything the printer got through when it stops, unless the user is browsing by hand
+    if (wasBusy && !this.isPrinterBusy(data.state) && !this.manualSliding) {
+      const { layerNumber, segmentNumber } = this.printTimeline.revealPositionAt(this.currentFilePosition)
+      this.setReveal(layerNumber, segmentNumber)
+    }
 
     // Speed of the job the printer is on
     if (data.state.flags.printing) {
@@ -227,6 +234,15 @@ export class PrettyGCodeApp {
     } else {
       this.observedPrintSpeed.restart()
     }
+  }
+
+  /**
+   * Tells whether the printer is working on a job
+   * @param state - Printer state reported by OctoPrint, null before it reports one
+   * @returns True while the printer prints or is paused
+   */
+  private isPrinterBusy (state: PrinterState | null): boolean {
+    return state !== null && (state.flags.printing || state.flags.paused)
   }
 
   /* ---- Gcode loading ---- */
@@ -341,8 +357,7 @@ export class PrettyGCodeApp {
    * @returns Whether the scene changed and the nozzle position to show, if any
    */
   private advancePrintProgress (deltaSeconds: number): PrintProgressUpdate {
-    const state = this.currentPrinterState
-    const trackingLivePrint = state && !this.manualSliding && (state.flags.printing || state.flags.paused)
+    const trackingLivePrint = !this.manualSliding && this.isPrinterBusy(this.currentPrinterState)
 
     let needRender = false
     let nozzlePosition: ScenePoint | null = null
