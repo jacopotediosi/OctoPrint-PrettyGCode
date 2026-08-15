@@ -333,7 +333,10 @@ export class Viewer {
 
     oldCanvas.replaceWith(canvas)
 
+    // Drop the old renderer and free the GPU memory dispose leaves allocated
     this.renderer.dispose()
+    this.renderer.forceContextLoss()
+
     this.createRenderer(canvas, antialias)
     this.camera.setRenderer(this.renderer)
 
