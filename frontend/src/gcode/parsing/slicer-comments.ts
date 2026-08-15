@@ -34,5 +34,9 @@ export const HEIGHT_COMMENT_PATTERN = /;\s*(?:layer_)?height:\s*([\d.]+)/i
 /** Matches the extrusion height a slicer states for a belt printer, measured square to the belt, e.g. ";HEIGHT-BELT:0.2" */
 export const BELT_HEIGHT_COMMENT_PATTERN = /;\s*height-belt:\s*([\d.]+)/i
 
-/** Prefix, lowercased, of the comment stating the print time elapsed so far */
-export const TIME_ELAPSED_COMMENT_PREFIX = ';time_elapsed:'
+/**
+ * Prefixes, lowercased, of the comments stating the print time elapsed so far
+ * - ;TIME_ELAPSED:   Cura
+ * - ;PRINTING_TIME:  ideaMaker
+ */
+export const TIME_ELAPSED_COMMENT_PREFIXES = [';time_elapsed:', ';printing_time:']

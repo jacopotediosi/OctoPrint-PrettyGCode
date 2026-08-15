@@ -3,7 +3,7 @@ import { BeltPrinterTransform } from '../printer-transform/belt-printer-transfor
 import { OpenLayer } from './open-layer'
 import { emptyBounds } from './parsed-gcode'
 import type { ColorChange, FeatureType, Layer, MachineState, ParsedGcode, ScenePoint, SegmentPropertyValues } from './parsed-gcode'
-import { BELT_HEIGHT_COMMENT_PATTERN, COLOR_CHANGE_COMMENT_PATTERN, FEATURE_TYPE_COMMENT_PATTERN, HEIGHT_COMMENT_PATTERN, LAYER_CHANGE_COMMENT_PATTERN, TIME_ELAPSED_COMMENT_PREFIX, TOOL_COLOR_PATTERN, WIDTH_COMMENT_PATTERN } from './slicer-comments'
+import { BELT_HEIGHT_COMMENT_PATTERN, COLOR_CHANGE_COMMENT_PATTERN, FEATURE_TYPE_COMMENT_PATTERN, HEIGHT_COMMENT_PATTERN, LAYER_CHANGE_COMMENT_PATTERN, TIME_ELAPSED_COMMENT_PREFIXES, TOOL_COLOR_PATTERN, WIDTH_COMMENT_PATTERN } from './slicer-comments'
 import { SlicerConfigCollector } from './slicer-config'
 import { SlicerTimeMarksCollector } from './slicer-time-marks'
 
@@ -281,8 +281,11 @@ export class GcodeParser {
     }
 
     // Take the elapsed print time the slicer states
-    if (commentLower.startsWith(TIME_ELAPSED_COMMENT_PREFIX, commentStart)) {
-      this.slicerTimeMarksCollector.addElapsed(this.filePosition, parseFloat(rawLine.slice(commentStart + TIME_ELAPSED_COMMENT_PREFIX.length)))
+    for (const prefix of TIME_ELAPSED_COMMENT_PREFIXES) {
+      if (commentLower.startsWith(prefix, commentStart)) {
+        this.slicerTimeMarksCollector.addElapsed(this.filePosition, parseFloat(rawLine.slice(commentStart + prefix.length)))
+        break
+      }
     }
   }
 
