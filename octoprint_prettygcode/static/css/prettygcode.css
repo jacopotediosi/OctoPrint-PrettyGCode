@@ -326,7 +326,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     top: var(--pg-margin-top);
     left: var(--pg-margin-left);
     width: 360px;
-    max-height: calc(100vh - var(--pg-window-vertical-insets));
+    max-height: calc(100% - var(--pg-window-vertical-insets));
     box-sizing: border-box;
     padding: var(--pg-window-padding);
     padding-top: calc(var(--pg-window-header-height) + var(--pg-window-padding));
