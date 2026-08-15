@@ -1,8 +1,11 @@
-import { resolveToolColors, FALLBACK_FILAMENT_COLORS } from './tool'
+import { resolveToolColors } from './tool'
 import { hexStringToLinearColor, type RgbColor } from '../../../utils/colors'
 import type { PropertyFixedColors } from '../property-fixed-colors'
 import type { Layer, ParsedGcode, SegmentProperty } from '../../parsing/parsed-gcode'
 import { joinSegmentProperties } from '../../parsing/segment-properties'
+
+/** Colors standing in for the color change colors a gcode does not state */
+const FALLBACK_COLOR_CHANGE_COLORS = ['#c0392b', '#e67e22', '#f1c40f', '#27ae60', '#1abc9c', '#2980b9', '#9b59b6']
 
 /** Value the first color change takes, the lower ones standing for the tools printing before any change */
 const FIRST_COLOR_CHANGE_VALUE = 256
@@ -30,7 +33,7 @@ export function resolveColorPrintColors (gcode: ParsedGcode): PropertyFixedColor
   const colors: Array<RgbColor | undefined> = [...toolColors.colors]
 
   gcode.colorChanges.forEach((change, index) => {
-    colors[FIRST_COLOR_CHANGE_VALUE + index] = hexStringToLinearColor(change.color || FALLBACK_FILAMENT_COLORS[index % FALLBACK_FILAMENT_COLORS.length])
+    colors[FIRST_COLOR_CHANGE_VALUE + index] = hexStringToLinearColor(change.color || FALLBACK_COLOR_CHANGE_COLORS[index % FALLBACK_COLOR_CHANGE_COLORS.length])
   })
 
   // Heights every change prints from, and the last ones printed before it
