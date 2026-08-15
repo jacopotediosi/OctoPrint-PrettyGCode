@@ -124,12 +124,10 @@ export class PrettyGCodeApp {
         this.updatePrinterProfile()
         onPrinterProfileChange(this.printerProfilesVM, () => this.updatePrinterProfile())
 
-        // 3D view and gcode
+        // 3D view
         this.viewer.init()
         this.viewer.add(this.gcodeModel.linesGroup)
         this.viewer.add(this.exclusions.regionMarkersGroup)
-        this.loadGcode(this.currentJobPath)
-        this.fetchExclusions()
 
         // UI controls
         initPageLayout(() => this.updateWindowStates())
@@ -141,6 +139,10 @@ export class PrettyGCodeApp {
         initToggleButtons(this)
         initCameraControls(this)
         initLegend(this)
+
+        // Gcode and exclusions of the current job
+        this.loadGcode(this.currentJobPath)
+        this.fetchExclusions()
 
         // Apply the loaded settings
         this.applySettings(this.settings.keys())
@@ -340,6 +342,7 @@ export class PrettyGCodeApp {
     updateLayerSliderMax(this)
     updateSegmentSliderMax(this)
     this.updateLayerHighlight()
+    this.updateWindowStates()
     this.viewer.requestRender()
   }
 
@@ -542,7 +545,7 @@ export class PrettyGCodeApp {
     applyCameraControlsVisibility(this.settings.showCameraControls)
     this.viewer.applyViewCubeVisibility(this.settings.showCameraControls)
 
-    updateTopLeftWindows(this.settings)
+    updateTopLeftWindows(this.settings, this.layerCount > 0)
 
     updateDashboardWindow(this.settings)
     updateWebcamWindow(this.settings)

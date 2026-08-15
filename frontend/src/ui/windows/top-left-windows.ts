@@ -23,9 +23,12 @@ export function closeOtherTopLeftWindows (settings: Settings, opened: SettingKey
 /**
  * Shows or hides the top left windows to match the current settings
  * @param settings - Plugin frontend settings
+ * @param gcodeLoaded - True when a gcode is loaded
  */
-export function updateTopLeftWindows (settings: Settings): void {
+export function updateTopLeftWindows (settings: Settings, gcodeLoaded: boolean): void {
   $('#state_wrapper').toggleClass('pg-hidden', !settings.showState)
   $('#files_wrapper').toggleClass('pg-hidden', !settings.showFiles)
-  $('#pg-legend').toggleClass('pg-hidden', !settings.showLegend)
+
+  $('#pg-legend').toggleClass('pg-hidden', !settings.showLegend || !gcodeLoaded)
+  $('.pg-toggle-legend').toggleClass('pg-hidden', !gcodeLoaded)
 }
