@@ -44,6 +44,11 @@ const scratchEnd: ScenePoint = { x: 0, y: 0, z: 0 }
 /** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
 const LAYER_EPSILON_MM = 0.04
 
+/** Highest extrusion height the first layer takes from its own Z, which a purge line laid high above the bed would overstate */
+const HIGHEST_FIRST_LAYER_HEIGHT_MM = 2
+/** Extrusion height the layers take until one of them gives its own */
+const DEFAULT_LAYER_HEIGHT_MM = 0.2
+
 /** Travel length below which the move is not drawn */
 const MIN_TRAVEL_LENGTH_MM = 0.5
 
@@ -154,7 +159,7 @@ export class GcodeParser {
   /** Extrusion height the slicer states, null until it states one */
   private slicerHeight: number | null = null
   /** Height of the layer being filled, taken from its step in Z */
-  private layerHeight = 0
+  private layerHeight = DEFAULT_LAYER_HEIGHT_MM
 
   /* ---- Object markers ---- */
 
@@ -567,20 +572,22 @@ export class GcodeParser {
   private changeLayer (move: MachineState): OpenLayer {
     this.pendingLayerChange = false
 
+    // The first layer is as tall as the Z it sits at, the ones above it as tall as their step in Z
+    const height = this.layers.length
+      ? move.z - this.layers[this.layers.length - 1].z
+      : Math.min(move.z, HIGHEST_FIRST_LAYER_HEIGHT_MM)
+    // Keep the height of the layers before when an object printed after another starts back at the bottom
+    if (height > 0) this.layerHeight = height
+
     // The slicer's custom gcode joins the layer coming after it instead of filling one of its own
     if (this.customLayer && this.currentLayer) {
       this.customLayer = false
       this.currentLayer.z = move.z
-      this.layerHeight = move.z
       return this.currentLayer
     }
 
     this.sealLayer()
     this.layersOpened++
-
-    // Keep the height of the layers before when an object printed after another starts back at the bottom
-    const height = move.z - (this.layers.length ? this.layers[this.layers.length - 1].z : 0)
-    if (height > 0) this.layerHeight = height
 
     this.customLayer = this.customGcode
     this.currentLayer = new OpenLayer(move.z)
