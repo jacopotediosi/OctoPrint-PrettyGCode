@@ -145,6 +145,9 @@ export class Viewer {
     this.renderer.setPixelRatio(window.devicePixelRatio)
     this.renderer.localClippingEnabled = true // Needed for the gcode reflection on the bed surface
 
+    // Redraw when the browser restores the WebGL context
+    canvas.addEventListener('webglcontextrestored', () => this.requestRender())
+
     this.canvasSizeObserver.disconnect()
     this.canvasSizeObserver.observe(canvas)
   }
