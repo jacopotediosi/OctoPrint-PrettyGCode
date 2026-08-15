@@ -129,6 +129,8 @@ export class Viewer {
     this.scene.add(this.cameraLight)
 
     this.timer = new THREE.Timer()
+    this.timer.connect(document)
+
     this.scheduleFrame()
   }
 
