@@ -8,7 +8,9 @@ This plugin adds a 3D G-code visualizer tab in Octoprint. It displays colored li
 
 ### 3D Visualization
 - Interactive 3D G-code visualizer, with a view cube to orient the camera and perspective/orthographic projection
-- Paths colored by slicer feature (perimeters, infill, support, skirt...), with built-in presets for popular slicers, or your own custom colors
+- Paths colored by feature type (perimeters, infill, support, skirt...), tool, color change, speed, temperature, layer time and more
+- Built-in feature color presets for popular slicers, or your own custom colors
+- Color legend naming what the colors stand for, with the print time and filament each takes, and a picker to switch the color mode
 - Layer and segment sliders to scrub through the model
 - Belt printers are supported too, with a customizable gantry angle
 
