@@ -1,7 +1,6 @@
-import type { Layer, ScenePoint } from '../parsing/parsed-gcode'
+import type { Layer, ScenePoint, SlicerTimeMarks } from '../parsing/parsed-gcode'
 import type { PrintExclusions } from '../print-exclusions'
 import { SlicerTimeCalibration } from './slicer-time-calibration'
-import type { SlicerTimeMarks } from '../parsing/slicer-time-marks'
 
 /** A non-empty layer in print order, carrying its offset into the global segment numbering */
 export interface DrawnLayer {

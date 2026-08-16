@@ -1,5 +1,3 @@
-import type { SlicerTimeMarks } from './slicer-time-marks'
-
 /* ---- Parse result ---- */
 
 /** A parsed gcode */
@@ -34,6 +32,14 @@ export interface ColorChange {
   color: string
   /** Height in mm it takes effect at */
   z: number
+}
+
+/** Print time a slicer states at points along its gcode */
+export interface SlicerTimeMarks {
+  /** Byte offsets the marks sit at, in increasing order */
+  filePositions: Uint32Array
+  /** Print time elapsed at each mark */
+  elapsedSeconds: Float64Array
 }
 
 /** A feature type the gcode states */

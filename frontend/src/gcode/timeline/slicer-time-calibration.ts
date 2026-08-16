@@ -1,4 +1,4 @@
-import type { SlicerTimeMarks } from '../parsing/slicer-time-marks'
+import type { SlicerTimeMarks } from '../parsing/parsed-gcode'
 
 /** A layer carrying the estimated durations of its segments */
 interface TimedLayer {

@@ -1,11 +1,16 @@
 import { arcOffsetFromRadius, interpolateArc } from './arc-interpolation'
 import { BeltPrinterTransform } from '../printer-transform/belt-printer-transform'
+import { ColorChangesCollector } from './collectors/color-changes'
+import { ExtrusionSizeCollector } from './collectors/extrusion-size'
+import { FeatureTypesCollector } from './collectors/feature-types'
+import { GcodeBoundsCollector } from './collectors/gcode-bounds'
+import { MarkedObjectsCollector } from './collectors/marked-objects'
+import { NozzleTemperaturesCollector } from './collectors/nozzle-temperatures'
 import { OpenLayer } from './open-layer'
-import { emptyBounds } from './parsed-gcode'
-import type { ColorChange, FeatureType, Layer, MachineState, ParsedGcode, ScenePoint, SegmentPropertyValues } from './parsed-gcode'
-import { BELT_HEIGHT_COMMENT_PATTERN, COLOR_CHANGE_COMMENT_PATTERN, FEATURE_TYPE_COMMENT_PATTERN, HEIGHT_COMMENT_PATTERN, LAYER_CHANGE_COMMENT_PATTERN, TIME_ELAPSED_COMMENT_PREFIXES, TOOL_COLOR_PATTERN, WIDTH_COMMENT_PATTERN } from './slicer-comments'
-import { SlicerConfigCollector } from './slicer-config'
-import { SlicerTimeMarksCollector } from './slicer-time-marks'
+import type { Layer, MachineState, ParsedGcode, ScenePoint, SegmentPropertyValues } from './parsed-gcode'
+import { LAYER_CHANGE_COMMENT_PATTERN } from './slicer-comments'
+import { SlicerConfigCollector } from './collectors/slicer-config'
+import { SlicerTimeMarksCollector } from './collectors/slicer-time-marks'
 
 /* ---- Machine state ---- */
 
@@ -34,23 +39,14 @@ const textEncoder = new TextEncoder()
  */
 const lineByteLength = (line: string): number => NON_ASCII_PATTERN.test(line) ? textEncoder.encode(line).length : line.length
 
-/* ---- Parser ---- */
+/* ---- Scene points ---- */
 
 /** Scratch point reused for the scene start of each move */
 const scratchStart: ScenePoint = { x: 0, y: 0, z: 0 }
 /** Scratch point reused for the scene end of each move */
 const scratchEnd: ScenePoint = { x: 0, y: 0, z: 0 }
 
-/** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
-const LAYER_EPSILON_MM = 0.04
-
-/** Highest extrusion height the first layer takes from its own Z, which a purge line laid high above the bed would overstate */
-const HIGHEST_FIRST_LAYER_HEIGHT_MM = 2
-/** Extrusion height the layers take until one of them gives its own */
-const DEFAULT_LAYER_HEIGHT_MM = 0.2
-
-/** Travel length below which the move is not drawn */
-const MIN_TRAVEL_LENGTH_MM = 0.5
+/* ---- Commands ---- */
 
 /** Highest tool number a T command selects */
 const HIGHEST_TOOL_NUMBER = 254
@@ -78,21 +74,18 @@ const LENGTH_WORDS_BY_COMMANDS = [
   }
 ]
 
-/** Streaming gcode parser: feed it byte chunks to get layers of segments with feature types, file positions and time estimates */
+/* ---- Layers ---- */
+
+/** Z step below which a move stays in the same layer: vase mode rises continuously and would split a layer per segment */
+const LAYER_EPSILON_MM = 0.04
+
+/* ---- Travels ---- */
+
+/** Travel length below which the move is not drawn */
+const MIN_TRAVEL_LENGTH_MM = 0.5
+
+/** Streaming gcode parser, turning the bytes of a gcode file into layers of segments with their properties, file positions and time estimates */
 export class GcodeParser {
-  /* ---- Parse result ---- */
-
-  /** Parsed layers, in the order the gcode prints them */
-  private readonly layers: Layer[] = []
-  /** Bounding box of the extruded gcode */
-  private bounds = emptyBounds()
-  /** Color changes the gcode states, in the order it states them */
-  private readonly colorChanges: ColorChange[] = []
-  /** Feature types the gcode states, by feature type id */
-  private readonly featureTypes: FeatureType[] = []
-  /** Names of the objects marked in the gcode, by object id */
-  private readonly objectNames: string[] = []
-
   /* ---- Gcode text ---- */
 
   /** Decoder turning the gcode bytes into text, keeping the byte order mark so it counts toward the file position */
@@ -121,6 +114,8 @@ export class GcodeParser {
 
   /* ---- Layers ---- */
 
+  /** Parsed layers, in the order the gcode prints them */
+  private readonly layers: Layer[] = []
   /** Layer being filled, if any */
   private currentLayer: OpenLayer | null = null
   /** Layers opened so far */
@@ -129,8 +124,6 @@ export class GcodeParser {
   private statesLayerChanges = false
   /** Whether a stated layer change is waiting for the extrusion opening its layer */
   private pendingLayerChange = false
-  /** Whether the moves belong to the slicer's own custom gcode */
-  private customGcode = false
   /** Whether the layer being filled holds the slicer's own custom gcode only */
   private customLayer = false
 
@@ -150,35 +143,25 @@ export class GcodeParser {
 
   /** Value each property takes on the segments being parsed */
   private readonly currentPropertyValues: SegmentPropertyValues = { featureTypeId: -1, toolId: 0, colorChangeId: -1, feedrate: 0, fanSpeed: 0, temperature: 0, width: 0, height: 0, filamentPerMm: 0 }
-  /** Whether a feature type comment of the printed model has been seen yet */
-  private featureTypeCommentSeen = false
-  /** Nozzle temperature set for each tool in degrees Celsius, by tool id */
-  private readonly toolTemperatures: number[] = []
-  /** Index of the last color change of each tool, by tool id */
-  private readonly toolColorChanges: number[] = []
-  /** Whether a stated color change is waiting for the command carrying it out */
-  private statedColorChange = false
-  /** Extrusion height the slicer states, null until it states one */
-  private slicerHeight: number | null = null
-  /** Height of the layer being filled, taken from its step in Z */
-  private layerHeight = DEFAULT_LAYER_HEIGHT_MM
 
-  /* ---- Object markers ---- */
+  /* ---- Collectors ---- */
 
-  /** Tag of the object markers, lowercased */
-  private readonly objectTag: string
-  /** Id of the object the parsed segments belong to, -1 for none */
-  private currentObjectId = -1
-
-  /* ---- Slicer config ---- */
-
-  /** Collector of the print settings the slicer states along the file */
+  /** Collector of the box the extruded gcode fits in */
+  private readonly gcodeBoundsCollector = new GcodeBoundsCollector()
+  /** Collector of the print settings the slicer states */
   private readonly slicerConfigCollector = new SlicerConfigCollector()
-
-  /* ---- Slicer time marks ---- */
-
-  /** Collector of the print times the slicer states along the file */
+  /** Collector of the color changes the gcode states */
+  private readonly colorChangesCollector = new ColorChangesCollector()
+  /** Collector of the print times the slicer states */
   private readonly slicerTimeMarksCollector = new SlicerTimeMarksCollector()
+  /** Collector of the feature types the gcode states */
+  private readonly featureTypesCollector = new FeatureTypesCollector()
+  /** Collector of the objects the gcode marks */
+  private readonly markedObjectsCollector: MarkedObjectsCollector
+  /** Collector of the nozzle temperatures the gcode sets */
+  private readonly nozzleTemperaturesCollector = new NozzleTemperaturesCollector()
+  /** Collector of the size of the lines the gcode extrudes */
+  private readonly extrusionSizeCollector = new ExtrusionSizeCollector()
 
   /**
    * @param objectTag - Tag of the "@<tag> <name>" object markers
@@ -186,7 +169,7 @@ export class GcodeParser {
    * @param beltPrinterGantryAngle - Angle between the belt and the printer gantry in degrees, null for non-belt printers
    */
   constructor (objectTag = 'Object', g90InfluencesExtruder = false, beltPrinterGantryAngle: number | null = null) {
-    this.objectTag = objectTag.toLowerCase()
+    this.markedObjectsCollector = new MarkedObjectsCollector(objectTag)
     this.g90InfluencesExtruder = g90InfluencesExtruder
     this.printerTransform = beltPrinterGantryAngle == null ? null : new BeltPrinterTransform(beltPrinterGantryAngle)
   }
@@ -217,9 +200,9 @@ export class GcodeParser {
     // Drop the byte order mark
     if (rawLine.startsWith('\ufeff')) rawLine = rawLine.slice(1)
 
-    // Parse object markers
+    // Collect the objects the gcode marks
     if (rawLine.startsWith('@')) {
-      this.parseObjectMarker(rawLine)
+      this.markedObjectsCollector.addMarker(rawLine)
       return
     }
 
@@ -243,57 +226,29 @@ export class GcodeParser {
   private parseComment (rawLine: string, commentStart: number): void {
     const commentLower = rawLine.toLowerCase()
 
-    // Take the feature type from feature-type comments only
-    const featureTypeMatch = rawLine.match(FEATURE_TYPE_COMMENT_PATTERN)
-    if (featureTypeMatch) {
-      const id = this.featureTypes.findIndex((featureType) => featureType.comment === commentLower)
-      this.currentPropertyValues.featureTypeId = id >= 0
-        ? id
-        : this.featureTypes.push({ comment: commentLower, label: featureTypeMatch[1].trim() }) - 1
-
-      this.customGcode = commentLower.includes('custom')
-
-      // First feature type seen, not counting the slicers' own start gcode
-      if (!this.featureTypeCommentSeen && !this.customGcode) {
-        this.featureTypeCommentSeen = true
-        // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
-        this.bounds = emptyBounds()
-      }
+    // Collect the feature types the gcode states
+    if (this.featureTypesCollector.addComment(rawLine, commentLower)) {
+      // Drop the pre-print moves (e.g., calibration/wiping/purge lines) gathered so far from the model bounds
+      this.gcodeBoundsCollector.reset()
     }
 
-    // Layer changes the slicer states, which take over from the Z rule
+    // Record the layer changes the slicer states, which take over from the Z rule
     if (LAYER_CHANGE_COMMENT_PATTERN.test(commentLower)) {
       this.statesLayerChanges = true
       this.pendingLayerChange = true
     }
 
-    // Extrusion width and height the slicer states
-    const widthMatch = commentLower.match(WIDTH_COMMENT_PATTERN)
-    if (widthMatch) this.currentPropertyValues.width = parseFloat(widthMatch[1])
-    const heightMatch = commentLower.match(HEIGHT_COMMENT_PATTERN)
-    if (heightMatch) this.slicerHeight = parseFloat(heightMatch[1])
-    const beltHeightMatch = commentLower.match(BELT_HEIGHT_COMMENT_PATTERN)
-    if (beltHeightMatch) this.slicerHeight = parseFloat(beltHeightMatch[1])
+    // Collect the extrusion size the slicer states
+    this.extrusionSizeCollector.addComment(commentLower)
 
-    // Print settings the slicer states
+    // Collect the print settings the slicer states
     this.slicerConfigCollector.addComment(commentLower)
 
-    // Color changes the gcode states, the command carrying one out counting for the same change
-    const colorChangeMatch = commentLower.match(COLOR_CHANGE_COMMENT_PATTERN)
-    if (colorChangeMatch) {
-      const tokens = colorChangeMatch[1].split(',').map((token) => token.trim())
-      const tool = tokens[1]?.startsWith('t') ? parseInt(tokens[1].slice(1)) : this.currentPropertyValues.toolId
-      this.addColorChange(tool, TOOL_COLOR_PATTERN.test(tokens[2] ?? '') ? tokens[2] : '')
-      this.statedColorChange = true
-    }
+    // Collect the color changes the gcode states
+    this.colorChangesCollector.addComment(commentLower, this.machineState.z)
 
-    // Take the elapsed print time the slicer states
-    for (const prefix of TIME_ELAPSED_COMMENT_PREFIXES) {
-      if (commentLower.startsWith(prefix, commentStart)) {
-        this.slicerTimeMarksCollector.addElapsed(this.filePosition, parseFloat(rawLine.slice(commentStart + prefix.length)))
-        break
-      }
-    }
+    // Collect the print times the slicer states
+    this.slicerTimeMarksCollector.addComment(rawLine, commentLower, commentStart, this.filePosition)
   }
 
   /* ---- Commands ---- */
@@ -360,7 +315,13 @@ export class GcodeParser {
     switch (cmd) {
       case 'G0': // Rapid move
       case 'G1': { // Linear move
-        const move: MachineState = { x: coord('x'), y: coord('y'), z: coord('z'), e: coord('e'), f: coord('f') }
+        const move: MachineState = {
+          x: coord('x'),
+          y: coord('y'),
+          z: coord('z'),
+          e: coord('e'), // extruder position
+          f: coord('f') // feedrate
+        }
 
         // Filament pushed without moving in XY unretracts or purges, it lays no line down
         const extruding = this.extrusionDelta(args, move) > 0 && (move.x !== this.machineState.x || move.y !== this.machineState.y)
@@ -473,12 +434,7 @@ export class GcodeParser {
       case 'M104': // Set the nozzle temperature
       case 'M109': { // Set the nozzle temperature and wait for it to be reached
         const temperature = args.s ?? args.r
-        if (temperature !== undefined) {
-          // The T word aims the temperature at another tool
-          const tool = args.t ?? this.currentPropertyValues.toolId
-          this.toolTemperatures[tool] = temperature
-          if (tool === this.currentPropertyValues.toolId) this.currentPropertyValues.temperature = temperature
-        }
+        if (temperature !== undefined) this.nozzleTemperaturesCollector.addTemperature(temperature, args.t)
         break
       }
       case 'M106': { // Set the print cooling fan speed, which the printers scale from 0 to 255
@@ -495,8 +451,7 @@ export class GcodeParser {
         break
       }
       case 'M600': { // Change the filament color
-        if (this.statedColorChange) this.statedColorChange = false
-        else this.addColorChange(this.currentPropertyValues.toolId, '')
+        this.colorChangesCollector.addFilamentChange(this.machineState.z)
         break
       }
       default: { // Select the tool
@@ -505,8 +460,8 @@ export class GcodeParser {
           // Numbers above the tools stand for machine commands (T255, T1000, Tx...)
           if (Number.isInteger(tool) && tool >= 0 && tool <= HIGHEST_TOOL_NUMBER) {
             this.currentPropertyValues.toolId = tool
-            this.currentPropertyValues.temperature = this.toolTemperatures[tool] ?? 0
-            this.currentPropertyValues.colorChangeId = this.toolColorChanges[tool] ?? -1
+            this.colorChangesCollector.selectTool(tool)
+            this.nozzleTemperaturesCollector.selectTool(tool)
           }
         }
         break
@@ -525,41 +480,6 @@ export class GcodeParser {
     return this.extrusionRelative ? args.e : move.e - this.machineState.e
   }
 
-  /* ---- Object markers ---- */
-
-  /**
-   * Parses the object marker, updating the current object id
-   * @param rawLine - Object marker line, starting with "@"
-   */
-  private parseObjectMarker (rawLine: string): void {
-    const space = rawLine.indexOf(' ')
-    const command = (space < 0 ? rawLine : rawLine.slice(0, space)).slice(1).toLowerCase()
-
-    if (command === this.objectTag + 'stop') {
-      this.currentObjectId = -1
-    } else if (command === this.objectTag && space > 0) {
-      const name = rawLine.slice(space + 1).trim()
-      if (!name) return
-
-      const id = this.objectNames.indexOf(name)
-      this.currentObjectId = id >= 0 ? id : this.objectNames.push(name) - 1
-    }
-  }
-
-  /* ---- Segment properties ---- */
-
-  /**
-   * Records a color change of a tool, which the segments it extrudes from there on carry
-   * @param toolId - Id of the tool it changes the color of
-   * @param color - Color the tool prints with from there on, empty when the gcode states none
-   */
-  private addColorChange (toolId: number, color: string): void {
-    const colorChangeId = this.colorChanges.push({ toolId, color, z: this.machineState.z }) - 1
-
-    this.toolColorChanges[toolId] = colorChangeId
-    if (toolId === this.currentPropertyValues.toolId) this.currentPropertyValues.colorChangeId = colorChangeId
-  }
-
   /* ---- Layers ---- */
 
   /**
@@ -569,7 +489,7 @@ export class GcodeParser {
    */
   private startsLayer (move: MachineState): boolean {
     if (this.currentLayer == null || this.pendingLayerChange) return true
-    if (this.statesLayerChanges || this.customGcode) return false
+    if (this.statesLayerChanges || this.featureTypesCollector.customGcode) return false
     return Math.abs(move.z - this.currentLayer.z) > LAYER_EPSILON_MM
   }
 
@@ -581,12 +501,7 @@ export class GcodeParser {
   private changeLayer (move: MachineState): OpenLayer {
     this.pendingLayerChange = false
 
-    // The first layer is as tall as the Z it sits at, the ones above it as tall as their step in Z
-    const height = this.layers.length
-      ? move.z - this.layers[this.layers.length - 1].z
-      : Math.min(move.z, HIGHEST_FIRST_LAYER_HEIGHT_MM)
-    // Keep the height of the layers before when an object printed after another starts back at the bottom
-    if (height > 0) this.layerHeight = height
+    this.extrusionSizeCollector.addLayer(move.z)
 
     // The slicer's custom gcode joins the layer coming after it instead of filling one of its own
     if (this.customLayer && this.currentLayer) {
@@ -598,7 +513,7 @@ export class GcodeParser {
     this.sealLayer()
     this.layersOpened++
 
-    this.customLayer = this.customGcode
+    this.customLayer = this.featureTypesCollector.customGcode
     this.currentLayer = new OpenLayer(move.z)
     return this.currentLayer
   }
@@ -648,26 +563,12 @@ export class GcodeParser {
   /* ---- Segments ---- */
 
   /**
-   * Grows the model bounds to contain a point
-   * @param point - Point to contain
-   */
-  private expandBounds (point: ScenePoint): void {
-    const bounds = this.bounds
-    bounds.minX = Math.min(bounds.minX, point.x)
-    bounds.minY = Math.min(bounds.minY, point.y)
-    bounds.minZ = Math.min(bounds.minZ, point.z)
-    bounds.maxX = Math.max(bounds.maxX, point.x)
-    bounds.maxY = Math.max(bounds.maxY, point.y)
-    bounds.maxZ = Math.max(bounds.maxZ, point.z)
-  }
-
-  /**
    * Appends an extruded segment to the current layer
    * @param start - Machine state at the segment start
    * @param end - Machine state at the segment end
    */
   private addSegment (start: MachineState, end: MachineState): void {
-    // Check coordinates
+    // Drop the segment when a coordinate is not a number
     if (Number.isNaN(start.x) || Number.isNaN(start.y) || Number.isNaN(start.z) || Number.isNaN(end.x) || Number.isNaN(end.y) || Number.isNaN(end.z)) {
       console.warn('PrettyGCode: bad line segment', start, end)
       return
@@ -675,7 +576,7 @@ export class GcodeParser {
 
     // Open a layer if none is active yet
     const layer = this.currentLayer ?? this.changeLayer(start)
-    if (!this.customGcode) this.customLayer = false
+    if (!this.featureTypesCollector.customGcode) this.customLayer = false
 
     // Estimated seconds of the travel leading here and of the segment itself
     const distance = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z)
@@ -698,15 +599,19 @@ export class GcodeParser {
 
     // Grow the model bounds only on moves that change position
     if (start.x !== end.x || start.y !== end.y || start.z !== end.z) {
-      this.expandBounds(sceneStart)
-      this.expandBounds(sceneEnd)
+      this.gcodeBoundsCollector.addPoint(sceneStart)
+      this.gcodeBoundsCollector.addPoint(sceneEnd)
     }
 
     // Add the segment to the layer
+    this.currentPropertyValues.featureTypeId = this.featureTypesCollector.currentFeatureTypeId
+    this.currentPropertyValues.colorChangeId = this.colorChangesCollector.currentColorChangeId
     this.currentPropertyValues.feedrate = feedrate
-    this.currentPropertyValues.height = this.slicerHeight ?? this.layerHeight
+    this.currentPropertyValues.temperature = this.nozzleTemperaturesCollector.currentTemperature
+    this.currentPropertyValues.width = this.extrusionSizeCollector.width
+    this.currentPropertyValues.height = this.extrusionSizeCollector.height
     this.currentPropertyValues.filamentPerMm = distance > 0 ? (end.e - start.e) * this.flowFactor / distance : 0
-    layer.addSegment(sceneStart, sceneEnd, this.filePosition, travelSeconds, extrusionSeconds, this.currentObjectId, this.currentPropertyValues)
+    layer.addSegment(sceneStart, sceneEnd, this.filePosition, travelSeconds, extrusionSeconds, this.markedObjectsCollector.currentObjectId, this.currentPropertyValues)
   }
 
   /* ---- Parse result ---- */
@@ -726,32 +631,31 @@ export class GcodeParser {
     this.sealLayer()
     if (this.printerTransform) this.slidePrintToBeltOrigin()
 
-    const slicerConfig = this.slicerConfigCollector.getConfig()
+    const slicerConfig = this.slicerConfigCollector.config
 
     return {
       layers: this.layers,
-      bounds: this.bounds,
+      bounds: this.gcodeBoundsCollector.bounds,
       slicerNozzleDiameter: slicerConfig.nozzleDiameter,
       slicerFilamentDiameter: slicerConfig.filamentDiameter,
       slicerFilamentDensity: slicerConfig.filamentDensity,
       slicerToolColors: slicerConfig.toolColors,
-      colorChanges: this.colorChanges,
-      slicerTimeMarks: this.slicerTimeMarksCollector.getMarks(),
-      featureTypes: this.featureTypes,
-      objectNames: this.objectNames
+      colorChanges: this.colorChangesCollector.colorChanges,
+      slicerTimeMarks: this.slicerTimeMarksCollector.marks,
+      featureTypes: this.featureTypesCollector.featureTypes,
+      objectNames: this.markedObjectsCollector.objectNames
     }
   }
 
   /** Slides the print along the belt so it starts at the belt origin, where the printed shape trails behind it */
   private slidePrintToBeltOrigin (): void {
-    const offset = -this.bounds.minY
+    const offset = -this.gcodeBoundsCollector.bounds.minY
     if (!Number.isFinite(offset)) return
 
     for (const { vertices, travelVertices } of this.layers) {
       for (let y = 1; y < vertices.length; y += 3) vertices[y] += offset
       for (let y = 1; y < travelVertices.length; y += 3) travelVertices[y] += offset
     }
-    this.bounds.minY += offset
-    this.bounds.maxY += offset
+    this.gcodeBoundsCollector.slideY(offset)
   }
 }

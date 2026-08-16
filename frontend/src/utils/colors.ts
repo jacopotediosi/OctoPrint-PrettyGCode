@@ -1,5 +1,8 @@
 import { clamp } from './numbers'
 
+/** Matches a color as "#rrggbb", in lowercase */
+export const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/
+
 /** An RGB color, with components from 0 to 1 */
 export interface RgbColor {
   /** Red component */

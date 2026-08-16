@@ -1,10 +1,11 @@
-/** Print time a slicer states at points along its gcode */
-export interface SlicerTimeMarks {
-  /** Byte offsets the marks sit at, in increasing order */
-  filePositions: Uint32Array
-  /** Print time elapsed at each mark */
-  elapsedSeconds: Float64Array
-}
+import type { SlicerTimeMarks } from '../parsed-gcode'
+
+/**
+ * Prefixes, lowercased, of the comments stating the print time elapsed so far
+ * - ;TIME_ELAPSED:   Cura
+ * - ;PRINTING_TIME:  ideaMaker
+ */
+const TIME_ELAPSED_COMMENT_PREFIXES = [';time_elapsed:', ';printing_time:']
 
 /** Marks collected from one of the ways a slicer states its print times */
 class CollectedMarks {
@@ -14,11 +15,11 @@ class CollectedMarks {
   private readonly elapsedSeconds: number[] = []
 
   /**
-   * Appends a mark
+   * Records a mark
    * @param filePosition - Byte offset of the mark
    * @param elapsedSeconds - Print time elapsed at that offset
    */
-  add (filePosition: number, elapsedSeconds: number): void {
+  addMark (filePosition: number, elapsedSeconds: number): void {
     const marks = this.filePositions.length
     if (marks && (filePosition <= this.filePositions[marks - 1] || elapsedSeconds <= this.elapsedSeconds[marks - 1])) return
 
@@ -26,11 +27,8 @@ class CollectedMarks {
     this.elapsedSeconds.push(elapsedSeconds)
   }
 
-  /**
-   * Gets the collected marks
-   * @returns The marks, or null when the gcode states fewer than two
-   */
-  getMarks (): SlicerTimeMarks | null {
+  /** Collected marks, null when the gcode states fewer than two */
+  get marks (): SlicerTimeMarks | null {
     if (this.filePositions.length < 2) return null
 
     return {
@@ -53,16 +51,23 @@ export class SlicerTimeMarksCollector {
   private firstRemainingSeconds: number | null = null
 
   /**
-   * Adds a mark stating how much print time has elapsed
-   * @param filePosition - Byte offset of the mark
-   * @param elapsedSeconds - Print time elapsed at that offset
+   * Records the print time a comment states has elapsed
+   * @param rawLine - Gcode line holding the comment
+   * @param commentLower - Gcode line holding the comment, lowercased
+   * @param commentStart - Offset the comment starts at
+   * @param filePosition - Byte offset of the comment
    */
-  addElapsed (filePosition: number, elapsedSeconds: number): void {
-    if (Number.isFinite(elapsedSeconds)) this.elapsedTimeMarks.add(filePosition, elapsedSeconds)
+  addComment (rawLine: string, commentLower: string, commentStart: number, filePosition: number): void {
+    for (const prefix of TIME_ELAPSED_COMMENT_PREFIXES) {
+      if (commentLower.startsWith(prefix, commentStart)) {
+        this.addElapsed(filePosition, parseFloat(rawLine.slice(commentStart + prefix.length)))
+        break
+      }
+    }
   }
 
   /**
-   * Adds a mark stating how much print time is left
+   * Records a mark stating how much print time is left
    * @param filePosition - Byte offset of the mark
    * @param remainingSeconds - Print time left at that offset
    */
@@ -71,14 +76,20 @@ export class SlicerTimeMarksCollector {
 
     // A countdown never states the total, so the first mark it reaches becomes the origin
     this.firstRemainingSeconds ??= remainingSeconds
-    this.remainingTimeMarks.add(filePosition, this.firstRemainingSeconds - remainingSeconds)
+    this.remainingTimeMarks.addMark(filePosition, this.firstRemainingSeconds - remainingSeconds)
+  }
+
+  /** Collected marks, null when the gcode states fewer than two */
+  get marks (): SlicerTimeMarks | null {
+    return this.elapsedTimeMarks.marks ?? this.remainingTimeMarks.marks
   }
 
   /**
-   * Gets the collected marks
-   * @returns The marks, or null when the gcode states fewer than two
+   * Records a mark stating how much print time has elapsed
+   * @param filePosition - Byte offset of the mark
+   * @param elapsedSeconds - Print time elapsed at that offset
    */
-  getMarks (): SlicerTimeMarks | null {
-    return this.elapsedTimeMarks.getMarks() ?? this.remainingTimeMarks.getMarks()
+  private addElapsed (filePosition: number, elapsedSeconds: number): void {
+    if (Number.isFinite(elapsedSeconds)) this.elapsedTimeMarks.addMark(filePosition, elapsedSeconds)
   }
 }

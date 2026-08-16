@@ -1,4 +1,4 @@
-import { TOOL_COLOR_PATTERN } from './slicer-comments'
+import { HEX_COLOR_PATTERN } from '../../../utils/colors'
 
 /** Matches the nozzle diameter stated by the slicer, e.g. "; nozzle_diameter = 0.4" */
 const NOZZLE_DIAMETER_COMMENT_PATTERN = /;\s*nozzle[_ ]?diameter\s*[:=]\s*([\d.]+)/i
@@ -66,17 +66,14 @@ export class SlicerConfigCollector {
     if (toolColorsMatch) {
       const colors = toolColorsMatch[2].split(';')
         .map((color) => color.trim().replaceAll('"', ''))
-        .map((color) => TOOL_COLOR_PATTERN.test(color) ? color : '')
+        .map((color) => HEX_COLOR_PATTERN.test(color) ? color : '')
       if (toolColorsMatch[1] === 'extruder') this.extruderColors = colors
       else this.filamentColors = colors
     }
   }
 
-  /**
-   * Gets the settings collected so far
-   * @returns The collected settings
-   */
-  getConfig (): SlicerConfig {
+  /** Print settings collected so far */
+  get config (): SlicerConfig {
     const tools = Math.max(this.extruderColors.length, this.filamentColors.length)
 
     return {
