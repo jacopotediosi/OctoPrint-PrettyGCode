@@ -152,6 +152,8 @@ export class GcodeParser {
   private readonly currentPropertyValues: SegmentPropertyValues = { featureTypeId: -1, toolId: 0, colorChangeId: -1, feedrate: 0, fanSpeed: 0, temperature: 0, width: 0, height: 0, filamentPerMm: 0 }
   /** Whether a feature type comment of the printed model has been seen yet */
   private featureTypeCommentSeen = false
+  /** Nozzle temperature set for each tool in degrees Celsius, by tool id */
+  private readonly toolTemperatures: number[] = []
   /** Index of the last color change of each tool, by tool id */
   private readonly toolColorChanges: number[] = []
   /** Whether a stated color change is waiting for the command carrying it out */
@@ -470,7 +472,13 @@ export class GcodeParser {
       }
       case 'M104': // Set the nozzle temperature
       case 'M109': { // Set the nozzle temperature and wait for it to be reached
-        this.currentPropertyValues.temperature = args.s ?? args.r ?? this.currentPropertyValues.temperature
+        const temperature = args.s ?? args.r
+        if (temperature !== undefined) {
+          // The T word aims the temperature at another tool
+          const tool = args.t ?? this.currentPropertyValues.toolId
+          this.toolTemperatures[tool] = temperature
+          if (tool === this.currentPropertyValues.toolId) this.currentPropertyValues.temperature = temperature
+        }
         break
       }
       case 'M106': { // Set the print cooling fan speed, which the printers scale from 0 to 255
@@ -497,6 +505,7 @@ export class GcodeParser {
           // Numbers above the tools stand for machine commands (T255, T1000, Tx...)
           if (Number.isInteger(tool) && tool >= 0 && tool <= HIGHEST_TOOL_NUMBER) {
             this.currentPropertyValues.toolId = tool
+            this.currentPropertyValues.temperature = this.toolTemperatures[tool] ?? 0
             this.currentPropertyValues.colorChangeId = this.toolColorChanges[tool] ?? -1
           }
         }
