@@ -24,14 +24,24 @@ interface ViewSettingsPanelDefinition {
   app?: PrettyGCodeApp
 }
 
-/** What a setting row lets the user pick, beyond a plain value */
-interface OptionChoices {
+/** What a setting row edits and how it is shown */
+interface SettingRowDefinition {
+  /** Folder holding the row */
+  folder: GUI
+  /** Setting the row edits */
+  prop: SettingKey
+  /** Label shown for the row */
+  name: string
+  /** Text shown when hovering the row */
+  help: string
   /** Values the row lets pick, by label */
   choices?: Record<string, string>
   /** Lowest and highest value the row takes, and the step between them */
   range?: [min: number, max: number, step: number]
   /** Whether the row picks a color */
   color?: boolean
+  /** Tells whether the row is shown, absent for a row always shown */
+  shownWhen?: () => boolean
 }
 
 /**
@@ -66,16 +76,9 @@ export function buildViewSettingsPanel ({ container, settings, onChange, app }: 
 
   /**
    * Adds a row editing a setting
-   * @param folder - Folder holding the row
-   * @param prop - Setting the row edits
-   * @param name - Label shown for the row
-   * @param help - Text shown when hovering the row
-   * @param picks - What the row lets the user pick, beyond a plain value
-   * @returns The row controller
+   * @param def - What the row edits and how it is shown
    */
-  const option = (folder: GUI, prop: SettingKey, name: string, help: string, picks: OptionChoices = {}): Controller => {
-    const { choices, range, color } = picks
-
+  const option = ({ folder, prop, name, help, choices, range, color, shownWhen }: SettingRowDefinition): void => {
     let controller: Controller
     if (color) controller = folder.addColor(settings, prop)
     else if (choices) controller = folder.add(settings, prop, choices)
@@ -84,201 +87,196 @@ export function buildViewSettingsPanel ({ container, settings, onChange, app }: 
 
     controller.name(name)
     controller.domElement.title = help
-    return controller
+    if (shownWhen) refreshers.push(() => controller.show(shownWhen()))
   }
 
   /* ---- Interface ---- */
 
   const interfaceFolder = gui.addFolder('Interface')
 
-  option(
-    interfaceFolder,
-    'darkMode',
-    'Dark mode',
-    'Use a dark theme.'
-  )
+  option({
+    folder: interfaceFolder,
+    prop: 'darkMode',
+    name: 'Dark mode',
+    help: 'Use a dark theme.'
+  })
 
-  option(
-    interfaceFolder,
-    'showStatusBar',
-    'Status bar',
-    'Show the temperature status bar across the top of the view.'
-  )
+  option({
+    folder: interfaceFolder,
+    prop: 'showStatusBar',
+    name: 'Status bar',
+    help: 'Show the temperature status bar across the top of the view.'
+  })
 
-  option(
-    interfaceFolder,
-    'showLayerSlider',
-    'Layer slider',
-    'Show the layer slider along the right edge of the view.'
-  )
+  option({
+    folder: interfaceFolder,
+    prop: 'showLayerSlider',
+    name: 'Layer slider',
+    help: 'Show the layer slider along the right edge of the view.'
+  })
 
-  option(
-    interfaceFolder,
-    'showSegmentSlider',
-    'Segment slider',
-    'Show the segment slider along the bottom edge of the view.'
-  )
+  option({
+    folder: interfaceFolder,
+    prop: 'showSegmentSlider',
+    name: 'Segment slider',
+    help: 'Show the segment slider along the bottom edge of the view.'
+  })
 
-  option(
-    interfaceFolder,
-    'antialias',
-    'Antialiasing',
-    'Smooth jagged edges in the 3D view.'
-  )
+  option({
+    folder: interfaceFolder,
+    prop: 'antialias',
+    name: 'Antialiasing',
+    help: 'Smooth jagged edges in the 3D view.'
+  })
 
   /* ---- Camera ---- */
 
   const cameraFolder = gui.addFolder('Camera')
 
   const navigationOptions = Object.fromEntries(Object.entries(NAVIGATION_MODES).map(([key, mode]) => [mode.name, key]))
-  option(
-    cameraFolder,
-    'navigationMode',
-    'Navigation mode',
-    'Set which mouse buttons rotate, pan and zoom the 3D view.',
-    { choices: navigationOptions }
-  )
+  option({
+    folder: cameraFolder,
+    prop: 'navigationMode',
+    name: 'Navigation mode',
+    help: 'Set which mouse buttons rotate, pan and zoom the 3D view.',
+    choices: navigationOptions
+  })
 
-  option(
-    cameraFolder,
-    'projectionMode',
-    'Projection mode',
-    'Set whether the 3D view is drawn with a perspective or an orthographic projection.',
-    { choices: { Perspective: 'perspective', Orthographic: 'orthographic' } }
-  )
+  option({
+    folder: cameraFolder,
+    prop: 'projectionMode',
+    name: 'Projection mode',
+    help: 'Set whether the 3D view is drawn with a perspective or an orthographic projection.',
+    choices: { Perspective: 'perspective', Orthographic: 'orthographic' }
+  })
 
-  option(
-    cameraFolder,
-    'showCameraControls',
-    'Camera controls',
-    'Show the camera controls (view cube, reset view button).'
-  )
+  option({
+    folder: cameraFolder,
+    prop: 'showCameraControls',
+    name: 'Camera controls',
+    help: 'Show the camera controls (view cube, reset view button).'
+  })
 
-  option(
-    cameraFolder,
-    'orbitWhenIdle',
-    'Orbit when idle',
-    'After 5 seconds with no mouse/camera movement the camera slowly orbits around the center.'
-  )
+  option({
+    folder: cameraFolder,
+    prop: 'orbitWhenIdle',
+    name: 'Orbit when idle',
+    help: 'After 5 seconds with no mouse/camera movement the camera slowly orbits around the center.'
+  })
 
   /* ---- Printer ---- */
 
   const printerFolder = gui.addFolder('Printer')
 
-  option(
-    printerFolder,
-    'beltPrinter',
-    'Belt printer',
-    'Set whether the printer prints onto a moving belt.'
-  )
+  option({
+    folder: printerFolder,
+    prop: 'beltPrinter',
+    name: 'Belt printer',
+    help: 'Set whether the printer prints onto a moving belt.'
+  })
 
-  const beltPrinterGantryAngle = option(
-    printerFolder,
-    'beltPrinterGantryAngle',
-    'Gantry angle',
-    'Set the angle between the belt and the printer gantry.',
-    { range: [1, 89, 1] }
-  )
-
-  refreshers.push(() => beltPrinterGantryAngle.show(settings.beltPrinter))
+  option({
+    folder: printerFolder,
+    prop: 'beltPrinterGantryAngle',
+    name: 'Gantry angle',
+    help: 'Set the angle between the belt and the printer gantry.',
+    range: [1, 89, 1],
+    shownWhen: () => settings.beltPrinter
+  })
 
   /* ---- Nozzle ---- */
 
   const nozzleFolder = gui.addFolder('Nozzle')
 
-  option(
-    nozzleFolder,
-    'nozzleStyle',
-    'Nozzle style',
-    'Set the marker shown at the current print position.',
-    { choices: { None: 'none', '3D model': 'model', Dot: 'dot' } }
-  )
+  option({
+    folder: nozzleFolder,
+    prop: 'nozzleStyle',
+    name: 'Nozzle style',
+    help: 'Set the marker shown at the current print position.',
+    choices: { None: 'none', '3D model': 'model', Dot: 'dot' }
+  })
 
-  const nozzleSize = option(
-    nozzleFolder,
-    'nozzleSize',
-    'Nozzle size',
-    'Set the size of the nozzle marker, in percent of its default.',
-    { range: [50, 200, 5] }
-  )
+  option({
+    folder: nozzleFolder,
+    prop: 'nozzleSize',
+    name: 'Nozzle size',
+    help: 'Set the size of the nozzle marker, in percent of its default.',
+    range: [50, 200, 5],
+    shownWhen: () => settings.nozzleStyle !== 'none'
+  })
 
-  const nozzleColor = option(
-    nozzleFolder,
-    'nozzleColor',
-    'Nozzle color',
-    'Set the color of the nozzle marker.',
-    { color: true }
-  )
+  option({
+    folder: nozzleFolder,
+    prop: 'nozzleColor',
+    name: 'Nozzle color',
+    help: 'Set the color of the nozzle marker.',
+    color: true,
+    shownWhen: () => settings.nozzleStyle !== 'none'
+  })
 
-  const nozzleTransparency = option(
-    nozzleFolder,
-    'nozzleTransparency',
-    'Nozzle transparency',
-    'Set how transparent the nozzle marker at the current print position is.',
-    { range: [0, 100, 1] }
-  )
+  option({
+    folder: nozzleFolder,
+    prop: 'nozzleTransparency',
+    name: 'Nozzle transparency',
+    help: 'Set how transparent the nozzle marker at the current print position is.',
+    range: [0, 100, 1],
+    shownWhen: () => settings.nozzleStyle !== 'none'
+  })
 
-  const nozzleReflection = option(
-    nozzleFolder,
-    'nozzleReflection',
-    'Nozzle reflection',
-    'Reflect the surrounding scene on the nozzle 3D model.'
-  )
-
-  refreshers.push(() => {
-    nozzleSize.show(settings.nozzleStyle !== 'none')
-    nozzleColor.show(settings.nozzleStyle !== 'none')
-    nozzleTransparency.show(settings.nozzleStyle !== 'none')
-    nozzleReflection.show(settings.nozzleStyle === 'model')
+  option({
+    folder: nozzleFolder,
+    prop: 'nozzleReflection',
+    name: 'Nozzle reflection',
+    help: 'Reflect the surrounding scene on the nozzle 3D model.',
+    shownWhen: () => settings.nozzleStyle === 'model'
   })
 
   /* ---- Travel moves ---- */
 
   const travelMovesFolder = gui.addFolder('Travel moves')
 
-  option(
-    travelMovesFolder,
-    'travelScope',
-    'Travel moves',
-    'Set where the non-extruding moves between printed lines are drawn.',
-    { choices: { Off: 'none', 'Displayed layer': 'displayedLayer', 'Whole model': 'wholeModel' } }
-  )
+  option({
+    folder: travelMovesFolder,
+    prop: 'travelScope',
+    name: 'Travel moves',
+    help: 'Set where the non-extruding moves between printed lines are drawn.',
+    choices: { Off: 'none', 'Displayed layer': 'displayedLayer', 'Whole model': 'wholeModel' }
+  })
 
-  const travelColor = option(
-    travelMovesFolder,
-    'travelColor',
-    'Travel color',
-    'Set the color of the travel moves.',
-    { color: true }
-  )
-
-  refreshers.push(() => travelColor.show(settings.travelScope !== 'none'))
+  option({
+    folder: travelMovesFolder,
+    prop: 'travelColor',
+    name: 'Travel color',
+    help: 'Set the color of the travel moves.',
+    color: true,
+    shownWhen: () => settings.travelScope !== 'none'
+  })
 
   /* ---- Gcode model ---- */
 
   const gcodeModelFolder = gui.addFolder('G-code model')
 
-  option(
-    gcodeModelFolder,
-    'thickLines',
-    'Thick lines',
-    'Display lines with thickness, based on nozzle size.'
-  )
+  option({
+    folder: gcodeModelFolder,
+    prop: 'thickLines',
+    name: 'Thick lines',
+    help: 'Display lines with thickness, based on nozzle size.'
+  })
 
-  option(
-    gcodeModelFolder,
-    'highlightIntensity',
-    'Highlight layer',
-    'Set how strongly the topmost displayed layer is shaded.',
-    { range: [0, 100, 1] }
-  )
+  option({
+    folder: gcodeModelFolder,
+    prop: 'highlightIntensity',
+    name: 'Highlight layer',
+    help: 'Set how strongly the topmost displayed layer is shaded.',
+    range: [0, 100, 1]
+  })
 
-  option(
-    gcodeModelFolder,
-    'showExcluded',
-    'Excluded gcode',
-    'Show gcode excluded by the Exclude Region and Cancel Object plugins, greyed out.'
-  )
+  option({
+    folder: gcodeModelFolder,
+    prop: 'showExcluded',
+    name: 'Excluded gcode',
+    help: 'Show gcode excluded by the Exclude Region and Cancel Object plugins, greyed out.'
+  })
 
   const featureTypeColorPresets: FeatureTypeColorPreset[] = JSON.parse(container.dataset.featureTypeColorPresets ?? '[]')
   const featureTypeColorsModal = initFeatureTypeColorsModal(settings, featureTypeColorPresets, () => {
@@ -293,28 +291,27 @@ export function buildViewSettingsPanel ({ container, settings, onChange, app }: 
 
   const bedFolder = gui.addFolder('Bed')
 
-  option(
-    bedFolder,
-    'showBed',
-    'Bed',
-    'Show the print bed.'
-  )
+  option({
+    folder: bedFolder,
+    prop: 'showBed',
+    name: 'Bed',
+    help: 'Show the print bed.'
+  })
 
-  const mirror = option(
-    bedFolder,
-    'showMirror',
-    'Mirror',
-    'Show a reflection of the print on the bed.'
-  )
+  option({
+    folder: bedFolder,
+    prop: 'showMirror',
+    name: 'Mirror',
+    help: 'Show a reflection of the print on the bed.',
+    shownWhen: () => settings.showBed
+  })
 
-  option(
-    bedFolder,
-    'showExclusionMarker',
-    'Exclusion marker',
-    'Show the markers of the excluded regions.'
-  )
-
-  refreshers.push(() => mirror.show(settings.showBed))
+  option({
+    folder: bedFolder,
+    prop: 'showExclusionMarker',
+    name: 'Exclusion marker',
+    help: 'Show the markers of the excluded regions.'
+  })
 
   /* ---- Reset buttons ---- */
 
