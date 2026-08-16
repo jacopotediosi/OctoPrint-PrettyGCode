@@ -21,16 +21,16 @@ const EXCLUDED_BRIGHTNESS = 0.6
  */
 export function fillSegmentColors (layer: Layer, layerNumber: number, property: SegmentProperty, colorAt: (value: number) => RgbColor, colors: Uint8ClampedArray): void {
   const { vertices } = layer
-  const { segmentIndices, values } = property
+  const { localSegmentIndices, values } = property
   const segments = vertices.length / 6
   const layerBrightnessGain = layerNumber % 2 === 0 ? 0 : ODD_LAYER_BRIGHTNESS_GAIN
 
   for (let stretch = 0; stretch < values.length; stretch++) {
     const color = colorAt(values[stretch])
-    const nextStretchSegment = stretch + 1 < values.length ? segmentIndices[stretch + 1] : segments
+    const nextStretchLocalSegmentIndex = stretch + 1 < values.length ? localSegmentIndices[stretch + 1] : segments
 
-    for (let segment = segmentIndices[stretch]; segment < nextStretchSegment; segment++) {
-      const vertex = segment * 6
+    for (let localSegmentIndex = localSegmentIndices[stretch]; localSegmentIndex < nextStretchLocalSegmentIndex; localSegmentIndex++) {
+      const vertex = localSegmentIndex * 6
       const deltaX = vertices[vertex + 3] - vertices[vertex]
       const deltaY = vertices[vertex + 4] - vertices[vertex + 1]
       const deltaZ = vertices[vertex + 5] - vertices[vertex + 2]

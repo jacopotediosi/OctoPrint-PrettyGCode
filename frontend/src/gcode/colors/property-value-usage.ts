@@ -33,16 +33,16 @@ export function propertyValueUsage (layers: Layer[], propertyOf: (layer: Layer, 
     let propertyStretch = 0
     let filamentStretch = 0
 
-    for (let segment = 0; segment < segments; segment++) {
-      while (propertyStretch + 1 < property.values.length && property.segmentIndices[propertyStretch + 1] <= segment) propertyStretch++
-      while (filamentStretch + 1 < filamentPerMm.values.length && filamentPerMm.segmentIndices[filamentStretch + 1] <= segment) filamentStretch++
+    for (let localSegmentIndex = 0; localSegmentIndex < segments; localSegmentIndex++) {
+      while (propertyStretch + 1 < property.values.length && property.localSegmentIndices[propertyStretch + 1] <= localSegmentIndex) propertyStretch++
+      while (filamentStretch + 1 < filamentPerMm.values.length && filamentPerMm.localSegmentIndices[filamentStretch + 1] <= localSegmentIndex) filamentStretch++
 
-      const vertex = segment * 6
+      const vertex = localSegmentIndex * 6
       const length = Math.hypot(vertices[vertex + 3] - vertices[vertex], vertices[vertex + 4] - vertices[vertex + 1], vertices[vertex + 5] - vertices[vertex + 2])
 
       // Count every value one slot further, so the -1 of the segments holding none has a slot too
       const slot = property.values[propertyStretch] + 1
-      seconds[slot] += durations[segment * 2 + 1]
+      seconds[slot] += durations[localSegmentIndex * 2 + 1]
       filament[slot] += filamentPerMm.values[filamentStretch] * length
     }
   }

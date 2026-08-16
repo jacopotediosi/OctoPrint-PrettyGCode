@@ -17,11 +17,11 @@ export interface GcodeLineMetadata {
   /** 1-based layer number */
   layerNumber: number
   /** Global segment index the layer starts at */
-  firstGlobalIndex: number
+  firstGlobalSegmentIndex: number
   /** Moves the line draws */
   moveCount: number
   /** Segment of the layer each drawn move waits for, or null for the whole layer */
-  segmentIndices: Uint32Array | null
+  localSegmentIndices: Uint32Array | null
   /** Whether the line draws the excluded part of the layer */
   excluded?: boolean
   /** Whether the line draws the layer's mirror */

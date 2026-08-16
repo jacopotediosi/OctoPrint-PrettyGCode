@@ -370,7 +370,7 @@ export class PrettyGCodeApp {
       const spot = this.printTimeline.advance(this.currentFilePosition, deltaSeconds)
       if (spot) {
         this.gcodeModel.revealTo(spot)
-        const { layerNumber, segmentNumber } = this.printTimeline.revealPosition(spot.segmentIndex)
+        const { layerNumber, segmentNumber } = this.printTimeline.revealPosition(spot.globalSegmentIndex)
         this.setReveal(layerNumber, segmentNumber)
       }
       needRender = true

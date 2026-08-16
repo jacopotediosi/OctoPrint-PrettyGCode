@@ -83,9 +83,9 @@ export class TipLine {
       return
     }
 
-    const segment = this.timeline.segmentAt(spot.segmentIndex)!
+    const segment = this.timeline.segmentAt(spot.globalSegmentIndex)!
     const vertices = segment.layer.vertices
-    const offset = segment.localIndex * 6
+    const offset = segment.localSegmentIndex * 6
     const startX = vertices[offset]; const startY = vertices[offset + 1]; const startZ = vertices[offset + 2]
 
     // Grow up to how far along the segment the nozzle has reached

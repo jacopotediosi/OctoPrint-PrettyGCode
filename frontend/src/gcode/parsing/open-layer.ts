@@ -6,7 +6,7 @@ const FILAMENT_PER_MM_TOLERANCE = 0.02
 /** A property of the segments being filled, kept only where it changes */
 class OpenSegmentProperty {
   /** Segment of the layer each recorded value starts at */
-  private readonly segmentIndices: number[] = []
+  private readonly localSegmentIndices: number[] = []
   /** Value the property takes from that segment on */
   private readonly values: number[] = []
   /** Share of the last recorded value a new one may differ by and still count as the same */
@@ -21,16 +21,16 @@ class OpenSegmentProperty {
 
   /**
    * Records the value the property takes on a segment
-   * @param segment - Segment index within the layer
+   * @param localSegmentIndex - Segment index within the layer
    * @param value - Value the property takes there
    */
-  add (segment: number, value: number): void {
+  add (localSegmentIndex: number, value: number): void {
     const recorded = this.values[this.values.length - 1]
 
     // A value equal to the last recorded one, or within its tolerance, leaves the property unchanged
     if (recorded === value || Math.abs(value - recorded) <= this.tolerance * Math.abs(recorded)) return
 
-    this.segmentIndices.push(segment)
+    this.localSegmentIndices.push(localSegmentIndex)
     this.values.push(value)
   }
 
@@ -39,7 +39,7 @@ class OpenSegmentProperty {
    * @returns The built property
    */
   finish (): SegmentProperty {
-    return { segmentIndices: Uint32Array.from(this.segmentIndices), values: Float32Array.from(this.values) }
+    return { localSegmentIndices: Uint32Array.from(this.localSegmentIndices), values: Float32Array.from(this.values) }
   }
 }
 
@@ -84,7 +84,7 @@ export class OpenLayer {
   /** Travel endpoints as flat XYZ triplets */
   private travelVertices = new Float32Array(OpenLayer.INITIAL_TRAVEL_BUFFERS_CAPACITY * 6)
   /** Segment of the layer each travel leads to */
-  private travelSegmentIndices = new Uint32Array(OpenLayer.INITIAL_TRAVEL_BUFFERS_CAPACITY)
+  private travelLocalSegmentIndices = new Uint32Array(OpenLayer.INITIAL_TRAVEL_BUFFERS_CAPACITY)
   /** Travels the buffers have room for */
   private travelCapacity = OpenLayer.INITIAL_TRAVEL_BUFFERS_CAPACITY
   /** Travels appended so far */
@@ -151,7 +151,7 @@ export class OpenLayer {
     while (this.travels + travels > this.travelCapacity) this.growTravels()
 
     this.travelVertices.set(vertices.subarray(0, travels * 6), this.travels * 6)
-    this.travelSegmentIndices.fill(this.segments, this.travels, this.travels + travels)
+    this.travelLocalSegmentIndices.fill(this.segments, this.travels, this.travels + travels)
     this.travels += travels
   }
 
@@ -186,9 +186,9 @@ export class OpenLayer {
     travelVertices.set(this.travelVertices)
     this.travelVertices = travelVertices
 
-    const travelSegmentIndices = new Uint32Array(this.travelCapacity)
-    travelSegmentIndices.set(this.travelSegmentIndices)
-    this.travelSegmentIndices = travelSegmentIndices
+    const travelLocalSegmentIndices = new Uint32Array(this.travelCapacity)
+    travelLocalSegmentIndices.set(this.travelLocalSegmentIndices)
+    this.travelLocalSegmentIndices = travelLocalSegmentIndices
   }
 
   /**
@@ -212,7 +212,7 @@ export class OpenLayer {
       heights: this.heights.finish(),
       filamentPerMm: this.filamentPerMm.finish(),
       travelVertices: this.travelVertices.slice(0, this.travels * 6),
-      travelSegmentIndices: this.travelSegmentIndices.slice(0, this.travels)
+      travelLocalSegmentIndices: this.travelLocalSegmentIndices.slice(0, this.travels)
     }
   }
 }

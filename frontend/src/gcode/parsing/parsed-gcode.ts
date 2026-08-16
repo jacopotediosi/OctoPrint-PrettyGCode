@@ -83,13 +83,13 @@ export interface Layer {
   /** Travel endpoints as flat XYZ triplets */
   travelVertices: Float32Array
   /** Segment of the layer each travel leads to */
-  travelSegmentIndices: Uint32Array
+  travelLocalSegmentIndices: Uint32Array
 }
 
 /** A property of the segments, recorded only where it changes */
 export interface SegmentProperty {
   /** Segment of the layer each property value starts at */
-  segmentIndices: Uint32Array
+  localSegmentIndices: Uint32Array
   /** Value the property takes from that segment on */
   values: Float32Array
 }

@@ -369,12 +369,12 @@ export class GcodeParser {
           j: offset.j, // Y offset from start to arc center
           is_clockwise: cmd === 'G2'
         }
-        const segments = interpolateArc(this.machineState, arc)
-        for (let segmentIndex = 1; segmentIndex < segments.length; segmentIndex++) {
-          if (extruding) this.addSegment(segments[segmentIndex - 1], segments[segmentIndex])
-          else this.addTravel(segments[segmentIndex - 1], segments[segmentIndex])
+        const arcPoints = interpolateArc(this.machineState, arc)
+        for (let point = 1; point < arcPoints.length; point++) {
+          if (extruding) this.addSegment(arcPoints[point - 1], arcPoints[point])
+          else this.addTravel(arcPoints[point - 1], arcPoints[point])
         }
-        this.machineState = segments[segments.length - 1]
+        this.machineState = arcPoints[arcPoints.length - 1]
         break
       }
       case 'G4': { // Dwell: the pause adds to the time of the travel toward the next segment

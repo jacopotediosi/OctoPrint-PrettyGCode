@@ -23,8 +23,8 @@ function estimatedSecondsAtMarks (markFilePositions: Uint32Array, layers: TimedL
   layers.forEach((layer) => {
     const durations = layer.durations
     const filePositions = layer.filePositions
-    for (let offset = 0, segment = 0; offset < durations.length; offset += 2, segment++) {
-      while (markIndex < markFilePositions.length && markFilePositions[markIndex] <= filePositions[segment]) {
+    for (let offset = 0, localSegmentIndex = 0; offset < durations.length; offset += 2, localSegmentIndex++) {
+      while (markIndex < markFilePositions.length && markFilePositions[markIndex] <= filePositions[localSegmentIndex]) {
         markEstimatedSeconds[markIndex++] = estimatedSeconds
       }
       estimatedSeconds += durations[offset] + durations[offset + 1]
