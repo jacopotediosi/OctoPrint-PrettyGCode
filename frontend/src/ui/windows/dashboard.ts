@@ -1,4 +1,4 @@
-import { clampBottomWindowHeight, createBottomWindow, bottomWindowHeight } from './bottom-window'
+import { createBottomWindow, bottomWindowHeight } from './bottom-window'
 import { isMaximized } from '../page-layout'
 import type { Settings } from '../../settings'
 
@@ -10,10 +10,8 @@ function applyDashboardHeight (height: number): void {
   const dashboardElement = document.getElementById('tab_plugin_dashboard')
   if (!dashboardElement) return
 
-  const target = clampBottomWindowHeight(height)
-
   // The window is a scaled miniature: derive the scale from the content's natural height
-  if (dashboardElement.offsetHeight) dashboardElement.style.setProperty('--pg-dashboard-scale', String(target / dashboardElement.offsetHeight))
+  if (dashboardElement.offsetHeight) dashboardElement.style.setProperty('--pg-dashboard-scale', String(height / dashboardElement.offsetHeight))
 }
 
 /**

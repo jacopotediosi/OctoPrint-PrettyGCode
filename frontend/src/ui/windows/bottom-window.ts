@@ -49,7 +49,7 @@ const DEFAULT_WINDOW_HEIGHT_FRACTION = 1 / 3
  * @returns The height in px
  */
 export function bottomWindowHeight (settings: Settings, heightSetting: BottomWindowHeightKey): number {
-  return settings[heightSetting] || Math.round(window.innerHeight * DEFAULT_WINDOW_HEIGHT_FRACTION)
+  return clampBottomWindowHeight(settings[heightSetting] || Math.round(window.innerHeight * DEFAULT_WINDOW_HEIGHT_FRACTION))
 }
 
 /**
@@ -57,7 +57,7 @@ export function bottomWindowHeight (settings: Settings, heightSetting: BottomWin
  * @param height - Desired height in px
  * @returns The clamped height in px
  */
-export function clampBottomWindowHeight (height: number): number {
+function clampBottomWindowHeight (height: number): number {
   return clamp(height, MIN_WINDOW_HEIGHT, window.innerHeight * MAX_WINDOW_HEIGHT_FRACTION)
 }
 

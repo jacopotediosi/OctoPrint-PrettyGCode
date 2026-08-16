@@ -1,4 +1,4 @@
-import { clampBottomWindowHeight, createBottomWindow, bottomWindowHeight } from './bottom-window'
+import { createBottomWindow, bottomWindowHeight } from './bottom-window'
 import { isMaximized, PG_TAB } from '../page-layout'
 import { refreshWebcamStreams, selectedTab, startWebcamStreams, stopWebcamStreams } from '../../octoprint/view-models'
 import type { Settings } from '../../settings'
@@ -70,13 +70,11 @@ function applyWebcamHeight (height: number): void {
   const webcam = $('#pg-webcam')
   if (!webcam.length) return
 
-  const target = clampBottomWindowHeight(height)
-
   // The docked content derives its height from the width, so steer the width toward the target height
   const rect = webcam[0].getBoundingClientRect()
-  if (Math.abs(rect.height - target) < 1) return
+  if (Math.abs(rect.height - height) < 1) return
   const aspect = rect.height ? rect.width / rect.height : 16 / 9
-  webcam.css('width', Math.round(target * aspect) + 'px')
+  webcam.css('width', Math.round(height * aspect) + 'px')
 }
 
 /**
