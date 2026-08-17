@@ -6,6 +6,7 @@ import { FeatureTypesCollector } from './collectors/feature-types'
 import { GcodeBoundsCollector } from './collectors/gcode-bounds'
 import { MarkedObjectsCollector } from './collectors/marked-objects'
 import { NozzleTemperaturesCollector } from './collectors/nozzle-temperatures'
+import { vectorLength } from '../../utils/numbers'
 import { OpenLayer } from './open-layer'
 import type { Layer, MachineState, ParsedGcode, ScenePoint, SegmentPropertyValues } from './parsed-gcode'
 import { LAYER_CHANGE_COMMENT_PATTERN } from './slicer-comments'
@@ -533,7 +534,7 @@ export class GcodeParser {
    * @param end - Machine state at the move end
    */
   private addTravel (start: MachineState, end: MachineState): void {
-    const distance = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z)
+    const distance = vectorLength(end.x - start.x, end.y - start.y, end.z - start.z)
     this.pendingTravelSeconds += (distance || Math.abs(end.e - start.e) || 0) / feedrateMmPerSecond(end.f)
 
     // Keep the travels long enough to draw, from the first layer on
@@ -579,7 +580,7 @@ export class GcodeParser {
     if (!this.featureTypesCollector.customGcode) this.customLayer = false
 
     // Estimated seconds of the travel leading here and of the segment itself
-    const distance = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z)
+    const distance = vectorLength(end.x - start.x, end.y - start.y, end.z - start.z)
     const length = distance || Math.abs(end.e - start.e) || 0
     const travelSeconds = this.pendingTravelSeconds
     const feedrate = feedrateMmPerSecond(end.f)

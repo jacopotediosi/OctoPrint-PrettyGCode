@@ -1,5 +1,6 @@
 import * as THREE from '../../three-exports'
 import type { RgbColor } from '../../utils/colors'
+import { vectorLength } from '../../utils/numbers'
 import type { Layer, SegmentProperty } from '../parsing/parsed-gcode'
 
 /** Brightness the darkest segments are drawn at, as a share of their own color */
@@ -36,7 +37,7 @@ export function fillSegmentColors (layer: Layer, layerNumber: number, property: 
       const deltaZ = vertices[vertex + 5] - vertices[vertex + 2]
 
       // Make the segment brighter or darker depending on the way it points
-      const distance = Math.hypot(deltaX, deltaY, deltaZ)
+      const distance = vectorLength(deltaX, deltaY, deltaZ)
       const directionX = distance ? deltaX / distance : 0
       const brightness = MIN_BRIGHTNESS + ANGLE_BRIGHTNESS_RANGE * (directionX + 1) / 2 + layerBrightnessGain
 

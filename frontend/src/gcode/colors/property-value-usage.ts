@@ -1,3 +1,4 @@
+import { vectorLength } from '../../utils/numbers'
 import type { Layer, SegmentProperty } from '../parsing/parsed-gcode'
 
 /** How much of a print the segments holding one value of a property take */
@@ -38,7 +39,7 @@ export function propertyValueUsage (layers: Layer[], propertyOf: (layer: Layer, 
       while (filamentStretch + 1 < filamentPerMm.values.length && filamentPerMm.localSegmentIndices[filamentStretch + 1] <= localSegmentIndex) filamentStretch++
 
       const vertex = localSegmentIndex * 6
-      const length = Math.hypot(vertices[vertex + 3] - vertices[vertex], vertices[vertex + 4] - vertices[vertex + 1], vertices[vertex + 5] - vertices[vertex + 2])
+      const length = vectorLength(vertices[vertex + 3] - vertices[vertex], vertices[vertex + 4] - vertices[vertex + 1], vertices[vertex + 5] - vertices[vertex + 2])
 
       // Count every value one slot further, so the -1 of the segments holding none has a slot too
       const slot = property.values[propertyStretch] + 1
