@@ -271,18 +271,24 @@ export class GcodeParser {
     let lineStop = lineEnd
     while (lineStop > lineStart && rawLine[lineStop - 1] <= ' ') lineStop--
 
-    const tokens = rawLine.slice(lineStart, lineStop).split(' ')
-    const cmd = tokens[0].toUpperCase()
-    for (let token = 1; token < tokens.length; token++) {
-      const word = tokens[token]
-      if (!word) continue
+    // The command runs up to the first space
+    let wordStop = rawLine.indexOf(' ', lineStart)
+    if (wordStop < 0 || wordStop > lineStop) wordStop = lineStop
+    const cmd = rawLine.slice(lineStart, wordStop).toUpperCase()
+
+    // Read the words that follow, one per space
+    while (wordStop < lineStop) {
+      const wordStart = wordStop + 1
+      wordStop = rawLine.indexOf(' ', wordStart)
+      if (wordStop < 0 || wordStop > lineStop) wordStop = lineStop
+      if (wordStop === wordStart) continue
 
       // Temporary workaround for https://github.com/OctoPrint/OctoPrint/issues/5438: the babel-polyfill
       // library OctoPrint ships replaces the browser's own parseFloat with a far slower one, so the
       // unary plus reads the number instead, and only what it cannot read goes through parseFloat
-      const text = word.substring(1)
+      const text = rawLine.slice(wordStart + 1, wordStop)
       const number = text === '' ? NaN : +text
-      args[word[0].toLowerCase()] = Number.isNaN(number) ? parseFloat(text) : number
+      args[rawLine[wordStart].toLowerCase()] = Number.isNaN(number) ? parseFloat(text) : number
     }
 
     // Bring the lengths to millimeters
