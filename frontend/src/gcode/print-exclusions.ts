@@ -15,7 +15,7 @@ import type { Settings } from '../settings'
  */
 const regionContains = (region: ExcludedRegion, x: number, y: number): boolean =>
   region.type === 'CircularRegion'
-    ? Math.hypot(x - region.cx!, y - region.cy!) <= region.r!
+    ? (x - region.cx!) ** 2 + (y - region.cy!) ** 2 <= region.r! ** 2
     : x >= region.x1! && x <= region.x2! && y >= region.y1! && y <= region.y2!
 
 /**
