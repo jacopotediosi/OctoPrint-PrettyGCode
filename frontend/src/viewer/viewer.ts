@@ -2,9 +2,10 @@ import * as THREE from '../three-exports'
 import { Bed } from './bed'
 import { Camera } from './camera'
 import { Nozzle } from './nozzle'
-import type { GcodeBounds } from '../gcode/parsing/parser'
+import type { GcodeBounds, ScenePoint } from '../gcode/parsing/parsed-gcode'
 import type { BedVolume } from './bed'
-import type { NavigationModeKey, ProjectionMode } from './navigation'
+import type { ProjectionMode } from './camera'
+import type { NavigationModeKey } from './navigation'
 import type { Settings } from '../settings'
 
 /** Light theme background color */
@@ -12,10 +13,12 @@ const LIGHT_BACKGROUND = 0xe9e9e9
 /** Dark theme background color */
 const DARK_BACKGROUND = 0x000000
 
-/** Per-frame print view outcome: whether the scene changed and the nozzle position to show */
-export interface PrintViewUpdate {
+/** Per-frame print progress outcome */
+export interface PrintProgressUpdate {
+  /** Whether the scene changed and has to be drawn again */
   needRender: boolean
-  nozzlePosition: THREE.Vector3 | null
+  /** Nozzle position to show, null to move the nozzle back to the origin */
+  nozzlePosition: ScenePoint | null
 }
 
 /** The plugin's 3D view: renders the bed, the gcode model and the nozzle */
@@ -53,8 +56,8 @@ export class Viewer {
   /** The 3D scene */
   private readonly scene = new THREE.Scene()
 
-  /** Callback advancing the print view each frame */
-  private readonly onFrame: (deltaSeconds: number) => PrintViewUpdate
+  /** Callback advancing the print progress each frame */
+  private readonly onFrame: (deltaSeconds: number) => PrintProgressUpdate
 
   /** The camera */
   private camera!: Camera
@@ -83,9 +86,9 @@ export class Viewer {
    * @param settings - Plugin frontend settings
    * @param getBedVolume - Getter of the current print bed geometry
    * @param getNozzleDiameter - Getter of the current nozzle diameter in mm
-   * @param onFrame - Callback advancing the print view each frame, run before rendering
+   * @param onFrame - Callback advancing the print progress each frame, run before rendering
    */
-  constructor (settings: Settings, getBedVolume: () => BedVolume, getNozzleDiameter: () => number, onFrame: (deltaSeconds: number) => PrintViewUpdate) {
+  constructor (settings: Settings, getBedVolume: () => BedVolume, getNozzleDiameter: () => number, onFrame: (deltaSeconds: number) => PrintProgressUpdate) {
     this.settings = settings
     this.getBedVolume = getBedVolume
     this.getNozzleDiameter = getNozzleDiameter
@@ -126,6 +129,8 @@ export class Viewer {
     this.scene.add(this.cameraLight)
 
     this.timer = new THREE.Timer()
+    this.timer.connect(document)
+
     this.scheduleFrame()
   }
 
@@ -137,8 +142,10 @@ export class Viewer {
   private createRenderer (canvas: HTMLCanvasElement, antialias: boolean): void {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias, logarithmicDepthBuffer: true })
     this.antialias = antialias
-    this.renderer.setPixelRatio(window.devicePixelRatio)
     this.renderer.localClippingEnabled = true // Needed for the gcode reflection on the bed surface
+
+    // Redraw when the browser restores the WebGL context
+    canvas.addEventListener('webglcontextrestored', () => this.requestRender())
 
     this.canvasSizeObserver.disconnect()
     this.canvasSizeObserver.observe(canvas)
@@ -167,12 +174,12 @@ export class Viewer {
     let needRender = this.forceRender
     this.forceRender = false
 
-    // Update and get the print view
-    const printView = this.onFrame(deltaSeconds)
-    if (printView.needRender) needRender = true
+    // Update and get the print progress
+    const printProgress = this.onFrame(deltaSeconds)
+    if (printProgress.needRender) needRender = true
 
     // Update the nozzle
-    if (this.nozzle.update(printView.nozzlePosition, this.getNozzleDiameter(), this.renderer, needRender)) needRender = true
+    if (this.nozzle.update(printProgress.nozzlePosition, this.getNozzleDiameter(), this.renderer, needRender)) needRender = true
 
     // Update the camera
     if (this.camera.update(deltaSeconds)) needRender = true
@@ -203,19 +210,21 @@ export class Viewer {
   }
 
   /**
-   * Matches the rendering size to the canvas display size
-   * @returns True if the size changed
+   * Matches the rendering resolution to the canvas display size and pixel density
+   * @returns True if the resolution changed
    */
   private resizeCanvasToDisplaySize (): boolean {
-    // Get new canvas size
+    // Get new canvas size and pixel density
     const width = this.canvasWidth
     const height = this.canvasHeight
+    const pixelRatio = window.devicePixelRatio
 
-    // Skip if already at the display size
+    // Skip if already at the display size and pixel density
     const current = this.renderer.getSize(new THREE.Vector2())
-    if (current.width === width && current.height === height) return false
+    if (current.width === width && current.height === height && this.renderer.getPixelRatio() === pixelRatio) return false
 
     // Resize canvas
+    this.renderer.setPixelRatio(pixelRatio)
     this.renderer.setSize(width, height, false)
 
     // Refit the cameras to the new size
@@ -244,14 +253,6 @@ export class Viewer {
   }
 
   /**
-   * Shows or hides the print bed
-   * @param visible - True to show the bed
-   */
-  applyBedVisibility (visible: boolean): void {
-    this.bed.applyVisibility(visible)
-  }
-
-  /**
    * Points the camera back at what it frames
    * @param enableTransition - True to animate the move
    */
@@ -264,7 +265,7 @@ export class Viewer {
    * Moves the camera to the default view
    * @param enableTransition - True to animate the move
    */
-  applyDefaultView (enableTransition = false): void {
+  applyDefaultCameraView (enableTransition = false): void {
     this.camera.applyDefaultView(this.getBedVolume(), enableTransition)
   }
 
@@ -279,20 +280,21 @@ export class Viewer {
   /* ---- Apply settings ---- */
 
   /**
-   * Repaints the scene background in the light or dark theme
-   * @param darkMode - True for the dark theme
+   * Shows or hides the print bed
+   * @param visible - True to show the bed
    */
-  applyBackground (darkMode: boolean): void {
-    this.scene.background = new THREE.Color(darkMode ? DARK_BACKGROUND : LIGHT_BACKGROUND)
-    this.requestRender()
+  applyBedVisibility (visible: boolean): void {
+    this.bed.applyVisibility(visible)
   }
 
   /**
-   * Repaints the view cube in the light or dark theme
+   * Repaints the 3D view in the light or dark theme
    * @param darkMode - True for the dark theme
    */
-  applyViewCubeTheme (darkMode: boolean): void {
+  applyTheme (darkMode: boolean): void {
+    this.scene.background = new THREE.Color(darkMode ? DARK_BACKGROUND : LIGHT_BACKGROUND)
     this.camera.applyViewCubeTheme(darkMode)
+    this.rebuildBed()
     this.requestRender()
   }
 
@@ -335,7 +337,10 @@ export class Viewer {
 
     oldCanvas.replaceWith(canvas)
 
+    // Drop the old renderer and free the GPU memory dispose leaves allocated
     this.renderer.dispose()
+    this.renderer.forceContextLoss()
+
     this.createRenderer(canvas, antialias)
     this.camera.setRenderer(this.renderer)
 

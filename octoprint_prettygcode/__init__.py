@@ -7,14 +7,14 @@ import octoprint.plugin
 if TYPE_CHECKING:
     from typing import TypedDict
 
-    class ModelColorRuleDef(TypedDict):
-        """Gcode feature and the slicer comment keywords identifying it"""
+    class FeatureTypeColorRuleDef(TypedDict):
+        """Gcode feature type and the slicer comment keywords identifying it"""
 
         id: str
         keywords: list[str]
 
-    class ModelColorPresetDef(TypedDict):
-        """Named set of colors, one per gcode feature"""
+    class FeatureTypeColorPresetDef(TypedDict):
+        """Named set of colors, one per gcode feature type"""
 
         name: str
         defaultColor: str
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 GITHUB_URL = "https://github.com/jacopotediosi/OctoPrint-PrettyGCode"
 
-MODEL_COLOR_RULE_DEFS: list[ModelColorRuleDef] = [
+FEATURE_TYPE_COLOR_RULE_DEFS: list[FeatureTypeColorRuleDef] = [
     # Prusa/SuperSlicer "Overhang perimeter", Bambu/Orca "Overhang wall"
     {"id": "overhang", "keywords": ["overhang"]},
     # Prusa/SuperSlicer "External perimeter", Bambu/Orca "Outer wall", Cura "WALL-OUTER", Simplify3D "outer perimeter"/"external single extrusion"
@@ -65,9 +65,21 @@ MODEL_COLOR_RULE_DEFS: list[ModelColorRuleDef] = [
     # Prusa/SuperSlicer "Internal infill", Bambu/Orca "Sparse infill", Cura "FILL", Simplify3D "infill"
     {"id": "sparseInfill", "keywords": ["fill"]},
 ]
-"""Definition of color rules: keywords for gcode feature, in priority order (first match from the top wins)"""
+"""Definition of feature type color rules: keywords for gcode feature type, in priority order (first match from the top wins)"""
 
-MODEL_COLOR_PRESET_DEFS: list[ModelColorPresetDef] = [
+FEATURE_TYPE_COLOR_PRESET_DEFS: list[FeatureTypeColorPresetDef] = [
+    # Colors copied from the G-code previews of the slicers below, each preset reusing the values of the preceding one
+    # for the feature types its own slicer gives no color to:
+    # - PrusaSlicer libvgcode's DEFAULT_EXTRUSION_ROLES_COLORS (AGPL-3.0-or-later, Copyright (c) Prusa Research 2023)
+    #   https://github.com/prusa3d/PrusaSlicer/blob/b028299c770b8380ee81c921a2867d522f288123/src/libvgcode/src/ViewerImpl.cpp#L283
+    # - OrcaSlicer libvgcode's DEFAULT_EXTRUSION_ROLES_COLORS (AGPL-3.0)
+    #   https://github.com/OrcaSlicer/OrcaSlicer/blob/542cd18d19887d23bbf454de363ca7cf807f70b3/src/libvgcode/src/ViewerImpl.cpp#L299
+    # - BambuStudio's BaseRenderer::Extrusion_Role_Colors (AGPL-3.0)
+    #   https://github.com/bambulab/BambuStudio/blob/9a530f77c23d8c3430d1dbef02e103cd8bd6480e/src/slic3r/GUI/GCodeRenderer/BaseRenderer.cpp#L118
+    # - SuperSlicer's GCodeViewer::Extrusion_Role_Colors (AGPL-3.0)
+    #   https://github.com/supermerill/SuperSlicer/blob/1f3d287e9be46caa83bc19c16c51c8abd0c211d6/src/slic3r/GUI/GCodeViewer.cpp#L1278
+    # - Cura's layerview_* theme colors (LGPL-3.0-or-later, Copyright (c) UltiMaker)
+    #   https://github.com/Ultimaker/Cura/blob/05e2c8937da42b48f8502f3ac69bcf8ed44b7307/resources/themes/cura-light/theme.json#L459
     {
         "name": "PrusaSlicer / SuperSlicer / Bambu Studio / OrcaSlicer",
         "defaultColor": "#e6b3b3",
@@ -121,28 +133,29 @@ MODEL_COLOR_PRESET_DEFS: list[ModelColorPresetDef] = [
         },
     },
 ]
-"""Definition of color presets: preset names and match between features and colors"""
+"""Definition of feature type color presets: preset names and match between feature types and colors"""
 
 # Check that every preset def is complete and colors exactly the color rule defs
-assert MODEL_COLOR_PRESET_DEFS, "There must be at least one model color preset"
-for preset in MODEL_COLOR_PRESET_DEFS:
-    assert preset.get("name"), "Every model color preset must have a name"
-    assert preset.get("defaultColor"), f"Model color preset {preset['name']} must have a default color"
-    assert set(preset.get("colors", {})) == {rule["id"] for rule in MODEL_COLOR_RULE_DEFS}, (
-        f"Model color preset {preset['name']} must define a color for every model color rule, and for no other"
+assert FEATURE_TYPE_COLOR_PRESET_DEFS, "There must be at least one feature type color preset"
+for preset in FEATURE_TYPE_COLOR_PRESET_DEFS:
+    assert preset.get("name"), "Every feature type color preset must have a name"
+    assert preset.get("defaultColor"), f"Feature type color preset {preset['name']} must have a default color"
+    assert set(preset.get("colors", {})) == {rule["id"] for rule in FEATURE_TYPE_COLOR_RULE_DEFS}, (
+        f"Feature type color preset {preset['name']} must define a color for every feature type color rule, and for no other"
     )
 
-MODEL_COLOR_PRESETS = [
+FEATURE_TYPE_COLOR_PRESETS = [
     {
         "name": preset["name"],
         "defaultColor": preset["defaultColor"],
         "colorRules": [
-            {"keywords": rule["keywords"], "color": preset["colors"][rule["id"]]} for rule in MODEL_COLOR_RULE_DEFS
+            {"keywords": rule["keywords"], "color": preset["colors"][rule["id"]]}
+            for rule in FEATURE_TYPE_COLOR_RULE_DEFS
         ],
     }
-    for preset in MODEL_COLOR_PRESET_DEFS
+    for preset in FEATURE_TYPE_COLOR_PRESET_DEFS
 ]
-"""Built-in color presets"""
+"""Built-in feature type color presets"""
 
 DEFAULT_DEFAULT_VIEW_SETTINGS = {
     # ---- Interface ----
@@ -193,10 +206,10 @@ DEFAULT_DEFAULT_VIEW_SETTINGS = {
     "highlightIntensity": 40,
     # Whether to show gcode excluded from printing, greyed out
     "showExcluded": True,
-    # Model color rules, tried in order
-    "modelColorRules": MODEL_COLOR_PRESETS[0]["colorRules"],
+    # Feature type color rules, tried in order
+    "featureTypeColorRules": FEATURE_TYPE_COLOR_PRESETS[0]["colorRules"],
     # Color of segments matching no color rule
-    "modelDefaultColor": MODEL_COLOR_PRESETS[0]["defaultColor"],
+    "featureTypeDefaultColor": FEATURE_TYPE_COLOR_PRESETS[0]["defaultColor"],
     # ---- Bed ----
     # Whether to show the print bed
     "showBed": True,
@@ -230,7 +243,7 @@ class PrettyGCodePlugin(
         return {
             "default_settings": self.get_settings_defaults(),
             "github_url": GITHUB_URL,
-            "model_color_presets": MODEL_COLOR_PRESETS,
+            "feature_type_color_presets": FEATURE_TYPE_COLOR_PRESETS,
             "plugin_version": self._plugin_version,
         }
 

@@ -5,8 +5,11 @@ const STEP_HOLD_REPEAT_MS = 50
 
 /** Callbacks driving a hold-to-repeat slider step button */
 interface StepButtonActions {
+  /** Callback called on every step the button runs */
   onStep: () => void
+  /** Callback called when the button is pressed */
   onStart: () => void
+  /** Callback called when the button is released */
   onStop: () => void
 }
 

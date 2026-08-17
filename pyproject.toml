@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "OctoPrint-PrettyGCode"
-version = "2.4.0"
+version = "2.5.0"
 description = "Pretty G-code Visualizer"
 authors = [
     { name = "Jacopo Tediosi", email = "jacopotediosi@gmail.com" },
@@ -36,6 +36,10 @@ content-type = "text/markdown"
 
 [tool.setuptools]
 include-package-data = true
+license-files = [
+    "LICENSE.txt",
+    "THIRDPARTYLICENSES.md",
+]
 
 [tool.setuptools.packages.find]
 include = [

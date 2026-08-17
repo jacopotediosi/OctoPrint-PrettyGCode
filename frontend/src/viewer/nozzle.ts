@@ -1,4 +1,5 @@
 import * as THREE from '../three-exports'
+import type { ScenePoint } from '../gcode/parsing/parsed-gcode'
 import type { Settings } from '../settings'
 
 /** Markers available for the nozzle position */
@@ -93,7 +94,7 @@ export class Nozzle {
    * @param sceneChanged - True if the scene already changed this frame
    * @returns True if the nozzle changed the scene
    */
-  update (position: THREE.Vector3 | null, nozzleDiameter: number, renderer: THREE.WebGLRenderer, sceneChanged: boolean): boolean {
+  update (position: ScenePoint | null, nozzleDiameter: number, renderer: THREE.WebGLRenderer, sceneChanged: boolean): boolean {
     const settings = this.settings
     const style = settings.nozzleStyle
     let needRender = false
@@ -102,7 +103,7 @@ export class Nozzle {
     for (const marker of [this.model, this.dot]) {
       if (!marker) continue
       if (position) {
-        marker.position.copy(position)
+        marker.position.set(position.x, position.y, position.z)
       } else if (marker.position.lengthSq()) {
         marker.position.set(0, 0, 0)
         needRender = true

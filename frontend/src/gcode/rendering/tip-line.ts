@@ -1,6 +1,8 @@
 import * as THREE from '../../three-exports'
-import { isThickLine, isThickMaterial } from './line-materials'
-import type { GcodeLine, GcodeLineMaterial } from './line-materials'
+import { isThickLine } from './gcode-line'
+import { isThickMaterial } from './line-materials'
+import type { GcodeLine } from './gcode-line'
+import type { GcodeLineMaterial } from './line-materials'
 import type { PrintTimeline, TimelineSpot } from '../timeline/print-timeline'
 
 /** The growing tip drawn along the segment the nozzle is currently laying down */
@@ -70,8 +72,9 @@ export class TipLine {
   /**
    * Grows the tip up to a timeline position
    * @param spot - Timeline position
+   * @param layerColors - Segment colors of every layer, in the layers' order
    */
-  update (spot: TimelineSpot): void {
+  update (spot: TimelineSpot, layerColors: Uint8ClampedArray[]): void {
     if (!this.line) return
 
     // Nothing grows while traveling between segments or past the end
@@ -80,14 +83,14 @@ export class TipLine {
       return
     }
 
-    const segment = this.timeline.segmentAt(spot.segmentIndex)!
+    const segment = this.timeline.segmentAt(spot.globalSegmentIndex)!
     const vertices = segment.layer.vertices
-    const offset = segment.localIndex * 6
+    const offset = segment.localSegmentIndex * 6
     const startX = vertices[offset]; const startY = vertices[offset + 1]; const startZ = vertices[offset + 2]
 
     // Grow up to how far along the segment the nozzle has reached
     const progress = spot.fraction
-    const colors = segment.layer.colors
+    const colors = layerColors[segment.layer.layerNumber - 1]
     this.setGeometry(this.line, startX, startY, startZ,
       startX + (vertices[offset + 3] - startX) * progress, startY + (vertices[offset + 4] - startY) * progress, startZ + (vertices[offset + 5] - startZ) * progress,
       colors[offset] / 255, colors[offset + 1] / 255, colors[offset + 2] / 255)

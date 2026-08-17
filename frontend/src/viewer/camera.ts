@@ -3,10 +3,10 @@ import CameraControls from 'camera-controls'
 import { Vector2, Vector3, Vector4, Quaternion, Matrix4, Spherical, Box3, Sphere, Raycaster } from 'three'
 import { bedCenter } from './bed'
 import { ViewCube } from './view-cube'
-import { NAVIGATION_MODES } from './navigation'
-import type { GcodeBounds } from '../gcode/parsing/parser'
+import { heldModifier, mouseButtonActions, NAVIGATION_MODES } from './navigation'
+import type { GcodeBounds } from '../gcode/parsing/parsed-gcode'
 import type { BedVolume } from './bed'
-import type { MouseBinding, MouseButton, NavigationMode, NavigationModeKey, ProjectionMode } from './navigation'
+import type { NavigationMode, NavigationModeKey, NavigationModifier } from './navigation'
 import type { Settings } from '../settings'
 
 /**
@@ -17,24 +17,37 @@ const CAMERA_CONTROLS_THREE = { Vector2, Vector3, Vector4, Quaternion, Matrix4, 
 
 /** Seconds the camera must sit idle before it starts auto-orbiting */
 const ORBIT_IDLE_DELAY_SECONDS = 5
+/** Speed the idle camera orbits at */
+const ORBIT_SPEED_RADIANS_PER_SECOND = 0.2
 
 /** Zoom-out limit, in multiples of the largest bed or gcode dimension */
 const MAX_ZOOM_OUT_FACTOR = 5
-
+/** Zoom-in limit, as the closest the camera gets to what it looks at */
+const MIN_ZOOM_IN_DISTANCE_MM = 10
 /** Slowest zoom speed */
 const MIN_ZOOM_SPEED = 0.5
 
 /** Polar angle of the default view, in radians from vertical */
 const DEFAULT_VIEW_POLAR_ANGLE = Math.PI / 4
 
+/** Vertical angle the perspective camera takes in */
+const PERSPECTIVE_FIELD_OF_VIEW_DEGREES = 70
+
 /** Height framed by the orthographic camera at zoom 1 */
 const ORTHOGRAPHIC_VIEW_HEIGHT_MM = 100
 
+/** Projection mode of the 3D view */
+export type ProjectionMode = 'perspective' | 'orthographic'
+
 /** Area the camera frames and orbits around */
 interface FramedArea {
+  /** Center X of the area in mm */
   centerX: number
+  /** Center Y of the area in mm */
   centerY: number
+  /** Depth of the area in mm */
   depth: number
+  /** Width of the area in mm */
   width: number
 }
 
@@ -65,7 +78,7 @@ export class Camera {
   /** The active navigation mode */
   private navigationMode: NavigationMode = NAVIGATION_MODES.prusaslicer
   /** Modifier key currently held down */
-  private navigationModifier: 'shift' | 'ctrl' | null = null
+  private navigationModifier: NavigationModifier = null
 
   /* ---- Setup ---- */
 
@@ -84,7 +97,7 @@ export class Camera {
     THREE.Object3D.DEFAULT_UP.set(0, 0, 1)
 
     // Cameras
-    this.perspectiveCamera = new THREE.PerspectiveCamera(70, 2, 1, 5000)
+    this.perspectiveCamera = new THREE.PerspectiveCamera(PERSPECTIVE_FIELD_OF_VIEW_DEGREES, 2, 1, 5000)
     this.orthographicCamera = new THREE.OrthographicCamera(-ORTHOGRAPHIC_VIEW_HEIGHT_MM, ORTHOGRAPHIC_VIEW_HEIGHT_MM, ORTHOGRAPHIC_VIEW_HEIGHT_MM / 2, -ORTHOGRAPHIC_VIEW_HEIGHT_MM / 2, 1, 5000)
     this.activeCamera = settings.projectionMode === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera
     for (const camera of [this.perspectiveCamera, this.orthographicCamera]) {
@@ -96,7 +109,7 @@ export class Camera {
     this.controls = new CameraControls(this.activeCamera, renderer.domElement)
     this.controls.dollyToCursor = true
     this.controls.infinityDolly = true
-    this.controls.minDistance = 10
+    this.controls.minDistance = MIN_ZOOM_IN_DISTANCE_MM
     this.applyDefaultView(bedVolume)
 
     // View cube
@@ -159,7 +172,7 @@ export class Camera {
     } else {
       this.idleTime += deltaSeconds
       if (this.settings.orbitWhenIdle && this.idleTime > ORBIT_IDLE_DELAY_SECONDS) {
-        this.controls.rotate(deltaSeconds / 5.0, 0, false)
+        this.controls.rotate(deltaSeconds * ORBIT_SPEED_RADIANS_PER_SECOND, 0, false)
         this.controls.update(deltaSeconds)
         moved = true
       }
@@ -341,10 +354,10 @@ export class Camera {
 
   /**
    * (Re)applies the mouse bindings for the held modifier key
-   * @param event - Event carrying the modifier key state, or null when the window loses focus
+   * @param event - Event carrying the modifier key state, or null when the browser window loses focus
    */
   private updateNavigationModifier (event: KeyboardEvent | null): void {
-    const modifier = event?.shiftKey ? 'shift' : event?.ctrlKey ? 'ctrl' : null
+    const modifier = heldModifier(event)
     if (modifier !== this.navigationModifier) {
       this.navigationModifier = modifier
       this.applyMouseBindings()
@@ -355,22 +368,15 @@ export class Camera {
   private applyMouseBindings (): void {
     const isPerspective = this.activeCamera === this.perspectiveCamera
     const zoomAction = isPerspective ? CameraControls.ACTION.DOLLY : CameraControls.ACTION.ZOOM
-    const actions: Array<[MouseBinding | MouseBinding[] | undefined, number]> = [
-      [this.navigationMode.orbit, CameraControls.ACTION.ROTATE],
-      [this.navigationMode.pan, CameraControls.ACTION.TRUCK],
-      [this.navigationMode.zoom, zoomAction]
-    ]
 
-    const buttons: Record<MouseButton, number> = { left: CameraControls.ACTION.NONE, middle: CameraControls.ACTION.NONE, right: CameraControls.ACTION.NONE }
-    const modifierButtons: Partial<typeof buttons> = {}
-    for (const [bindings, action] of actions) {
-      for (const binding of [bindings ?? []].flat()) {
-        const [button, modifier] = binding.split('+').reverse() as [MouseButton, string?]
-        if (modifier === undefined) buttons[button] = action
-        else if (modifier === this.navigationModifier) modifierButtons[button] = action
-      }
-    }
-    Object.assign(this.controls.mouseButtons, buttons, modifierButtons, { wheel: zoomAction })
+    const buttons = mouseButtonActions(this.navigationMode, this.navigationModifier, {
+      orbit: CameraControls.ACTION.ROTATE,
+      pan: CameraControls.ACTION.TRUCK,
+      zoom: zoomAction,
+      none: CameraControls.ACTION.NONE
+    })
+
+    Object.assign(this.controls.mouseButtons, buttons, { wheel: zoomAction })
     this.controls.touches.two = isPerspective ? CameraControls.ACTION.TOUCH_DOLLY_TRUCK : CameraControls.ACTION.TOUCH_ZOOM_TRUCK
   }
 

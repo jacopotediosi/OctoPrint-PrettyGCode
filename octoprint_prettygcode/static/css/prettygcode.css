@@ -38,9 +38,10 @@
     --pg-z-webcam: 2003;
     --pg-z-bottom-buttons: 2004;
     --pg-z-camera-controls: 2005;
-    --pg-z-top-windows: 2006;
-    --pg-z-top-buttons: 2007;
-    --pg-z-sliders: 2008;
+    --pg-z-top-left-windows: 2006;
+    --pg-z-view-settings: 2007;
+    --pg-z-top-buttons: 2008;
+    --pg-z-sliders: 2009;
     --pg-z-resize-handles: 2020;
     --pg-z-modals-backdrop: 2100;
     --pg-z-modals: 2101;
@@ -137,13 +138,10 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 /* ---- Camera controls ---- */
 .pg-maximized .pg-camera-controls {
     z-index: var(--pg-z-camera-controls);
-    top: calc(var(--pg-margin-top) + var(--pg-toggle-height) + var(--pg-stack-gap));
-    left: auto;
-    right: calc(var(--pg-margin-right) + var(--pg-layer-slider-lane));
 }
 .pg-camera-controls {
-    top: var(--pg-margin-top);
-    left: var(--pg-margin-left);
+    top: calc(var(--pg-margin-top) + var(--pg-toggle-height) + var(--pg-stack-gap));
+    right: calc(var(--pg-margin-right) + var(--pg-layer-slider-lane));
     flex-direction: column;
     align-items: center;
 }
@@ -199,7 +197,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     overflow: visible;
 }
 .pg-maximized #pg-view-settings {
-    z-index: var(--pg-z-top-windows);
+    z-index: var(--pg-z-view-settings);
 }
 .pg-view-settings-panel .lil-gui {
     --font-size: 14px;
@@ -322,7 +320,66 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     overflow: hidden;
 }
 
-/* === Model colors modal === */
+/* === Legend === */
+#pg-legend {
+    position: absolute;
+    top: var(--pg-margin-top);
+    left: var(--pg-margin-left);
+    width: 360px;
+    max-height: calc(100% - var(--pg-window-vertical-insets));
+    box-sizing: border-box;
+    padding: var(--pg-window-padding);
+    padding-top: calc(var(--pg-window-header-height) + var(--pg-window-padding));
+    display: flex;
+    flex-direction: column;
+    gap: var(--pg-window-padding);
+    color: var(--pg-window-text);
+    background: var(--pg-window-background);
+    border-radius: var(--pg-window-radius);
+    box-shadow: var(--pg-shadow);
+}
+.pg-maximized #pg-legend {
+    z-index: var(--pg-z-top-left-windows);
+}
+.pg-legend-mode {
+    width: 100%;
+    margin: 0;
+}
+#pg-legend-rows {
+    display: grid;
+    align-items: center;
+    row-gap: 2px;
+    column-gap: var(--pg-buttons-gap);
+    overflow-y: auto;
+}
+.pg-legend-row {
+    display: contents;
+    white-space: nowrap;
+}
+.pg-legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+}
+.pg-legend-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pg-legend-column-names {
+    font-weight: bold;
+}
+.pg-legend-column-names .pg-legend-label {
+    grid-column: 1 / 3;
+}
+.pg-legend-column-names .pg-legend-value:last-child {
+    grid-column: 4 / -1;
+}
+.pg-legend-value {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.85;
+}
+
+/* === Feature type colors modal === */
 /* Modal header */
 .pg-modal-color-title .pg-modal-color-reset {
     margin-left: 8px;
@@ -415,7 +472,18 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     margin-top: 12px;
 }
 
-/* === Top overlay windows === */
+/* === Top left windows === */
+.pg-legend-header,
+.pg-maximized #state_wrapper::after,
+.pg-maximized #files_wrapper::after {
+    position: absolute;
+    top: 0;
+    right: var(--pg-window-padding);
+    line-height: var(--pg-window-header-height);
+    font-weight: bold;
+    color: var(--pg-window-text);
+    pointer-events: none;
+}
 .pg-maximized #state_wrapper,
 .pg-maximized #files_wrapper {
     top: var(--pg-margin-top);
@@ -429,7 +497,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     flex-direction: column;
     box-shadow: var(--pg-shadow);
     background: var(--pg-window-background);
-    z-index: var(--pg-z-top-windows);
+    z-index: var(--pg-z-top-left-windows);
 }
 .pg-maximized #files_wrapper {
     max-width: 80%;
@@ -451,20 +519,10 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
 .pg-maximized #files_wrapper .accordion-heading-button > a {
     color: var(--pg-window-text);
 }
-.pg-maximized #state_wrapper::after,
-.pg-maximized #files_wrapper::after {
-    position: absolute;
-    top: 0;
-    right: var(--pg-window-padding);
-    line-height: var(--pg-window-header-height);
-    font-weight: bold;
-    color: var(--pg-window-text);
-    pointer-events: none;
-}
 .pg-maximized #state_wrapper::after { content: "State"; }
 .pg-maximized #files_wrapper::after { content: "Files"; }
 
-/* === Bottom overlay windows === */
+/* === Bottom windows === */
 .pg-maximized #pg-webcam,
 .pg-maximized #tab_plugin_dashboard {
     display: block;
@@ -474,7 +532,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     background: var(--pg-window-background);
     border-radius: var(--pg-window-radius);
 }
-/* Webcam overlay */
+/* Webcam window */
 #pg-webcam {
     display: none;
 }
@@ -487,7 +545,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     margin-top: 0;
     border-radius: var(--pg-window-radius);
 }
-/* Dashboard overlay */
+/* Dashboard window */
 .pg-maximized #tab_plugin_dashboard {
     left: var(--pg-margin-left);
     z-index: var(--pg-z-dashboard);
@@ -501,7 +559,7 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     display: none;
 }
 
-/* === Overlay windows resize handles === */
+/* === Window resize handles === */
 .pg-resize-handle {
     display: none;
     position: absolute;
@@ -738,9 +796,15 @@ html:has(.page-container.pg-maximized) .modal-backdrop {
     background-color: rgba(255, 255, 255, 0.08);
 }
 .pg-dark #pg-view-settings,
+.pg-dark #pg-legend,
 .pg-dark:has(.pg-maximized) #state_wrapper,
 .pg-dark:has(.pg-maximized) #files_wrapper {
     color-scheme: dark;
+}
+.pg-dark #pg-view-settings select,
+.pg-dark #pg-legend select {
+    color: var(--pg-window-text);
+    background-color: var(--pg-window-background);
 }
 
 /* === Dark mode: modals === */

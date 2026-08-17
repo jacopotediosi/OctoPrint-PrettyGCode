@@ -1,4 +1,4 @@
-import type { PrinterTemperatures } from '../app'
+import type { PrinterTemperatures } from '../octoprint/push-payloads'
 
 /**
  * Sets the temperatures the status bar shows
@@ -25,8 +25,8 @@ export function setStatusBarTemperatures (temperatures: PrinterTemperatures[]): 
 
 /**
  * Shows or hides the status bar
- * @param show - True to show the status bar
+ * @param visible - True to show the status bar
  */
-export function applyStatusBarVisibility (show: boolean): void {
-  $('.pg-status').toggleClass('pg-hidden', !show)
+export function applyStatusBarVisibility (visible: boolean): void {
+  $('.pg-status').toggleClass('pg-hidden', !visible)
 }

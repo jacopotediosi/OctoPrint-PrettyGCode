@@ -1,83 +1,48 @@
-import * as THREE from './three-exports'
-import { Settings, type SettingKey, type SettingValues } from './settings'
+import { Settings, type SettingKey } from './settings'
 import { Viewer } from './viewer/viewer'
 import { loadGcodeFile, cancelGcodeLoad } from './gcode/parsing/loader'
 import { ObservedPrintSpeed } from './gcode/timeline/observed-print-speed'
 import { PrintTimeline } from './gcode/timeline/print-timeline'
-import { PrintExclusions } from './gcode/exclusions'
+import { PrintExclusions } from './gcode/print-exclusions'
 import { GcodeModel } from './gcode/rendering/gcode-model'
 import { initViewSettingsPanel, type ViewSettingsPanel } from './ui/view-settings/view-settings-panel'
 import { saveDefaultViewSettings, updateDefaultViewSettingsPanel } from './ui/view-settings/default-view-settings-panel'
-import { initOverlayWindows } from './ui/overlays/overlay-windows'
-import { updateDashboardOverlay } from './ui/overlays/dashboard'
-import { updateWebcamOverlay } from './ui/overlays/webcam'
+import { initDashboardWindow, updateDashboardWindow } from './ui/windows/dashboard'
+import { initWebcamWindow, updateWebcamWindow } from './ui/windows/webcam'
 import { initLayerSlider, updateLayerSliderMax, setLayerSliderValue, applyLayerSliderVisibility } from './ui/sliders/layer-slider'
 import { initSegmentSlider, updateSegmentSliderMax, setSegmentSliderValue, applySegmentSliderVisibility } from './ui/sliders/segment-slider'
+import { applyCameraControlsVisibility, initCameraControls } from './ui/camera-controls'
 import { initToggleButtons } from './ui/toggle-buttons'
+import { initLegend, updateLegend } from './ui/windows/legend'
 import { setStatusBarTemperatures, applyStatusBarVisibility } from './ui/status-bar'
 import { showLoadingScreen, hideLoadingScreen } from './ui/notices/loading-screen'
 import { showLargeFileConfirmation, hideLargeFileConfirmation } from './ui/notices/large-file-confirmation'
-import type { ParsedGcode } from './gcode/parsing/parser'
-import type { ParserColors } from './gcode/model-colors'
+import { emptyGcode, type ParsedGcode, type ScenePoint } from './gcode/parsing/parsed-gcode'
+import type { SegmentColoring } from './gcode/colors/color-modes'
+import { clamp } from './utils/numbers'
+import { applyPageTheme, initPageLayout, PG_SETTINGS_TAB, PG_TAB } from './ui/page-layout'
+import { updateTopLeftWindows } from './ui/windows/top-left-windows'
+import { cancelObjectTag, defaultViewSettings, g90InfluencesExtruder, largeFileThresholdBytes, onPrinterProfileChange, printerProfileBedVolume, printerProfileNozzleDiameter, showSettingsDialog, DEFAULT_BED_VOLUME, DEFAULT_NOZZLE_DIAMETER_MM } from './octoprint/view-models'
+import type { PrinterProfilesViewModel, SettingsViewModel } from './octoprint/view-models'
+import type { PluginMessagePayload, PrinterDataPayload, PrinterState } from './octoprint/push-payloads'
 import type { BedVolume } from './viewer/bed'
-import type { PrintViewUpdate } from './viewer/viewer'
-
-/** Temperatures read at one moment, by heater name */
-export interface PrinterTemperatures {
-  /** Moment the temperatures were read, in seconds since the epoch */
-  time: number
-  /** Actual and target temperature of one heater, each unknown until the printer reports it */
-  [heater: string]: { actual: number | null, target: number | null } | number
-}
-
-/** Printer state reported by OctoPrint */
-interface PrinterState {
-  flags: { printing: boolean, paused: boolean }
-}
-
-/** OctoPrint current/history data payload */
-interface PrinterDataPayload {
-  temps: PrinterTemperatures[]
-  job: { file: { path: string, date: number, size: number } }
-  state: PrinterState
-  progress: { filepos: number, printTime: number }
-}
-
-/** Selector of the plugin tab */
-export const PG_TAB = '#tab_plugin_prettygcode'
-/** Selector of the plugin settings tab */
-const PG_SETTINGS_TAB = '#settings_plugin_prettygcode'
-/** Selector of the OctoPrint page container */
-export const PAGE_CONTAINER = '.page-container'
-/** Class marking the page as filled by the plugin view */
-export const MAXIMIZED_CLASS = 'pg-maximized'
-
-/** Nozzle diameter in mm assumed when the printer profile does not state one */
-const DEFAULT_NOZZLE_DIAMETER_MM = 0.4
-
-/** Bed width, depth and height in mm assumed until the printer profile is read */
-const DEFAULT_BED_SIZE_MM = 200
-/** Bed origin assumed until the printer profile is read */
-const DEFAULT_BED_ORIGIN = 'lowerleft'
+import type { PrintProgressUpdate } from './viewer/viewer'
 
 /** Main plugin container, orchestrating all its components */
 export class PrettyGCodeApp {
+  /* ---- OctoPrint view models ---- */
+
   /** OctoPrint printer profiles view model */
-  private readonly printerProfilesVM: any
+  private readonly printerProfilesVM: PrinterProfilesViewModel
   /** OctoPrint settings view model */
-  private readonly settingsVM: any
+  private readonly settingsVM: SettingsViewModel
+
+  /* ---- Components ---- */
 
   /** Plugin frontend settings */
   readonly settings = new Settings()
-
-  /** Whether the plugin view has been initialized */
-  private viewInitialized = false
-
-  /** The panel editing the view settings of this browser */
-  private viewSettingsPanel!: ViewSettingsPanel
-
   /** The 3D view */
-  private readonly viewer = new Viewer(this.settings, () => this.bedVolume, () => this.nozzleDiameter, (deltaSeconds) => this.updatePrintView(deltaSeconds))
+  private readonly viewer = new Viewer(this.settings, () => this.bedVolume, () => this.nozzleDiameter, (deltaSeconds) => this.advancePrintProgress(deltaSeconds))
   /** Print exclusions of the loaded gcode */
   private readonly exclusions = new PrintExclusions(this.settings)
   /** Print timeline of the loaded gcode */
@@ -85,20 +50,25 @@ export class PrettyGCodeApp {
   /** Speed the running print is going at */
   private readonly observedPrintSpeed = new ObservedPrintSpeed()
   /** The rendered gcode model */
-  private readonly gcodeModel = new GcodeModel(this.settings, () => this.nozzleDiameter, this.printTimeline, this.exclusions, this.viewer.mirrorBoundsPlanes)
+  private readonly gcodeModel = new GcodeModel(this.settings, () => this.nozzleDiameter, this.printTimeline, this.viewer.mirrorBoundsPlanes)
+  /** The panel editing the view settings of this browser */
+  private viewSettingsPanel!: ViewSettingsPanel
+
+  /* ---- Printer profile ---- */
+
+  /** Print bed geometry */
+  private bedVolume: BedVolume = DEFAULT_BED_VOLUME
+  /** Nozzle diameter in mm from the active printer profile */
+  private profileNozzleDiameter = DEFAULT_NOZZLE_DIAMETER_MM
+
+  /* ---- Loaded gcode ---- */
 
   /** Parsed gcode of the currently loaded job */
   private parsedGcode: ParsedGcode | null = null
   /** Belt printer gantry angle the loaded gcode was parsed with */
   private parsedBeltPrinterGantryAngle: number | null = null
-  /** Model colors the loaded gcode was parsed with */
-  private parsedColors: ParserColors | null = null
 
-  /** Print bed geometry */
-  private bedVolume: BedVolume = { depth: DEFAULT_BED_SIZE_MM, height: DEFAULT_BED_SIZE_MM, origin: DEFAULT_BED_ORIGIN, width: DEFAULT_BED_SIZE_MM }
-
-  /** Nozzle diameter in mm from the active printer profile */
-  private profileNozzleDiameter = DEFAULT_NOZZLE_DIAMETER_MM
+  /* ---- Current job ---- */
 
   /** Server path of the currently loaded job */
   private currentJobPath = ''
@@ -111,10 +81,17 @@ export class PrettyGCodeApp {
   /** Id of the most recent gcode load */
   private loadSequence = 0
 
+  /* ---- Print progress ---- */
+
   /** Latest printer state reported by OctoPrint */
   private currentPrinterState: PrinterState | null = null
   /** Bytes of the job file sent to the printer so far */
   private currentFilePosition = 0
+
+  /* ---- View state ---- */
+
+  /** Whether the plugin view has been initialized */
+  private viewInitialized = false
   /** 1-based current layer */
   private _currentLayerNumber = 0
   /** Revealed segments of the current layer */
@@ -125,7 +102,7 @@ export class PrettyGCodeApp {
   /**
    * @param viewModels - OctoPrint view models
    */
-  constructor ({ printerProfilesVM, settingsVM }: { printerProfilesVM: any, settingsVM: any }) {
+  constructor ({ printerProfilesVM, settingsVM }: { printerProfilesVM: PrinterProfilesViewModel, settingsVM: SettingsViewModel }) {
     this.printerProfilesVM = printerProfilesVM
     this.settingsVM = settingsVM
   }
@@ -141,25 +118,31 @@ export class PrettyGCodeApp {
     if (current === PG_TAB) {
       if (!this.viewInitialized) {
         // Load settings, layered over the defaults configured on the server
-        this.settings.load(this.defaultViewSettings())
+        this.settings.load(defaultViewSettings(this.settingsVM))
 
         // Printer profile, synced now and on every change
         this.updatePrinterProfile()
-        this.printerProfilesVM.currentProfileData.subscribe(() => this.updatePrinterProfile())
+        onPrinterProfileChange(this.printerProfilesVM, () => this.updatePrinterProfile())
 
-        // 3D view and gcode
+        // 3D view
         this.viewer.init()
         this.viewer.add(this.gcodeModel.linesGroup)
         this.viewer.add(this.exclusions.regionMarkersGroup)
-        this.loadGcode(this.currentJobPath)
-        this.fetchExclusions()
 
         // UI controls
+        initPageLayout(() => this.updateWindowStates())
         this.viewSettingsPanel = initViewSettingsPanel(this)
         initLayerSlider(this)
         initSegmentSlider(this)
-        initOverlayWindows(this.settings)
+        initWebcamWindow(this.settings)
+        initDashboardWindow(this.settings)
         initToggleButtons(this)
+        initCameraControls(this)
+        initLegend(this)
+
+        // Gcode and exclusions of the current job
+        this.loadGcode(this.currentJobPath)
+        this.fetchExclusions()
 
         // Apply the loaded settings
         this.applySettings(this.settings.keys())
@@ -183,7 +166,7 @@ export class PrettyGCodeApp {
   onSettingsHidden (): void {
     if (!this.viewInitialized) return
 
-    const changed = this.settings.load(this.defaultViewSettings())
+    const changed = this.settings.load(defaultViewSettings(this.settingsVM))
     this.viewSettingsPanel.refresh()
     this.applySettings(changed)
   }
@@ -191,14 +174,6 @@ export class PrettyGCodeApp {
   /** Reacts to the OctoPrint settings dialog opening, bringing the plugin settings tab up to date */
   onSettingsShown (): void {
     updateDefaultViewSettingsPanel(this.settingsVM)
-  }
-
-  /**
-   * Gets the default view settings configured on the server
-   * @returns Their values by name
-   */
-  private defaultViewSettings (): Partial<SettingValues> {
-    return ko.mapping.toJS(this.settingsVM.settings?.plugins?.prettygcode?.defaultViewSettings ?? {})
   }
 
   /**
@@ -225,8 +200,8 @@ export class PrettyGCodeApp {
    * @param plugin - Identifier of the sending plugin
    * @param data - Message payload
    */
-  onDataUpdaterPluginMessage (plugin: string, data: any): void {
-    if (this.exclusions.applyPluginMessage(plugin, data)) this.updateExclusions()
+  onDataUpdaterPluginMessage (plugin: string, data: PluginMessagePayload): void {
+    if (this.exclusions.applyPluginMessage(plugin, data) && this.viewInitialized) this.updateView()
   }
 
   /**
@@ -245,8 +220,15 @@ export class PrettyGCodeApp {
     }
 
     // Live printer state and progress
+    const wasBusy = this.isPrinterBusy(this.currentPrinterState)
     this.currentPrinterState = data.state
     this.currentFilePosition = data.progress.filepos
+
+    // Reveal everything the printer got through when it stops, unless the user is browsing by hand
+    if (wasBusy && !this.isPrinterBusy(data.state) && !this.manualSliding) {
+      const { layerNumber, segmentNumber } = this.printTimeline.revealPositionAt(this.currentFilePosition)
+      this.setReveal(layerNumber, segmentNumber)
+    }
 
     // Speed of the job the printer is on
     if (data.state.flags.printing) {
@@ -256,7 +238,21 @@ export class PrettyGCodeApp {
     }
   }
 
+  /**
+   * Tells whether the printer is working on a job
+   * @param state - Printer state reported by OctoPrint, null before it reports one
+   * @returns True while the printer prints or is paused
+   */
+  private isPrinterBusy (state: PrinterState | null): boolean {
+    return state !== null && (state.flags.printing || state.flags.paused)
+  }
+
   /* ---- Gcode loading ---- */
+
+  /** How the segments of the loaded gcode take their color */
+  get segmentColoring (): SegmentColoring {
+    return this.gcodeModel.segmentColoring
+  }
 
   /** Layer count of the loaded gcode */
   get layerCount (): number {
@@ -271,24 +267,22 @@ export class PrettyGCodeApp {
   /**
    * Loads a job file and displays it in the 3D view
    * @param jobPath - Server path of the job file
-   * @param preserveView - Whether to keep the current layer and camera instead of framing the whole model
    */
-  private async loadGcode (jobPath: string, preserveView = false): Promise<void> {
+  private async loadGcode (jobPath: string): Promise<void> {
     // Supersede the load in flight and clear the view
     const sequence = ++this.loadSequence
     hideLoadingScreen()
     hideLargeFileConfirmation()
     this.unloadGcode()
     this.parsedBeltPrinterGantryAngle = this.beltPrinterGantryAngle
-    this.parsedColors = { colorRules: this.settings.modelColorRules, defaultColor: this.settings.modelDefaultColor }
 
     // Ask before loading a large file, which takes long and can bog the browser down
-    const largeFileThreshold = Number(this.settingsVM.settings?.plugins?.prettygcode?.largeFileThresholdMb?.() ?? 0) * 1024 * 1024
+    const largeFileThreshold = largeFileThresholdBytes(this.settingsVM)
     if (jobPath && !this.largeFileApproved && largeFileThreshold && this.currentJobSize > largeFileThreshold) {
       cancelGcodeLoad()
       showLargeFileConfirmation(this.currentJobSize, () => {
         this.largeFileApproved = true
-        this.loadGcode(jobPath, preserveView)
+        this.loadGcode(jobPath)
       })
       return
     }
@@ -297,35 +291,23 @@ export class PrettyGCodeApp {
     showLoadingScreen()
 
     try {
-      // The object marker tag comes from the Cancel Object plugin settings
-      const objectTag = this.settingsVM.settings?.plugins?.cancelobject?.reptag?.()
-      // Whether G90/G91 affect extrusion follows OctoPrint's firmware setting
-      const g90InfluencesExtruder = this.settingsVM.settings?.feature?.g90InfluencesExtruder?.() ?? false
-      const parsedGcode = await loadGcodeFile(jobPath, objectTag, this.parsedColors, g90InfluencesExtruder, this.parsedBeltPrinterGantryAngle)
-
-      // Stop if a newer load has started
+      // Parse the file, stopping if a newer load has started meanwhile
+      const parsedGcode = await loadGcodeFile(jobPath, cancelObjectTag(this.settingsVM), g90InfluencesExtruder(this.settingsVM), this.parsedBeltPrinterGantryAngle)
       if (sequence !== this.loadSequence) return
 
+      // Take the parsed gcode
       this.parsedGcode = parsedGcode
       this.exclusions.setGcodeObjectNames(this.parsedGcode.objectNames)
 
-      // Index the timeline and build the model
-      this.printTimeline.build(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
-      this.observedPrintSpeed.restart()
-      this.gcodeModel.build(this.parsedGcode.layers)
-
-      // Apply the gcode bounds
+      // Fit the camera limits to the model
       this.viewer.applyGcodeBounds(this.parsedGcode.bounds)
 
-      updateLayerSliderMax(this)
-      if (preserveView) {
-        // Keep the current layer
-        this.setCurrentLayerNumber(Math.min(this.currentLayerNumber || this.layerCount, this.layerCount))
-      } else {
-        // Show the whole model: current layer at the top and the camera reset to the default view
-        this.setCurrentLayerNumber(this.layerCount)
-        this.resetView()
-      }
+      // Index and draw the new gcode
+      this.updateView()
+
+      // Show the whole model: current layer at the top and the camera reset to the default view
+      this.setCurrentLayerNumber(this.layerCount)
+      this.resetCameraView()
       this.viewer.requestRender()
     } catch (error) {
       if (sequence === this.loadSequence) console.error('PrettyGCode: gcode load failed', error)
@@ -334,32 +316,40 @@ export class PrettyGCodeApp {
     }
   }
 
-  /** Empties the 3D view of the loaded gcode */
+  /** Empties the view of the loaded gcode */
   private unloadGcode (): void {
     this.parsedGcode = null
-    this.printTimeline.build([], null)
-    this.observedPrintSpeed.restart()
-    this.gcodeModel.build([])
-    updateLayerSliderMax(this)
-    updateSegmentSliderMax(this)
-    this.viewer.requestRender()
+    this.updateView()
   }
 
   /* ---- Exclusions ---- */
 
   /** Fetches the current exclusions and applies them to the view */
   private async fetchExclusions (): Promise<void> {
-    if (await this.exclusions.fetch()) this.updateExclusions()
+    if (await this.exclusions.fetch()) this.updateView()
   }
 
-  /** (Re)applies the current exclusions to the timeline and the model */
-  private updateExclusions (): void {
-    if (!this.viewInitialized || !this.parsedGcode) return
+  /* ---- View updates ---- */
 
-    this.printTimeline.build(this.parsedGcode.layers, this.parsedGcode.slicerTimeMarks)
+  /** (Re)indexes the loaded gcode and brings the view up to date */
+  private updateView (): void {
+    const gcode = this.parsedGcode ?? emptyGcode()
+
+    this.printTimeline.build(gcode.layers, gcode.slicerTimeMarks)
     this.observedPrintSpeed.restart()
-    this.gcodeModel.rebuild()
+    this.gcodeModel.build(gcode)
+    updateLegend(this)
+    updateLayerSliderMax(this)
+    updateSegmentSliderMax(this)
     this.updateLayerHighlight()
+    this.updateWindowStates()
+    this.viewer.requestRender()
+  }
+
+  /** (Re)applies the layer highlight setting to the displayed layer */
+  private updateLayerHighlight (): void {
+    this.gcodeModel.highlightLayer(this.currentLayerNumber)
+    this.viewer.requestRender()
   }
 
   /* ---- Print tracking ---- */
@@ -369,33 +359,29 @@ export class PrettyGCodeApp {
    * @param deltaSeconds - Seconds elapsed since the previous call
    * @returns Whether the scene changed and the nozzle position to show, if any
    */
-  private updatePrintView (deltaSeconds: number): PrintViewUpdate {
-    const state = this.currentPrinterState
-    const tracking = state && !this.manualSliding && (state.flags.printing || state.flags.paused)
+  private advancePrintProgress (deltaSeconds: number): PrintProgressUpdate {
+    const trackingLivePrint = !this.manualSliding && this.isPrinterBusy(this.currentPrinterState)
 
     let needRender = false
-    let nozzlePosition: THREE.Vector3 | null = null
-    let revealedLayer: number | null = null
+    let nozzlePosition: ScenePoint | null = null
 
-    if (tracking) {
+    if (trackingLivePrint) {
       // Reveal gcode up to where the nozzle has passed
       const spot = this.printTimeline.advance(this.currentFilePosition, deltaSeconds)
       if (spot) {
         this.gcodeModel.revealTo(spot)
-        const { layerNumber, segmentNumber } = this.printTimeline.revealPosition(spot.segmentIndex)
+        const { layerNumber, segmentNumber } = this.printTimeline.revealPosition(spot.globalSegmentIndex)
         this.setReveal(layerNumber, segmentNumber)
-        revealedLayer = layerNumber
       }
       needRender = true
       nozzlePosition = this.printTimeline.getNozzlePosition()
     } else {
-      // Reveal gcode up to the selected within-layer position
+      // Reveal gcode up to the selected position
       needRender = this.gcodeModel.syncToLayerSegment(this.currentLayerNumber, this.currentSegmentNumber)
-      if (needRender) revealedLayer = this.currentLayerNumber
     }
 
     // Highlight the revealed layer
-    if (revealedLayer != null) this.gcodeModel.highlightLayer(revealedLayer)
+    this.gcodeModel.highlightLayer(this.currentLayerNumber)
 
     return { needRender, nozzlePosition }
   }
@@ -451,7 +437,7 @@ export class PrettyGCodeApp {
    * @param segmentNumber - Segments of the current layer to reveal
    */
   setCurrentSegmentNumber (segmentNumber: number): void {
-    this._currentSegmentNumber = Math.min(Math.max(segmentNumber, 0), this.currentLayerSegmentCount)
+    this._currentSegmentNumber = clamp(segmentNumber, 0, this.currentLayerSegmentCount)
     setSegmentSliderValue(this, this._currentSegmentNumber)
   }
 
@@ -477,12 +463,12 @@ export class PrettyGCodeApp {
 
   /** Opens the plugin settings tab */
   showPluginSettings (): void {
-    this.settingsVM.show(PG_SETTINGS_TAB)
+    showSettingsDialog(this.settingsVM, PG_SETTINGS_TAB)
   }
 
   /** Resets the camera to the default view */
-  resetView (): void {
-    this.viewer.applyDefaultView(true)
+  resetCameraView (): void {
+    this.viewer.applyDefaultCameraView(true)
   }
 
   /**
@@ -499,48 +485,32 @@ export class PrettyGCodeApp {
      */
     const anyOf = (...names: SettingKey[]): boolean => names.some((name) => toApply.has(name))
 
-    const beltPrinterChanged = anyOf('beltPrinter', 'beltPrinterGantryAngle') &&
-      this.beltPrinterGantryAngle !== this.parsedBeltPrinterGantryAngle
-    const colorsChanged = anyOf('modelColorRules', 'modelDefaultColor') &&
-      (
-        this.parsedColors == null ||
-        !this.settings.matches('modelColorRules', this.parsedColors.colorRules) ||
-        !this.settings.matches('modelDefaultColor', this.parsedColors.defaultColor)
-      )
+    const beltPrinterToApply = anyOf('beltPrinter', 'beltPrinterGantryAngle')
+    const segmentColorsToApply = anyOf('colorMode', 'featureTypeColorRules', 'featureTypeDefaultColor')
+    const beltPrinterChanged = beltPrinterToApply && this.beltPrinterGantryAngle !== this.parsedBeltPrinterGantryAngle
 
-    // Belt printer and model color changes require a reload, which rebuilds the model on its own
-    if (beltPrinterChanged || colorsChanged) this.loadGcode(this.currentJobPath, !beltPrinterChanged)
-    else if (anyOf('thickLines', 'showExcluded', 'showBed', 'showMirror')) {
-      this.gcodeModel.rebuild()
-      this.viewer.requestRender()
-    }
+    // Belt printer changes require a reload, which rebuilds the model on its own
+    if (beltPrinterChanged) this.loadGcode(this.currentJobPath)
+    else if (anyOf('thickLines', 'showExcluded', 'showBed', 'showMirror')) this.gcodeModel.rebuild()
+    else if (segmentColorsToApply) this.gcodeModel.recolor()
+
+    if (segmentColorsToApply) updateLegend(this)
 
     if (anyOf('darkMode')) {
-      $('html').toggleClass('pg-dark', this.settings.darkMode)
-      this.viewer.applyBackground(this.settings.darkMode)
-      this.viewer.applyViewCubeTheme(this.settings.darkMode)
-      this.viewer.rebuildBed()
+      applyPageTheme(this.settings.darkMode)
+      this.viewer.applyTheme(this.settings.darkMode)
     }
     if (anyOf('antialias')) this.viewer.applyAntialias(this.settings.antialias)
 
     if (anyOf('navigationMode')) this.viewer.applyNavigationMode(this.settings.navigationMode)
     if (anyOf('projectionMode')) this.viewer.applyProjectionMode(this.settings.projectionMode)
 
-    if (anyOf('beltPrinter', 'beltPrinterGantryAngle')) {
-      this.exclusions.placeRegionMarkers()
-      this.viewer.requestRender()
-    }
+    if (beltPrinterToApply) this.exclusions.placeRegionMarkers()
 
-    if (anyOf('travelScope', 'travelColor')) {
-      this.gcodeModel.rebuildTravelLines()
-      this.viewer.requestRender()
-    }
+    if (anyOf('travelScope', 'travelColor')) this.gcodeModel.rebuildTravelLines()
 
     if (anyOf('showBed')) this.viewer.applyBedVisibility(this.settings.showBed)
-    if (anyOf('showExclusionMarker')) {
-      this.exclusions.applyRegionMarkersVisibility(this.settings.showExclusionMarker)
-      this.viewer.requestRender()
-    }
+    if (anyOf('showExclusionMarker')) this.exclusions.applyRegionMarkersVisibility(this.settings.showExclusionMarker)
 
     if (anyOf('highlightIntensity')) this.updateLayerHighlight()
 
@@ -552,17 +522,14 @@ export class PrettyGCodeApp {
         'showCameraControls',
         'showState',
         'showFiles',
+        'showLegend',
         'showDashboard',
         'dashboardHeight',
         'showWebcam',
         'webcamHeight'
       )
     ) this.updateWindowStates()
-  }
 
-  /** (Re)applies the layer highlight setting to the displayed layer */
-  private updateLayerHighlight (): void {
-    this.gcodeModel.highlightLayer(this.currentLayerNumber)
     this.viewer.requestRender()
   }
 
@@ -575,14 +542,13 @@ export class PrettyGCodeApp {
     if (!this.settings.showLayerSlider) this.setCurrentLayerNumber(this.layerCount)
     else if (!this.settings.showSegmentSlider) this.setCurrentSegmentNumber(this.currentLayerSegmentCount)
 
-    $('.pg-camera-controls').toggleClass('pg-hidden', !this.settings.showCameraControls)
+    applyCameraControlsVisibility(this.settings.showCameraControls)
     this.viewer.applyViewCubeVisibility(this.settings.showCameraControls)
 
-    $('#state_wrapper').toggleClass('pg-hidden', !this.settings.showState)
-    $('#files_wrapper').toggleClass('pg-hidden', !this.settings.showFiles)
+    updateTopLeftWindows(this.settings, this.layerCount > 0)
 
-    updateDashboardOverlay(this.settings)
-    updateWebcamOverlay(this.settings)
+    updateDashboardWindow(this.settings)
+    updateWebcamWindow(this.settings)
   }
 
   /* ---- Printer profile ---- */
@@ -594,28 +560,15 @@ export class PrettyGCodeApp {
 
   /** Syncs the app with the active printer profile */
   private updatePrinterProfile (): void {
-    this.updateBedVolume()
-    this.updateProfileNozzleDiameter()
+    // Keep the bed geometry in use when the profile states none
+    const bedVolume = printerProfileBedVolume(this.printerProfilesVM)
+    if (bedVolume) this.bedVolume = bedVolume
+
+    this.profileNozzleDiameter = printerProfileNozzleDiameter(this.printerProfilesVM)
+
     this.gcodeModel.updateLineWidth()
     this.viewer.rebuildBed()
     this.viewer.resetCameraTarget()
     this.viewer.requestRender()
-  }
-
-  /** Refreshes the nozzle diameter from the active printer profile */
-  private updateProfileNozzleDiameter (): void {
-    const currentProfileData = this.printerProfilesVM.currentProfileData()
-    const extruder = currentProfileData && currentProfileData.extruder
-    const extruderNozzleDiameter = extruder && typeof extruder.nozzleDiameter === 'function' ? extruder.nozzleDiameter() : null
-    this.profileNozzleDiameter = extruderNozzleDiameter ?? DEFAULT_NOZZLE_DIAMETER_MM
-  }
-
-  /** Refreshes the print bed geometry from the active printer profile */
-  private updateBedVolume (): void {
-    const currentProfileData = this.printerProfilesVM.currentProfileData()
-    if (!currentProfileData || !currentProfileData.volume) return
-
-    const volume = currentProfileData.volume
-    this.bedVolume = { depth: volume.depth(), height: volume.height(), origin: volume.origin(), width: volume.width() }
   }
 }

@@ -1,4 +1,8 @@
-include README.md
 recursive-include octoprint_prettygcode/templates *
 recursive-include octoprint_prettygcode/translations *
 recursive-include octoprint_prettygcode/static *
+
+include *.md
+
+exclude SECURITY.md
+exclude CONTRIBUTING.md

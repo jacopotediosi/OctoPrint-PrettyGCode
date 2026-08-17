@@ -1,17 +1,7 @@
 import * as THREE from '../../three-exports'
 
-/** A rendered gcode line object */
-export type GcodeLine = THREE.LineSegments2 | THREE.LineSegments
-
 /** A material a gcode line is drawn with */
 export type GcodeLineMaterial = THREE.LineMaterial | THREE.LineBasicMaterial
-
-/**
- * Tells whether a rendered line is drawn with thickness
- * @param line - Line to test
- * @returns True for a thick line
- */
-export const isThickLine = (line: GcodeLine): line is THREE.LineSegments2 => line instanceof THREE.LineSegments2
 
 /**
  * Tells whether a material draws lines with thickness

@@ -16,9 +16,13 @@ const NO_CLIP_PLANES: THREE.Plane[] = []
 
 /** Print bed geometry */
 export interface BedVolume {
+  /** Bed depth in mm */
   depth: number
+  /** Printable height in mm */
   height: number
+  /** Point the bed coordinates start from, "lowerleft" or "center" */
   origin: string
+  /** Bed width in mm */
   width: number
 }
 

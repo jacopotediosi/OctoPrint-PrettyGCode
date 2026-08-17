@@ -1,6 +1,6 @@
-import { emptyBounds } from './parser'
-import type { ParsedGcode } from './parser'
-import type { ParserColors } from '../model-colors'
+import { emptyGcode } from './parsed-gcode'
+import { jobFileUrl } from '../../octoprint/rest-api'
+import type { ParsedGcode } from './parsed-gcode'
 import type { GcodeParseReply, GcodeParseRequest } from './parser-worker'
 
 /** URL of the gcode parser worker */
@@ -19,27 +19,26 @@ export function cancelGcodeLoad (): void {
  * Downloads and parses a job's gcode; an empty path yields an empty result
  * @param jobPath - Server path of the job file
  * @param objectTag - Tag of the "@<tag> <name>" object markers
- * @param colors - Colors the parser paints segments with
  * @param g90InfluencesExtruder - Whether G90/G91 also switch the extrusion mode
  * @param beltPrinterGantryAngle - Angle between the belt and the printer gantry in degrees, null for non-belt printers
  * @returns The parsed gcode
  */
-export async function loadGcodeFile (jobPath: string, objectTag: string | undefined, colors: ParserColors, g90InfluencesExtruder: boolean, beltPrinterGantryAngle: number | null): Promise<ParsedGcode> {
+export async function loadGcodeFile (jobPath: string, objectTag: string | undefined, g90InfluencesExtruder: boolean, beltPrinterGantryAngle: number | null): Promise<ParsedGcode> {
   // Drop the load still in flight, superseded by this one
   cancelGcodeLoad()
 
   // If there is no job path, return an empty result
-  if (!jobPath) return { layers: [], bounds: emptyBounds(), slicerNozzleDiameter: null, slicerTimeMarks: null, objectNames: [] } satisfies ParsedGcode
+  if (!jobPath) return emptyGcode()
 
   // The worker resolves relative URLs against its own script, so the download URL is made absolute here
-  const fileUrl = new URL(OctoPrint.files.downloadPath('local', jobPath), location.href).href
+  const fileUrl = new URL(jobFileUrl(jobPath), location.href).href
 
   // Create the parser worker
   const worker = new Worker(PARSER_WORKER_URL)
 
   try {
     // Send the request to the worker
-    const request: GcodeParseRequest = { fileUrl, objectTag, colors, g90InfluencesExtruder, beltPrinterGantryAngle }
+    const request: GcodeParseRequest = { fileUrl, objectTag, g90InfluencesExtruder, beltPrinterGantryAngle }
     const reply = await new Promise<GcodeParseReply>((resolve, reject) => {
       worker.onmessage = ({ data }) => resolve(data)
       worker.onerror = ({ message }) => reject(new Error(message))

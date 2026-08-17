@@ -38,7 +38,7 @@
         {# ---- Camera controls ---- #}
         <div class="pg-buttons pg-camera-controls">
             <div id="pg-view-cube"></div>
-            <button class="pg-toggle pg-reset-view" title="Reset camera view">
+            <button class="pg-toggle pg-reset-camera-view" title="Reset camera view">
                 <i class="fa-solid fa-arrows-to-dot"></i>
             </button>
         </div>
@@ -58,7 +58,7 @@
         {# ---- View settings ---- #}
         <div id="pg-view-settings"
              class="pg-view-settings-panel pg-hidden"
-             data-model-color-presets='{{ plugin_prettygcode_model_color_presets|tojson }}'>
+             data-feature-type-color-presets='{{ plugin_prettygcode_feature_type_color_presets|tojson }}'>
             <div class="pg-view-settings-header">View settings</div>
             <p class="pg-view-settings-notice">
                 The settings below are saved in this browser only.
@@ -66,6 +66,13 @@
                    href="#"
                    data-bind="visible: loginState.hasPermissionKo(access.permissions.SETTINGS), click: showPluginSettings">Change the defaults for every browser</a>
             </p>
+        </div>
+        {# ---- Legend ---- #}
+        <div id="pg-legend" class="pg-hidden">
+            <div class="pg-legend-header">Legend</div>
+            <select class="pg-legend-mode"
+                    title="Set the color mode of the G-code model."></select>
+            <div id="pg-legend-rows"></div>
         </div>
         {# ---- Top buttons ---- #}
         <div class="pg-buttons pg-top-left-buttons">
@@ -76,6 +83,9 @@
             <button class="pg-toggle pg-maximized-only pg-toggle-files"
                     title="Toggle file window">
                 <i class="fa-solid fa-folder"></i>
+            </button>
+            <button class="pg-toggle pg-toggle-legend" title="Toggle legend window">
+                <i class="fa-solid fa-swatchbook"></i>
             </button>
         </div>
         <div class="pg-buttons pg-top-right-buttons">
