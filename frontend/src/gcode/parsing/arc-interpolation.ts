@@ -1,3 +1,24 @@
+/*!
+ * Arc interpolation helpers ported to JavaScript/TypeScript, with changes, from the following GPL firmware sources:
+ *
+ * interpolateArc, from Prusa-Firmware's mc_arc (Firmware/motion_control.cpp), part of Grbl
+ *   Copyright (c) 2009-2011 Simen Svale Skogsrud
+ *   Copyright (c) 2011 Sungeun K. Jeon
+ *   Copyright (c) 2020 Brad Hochgesang
+ * Ported by Brad Hochgesang (FormerLurker) on 2020-12-05.
+ *
+ * arcOffsetFromRadius, from Marlin's plan_arc (Marlin/src/gcode/motion/G2_G3.cpp)
+ *   Copyright (c) 2020 MarlinFirmware
+ *   Based on Sprinter and Grbl, Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
+ * Ported by Jacopo Tediosi on 2026-07-02.
+ *
+ * Both are free software: you can redistribute and/or modify them under the terms of the GNU
+ * General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version. They are distributed WITHOUT ANY WARRANTY,
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * @license GPL-3.0-or-later
+ */
+
 // This file is snake_case because names mirror on purpose the original C++ sources from which the functions are copied from
 /* eslint camelcase: "off" */
 

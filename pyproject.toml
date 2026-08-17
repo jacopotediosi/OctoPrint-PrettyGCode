@@ -36,6 +36,10 @@ content-type = "text/markdown"
 
 [tool.setuptools]
 include-package-data = true
+license-files = [
+    "LICENSE.txt",
+    "THIRDPARTYLICENSES.md",
+]
 
 [tool.setuptools.packages.find]
 include = [

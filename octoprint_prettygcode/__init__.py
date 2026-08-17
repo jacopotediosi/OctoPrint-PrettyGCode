@@ -68,6 +68,18 @@ FEATURE_TYPE_COLOR_RULE_DEFS: list[FeatureTypeColorRuleDef] = [
 """Definition of feature type color rules: keywords for gcode feature type, in priority order (first match from the top wins)"""
 
 FEATURE_TYPE_COLOR_PRESET_DEFS: list[FeatureTypeColorPresetDef] = [
+    # Colors copied from the G-code previews of the slicers below, each preset reusing the values of the preceding one
+    # for the feature types its own slicer gives no color to:
+    # - PrusaSlicer libvgcode's DEFAULT_EXTRUSION_ROLES_COLORS (AGPL-3.0-or-later, Copyright (c) Prusa Research 2023)
+    #   https://github.com/prusa3d/PrusaSlicer/blob/b028299c770b8380ee81c921a2867d522f288123/src/libvgcode/src/ViewerImpl.cpp#L283
+    # - OrcaSlicer libvgcode's DEFAULT_EXTRUSION_ROLES_COLORS (AGPL-3.0)
+    #   https://github.com/OrcaSlicer/OrcaSlicer/blob/542cd18d19887d23bbf454de363ca7cf807f70b3/src/libvgcode/src/ViewerImpl.cpp#L299
+    # - BambuStudio's BaseRenderer::Extrusion_Role_Colors (AGPL-3.0)
+    #   https://github.com/bambulab/BambuStudio/blob/9a530f77c23d8c3430d1dbef02e103cd8bd6480e/src/slic3r/GUI/GCodeRenderer/BaseRenderer.cpp#L118
+    # - SuperSlicer's GCodeViewer::Extrusion_Role_Colors (AGPL-3.0)
+    #   https://github.com/supermerill/SuperSlicer/blob/1f3d287e9be46caa83bc19c16c51c8abd0c211d6/src/slic3r/GUI/GCodeViewer.cpp#L1278
+    # - Cura's layerview_* theme colors (LGPL-3.0-or-later, Copyright (c) UltiMaker)
+    #   https://github.com/Ultimaker/Cura/blob/05e2c8937da42b48f8502f3ac69bcf8ed44b7307/resources/themes/cura-light/theme.json#L459
     {
         "name": "PrusaSlicer / SuperSlicer / Bambu Studio / OrcaSlicer",
         "defaultColor": "#e6b3b3",

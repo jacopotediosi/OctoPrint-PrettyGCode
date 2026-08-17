@@ -21,7 +21,11 @@ interface PropertyRange {
   values: number[]
 }
 
-/** Colors the values of a property range are drawn with, from its lowest to its highest */
+/**
+ * Colors the values of a property range are drawn with, from its lowest to its highest.
+ * Values copied from PrusaSlicer libvgcode's DEFAULT_RANGES_COLORS (AGPL-3.0-or-later, Copyright (c) Prusa Research 2023):
+ * https://github.com/prusa3d/PrusaSlicer/blob/b028299c770b8380ee81c921a2867d522f288123/src/libvgcode/include/ColorRange.hpp#L14
+ */
 const PROPERTY_RANGE_COLORS = [
   { r: 11, g: 44, b: 122 },
   { r: 19, g: 89, b: 133 },
