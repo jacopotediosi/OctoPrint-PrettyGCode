@@ -26,6 +26,12 @@ repos:
         args: [--target-version=py37]
       - id: ruff-format
 
+  - repo: https://github.com/astral-sh/ty-pre-commit
+    rev: v0.0.84
+    hooks:
+      - id: ty
+        args: ["--isolated", "--group=typechecking"]
+
   - repo: https://github.com/djlint/djLint
     rev: v1.46.4
     hooks:
