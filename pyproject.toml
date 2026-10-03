@@ -13,7 +13,9 @@ authors = [
     { name = "Kragrathea", email = "redacted@example.com" },
 ]
 requires-python = ">=3.7,<4"
-dependencies = []
+dependencies = [
+    "typing_extensions>=4.4",  # For typing_extensions.override
+]
 dynamic = [
     "license",
 ]
@@ -52,7 +54,17 @@ line-length = 120
 fix = true
 
 [tool.ruff.lint]
-extend-select = ["I"]
+select = [
+    "ALL",
+]
+ignore = [
+    "CPY001", # missing-copyright-notice
+    "D100", # undocumented-public-module
+    "D101", # undocumented-public-class
+    "D104", # undocumented-public-package
+    "E501", # line-too-long
+    "S101", # assert
+]
 
 [tool.codespell]
 skip = "octoprint_prettygcode/static/js/*.bundle.js,package-lock.json"

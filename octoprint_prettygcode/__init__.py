@@ -3,18 +3,19 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import octoprint.plugin
+from typing_extensions import override
 
 if TYPE_CHECKING:
     from typing import TypedDict
 
     class FeatureTypeColorRuleDef(TypedDict):
-        """Gcode feature type and the slicer comment keywords identifying it"""
+        """Gcode feature type and the slicer comment keywords identifying it."""
 
         id: str
         keywords: list[str]
 
     class FeatureTypeColorPresetDef(TypedDict):
-        """Named set of colors, one per gcode feature type"""
+        """Named set of colors, one per gcode feature type."""
 
         name: str
         defaultColor: str
@@ -133,7 +134,7 @@ FEATURE_TYPE_COLOR_PRESET_DEFS: list[FeatureTypeColorPresetDef] = [
         },
     },
 ]
-"""Definition of feature type color presets: preset names and match between feature types and colors"""
+"""Definition of feature type color presets: preset names and match between feature types and colors."""
 
 # Check that every preset def is complete and colors exactly the color rule defs
 assert FEATURE_TYPE_COLOR_PRESET_DEFS, "There must be at least one feature type color preset"
@@ -227,7 +228,8 @@ class PrettyGCodePlugin(
     octoprint.plugin.StartupPlugin,
     octoprint.plugin.TemplatePlugin,
 ):
-    def get_assets(self):
+    @override
+    def get_assets(self) -> dict:
         return {
             "js": [
                 "js/pg-main.bundle.js",  # main bundle, built by `task build-frontend`
@@ -236,10 +238,12 @@ class PrettyGCodePlugin(
             "css": ["css/prettygcode.css"],
         }
 
-    def is_template_autoescaped(self):
+    @override
+    def is_template_autoescaped(self) -> bool:
         return True
 
-    def get_template_vars(self):
+    @override
+    def get_template_vars(self) -> dict:
         return {
             "default_settings": self.get_settings_defaults(),
             "github_url": GITHUB_URL,
@@ -247,13 +251,25 @@ class PrettyGCodePlugin(
             "plugin_version": self._plugin_version,
         }
 
-    def get_template_configs(self):
+    @override
+    def get_template_configs(self) -> list[dict]:
         return [{"type": "settings", "custom_bindings": False}]
 
-    def get_settings_defaults(self):
+    @override
+    def get_settings_defaults(self) -> dict:
         return {"largeFileThresholdMb": 50, "defaultViewSettings": DEFAULT_DEFAULT_VIEW_SETTINGS}
 
-    def get_update_information(self):
+    def get_update_information(self) -> dict:
+        """Tell the Software Update plugin where to look for new releases.
+
+        Args:
+            *_args: Further positional arguments OctoPrint may pass.
+            **_kwargs: Further keyword arguments OctoPrint may pass.
+
+        Returns:
+            dict: The update configuration, keyed by plugin identifier.
+
+        """
         return {
             "prettygcode": {
                 "displayName": self._plugin_name,
@@ -263,7 +279,7 @@ class PrettyGCodePlugin(
                 "repo": "OctoPrint-PrettyGCode",
                 "current": self._plugin_version,
                 "pip": GITHUB_URL + "/archive/{target_version}.zip",
-            }
+            },
         }
 
 
