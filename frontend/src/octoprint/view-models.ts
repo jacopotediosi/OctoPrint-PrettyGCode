@@ -66,6 +66,18 @@ export function showSettingsDialog (settingsVM: SettingsViewModel, tab: string):
   settingsVM.show(tab)
 }
 
+/* ---- Plugins ---- */
+
+/**
+ * Reads whether a plugin is installed and enabled
+ * @param settingsVM - OctoPrint settings view model
+ * @param id - Plugin identifier
+ * @returns True if the plugin is installed and enabled
+ */
+export function isPluginEnabled (settingsVM: SettingsViewModel, id: string): boolean {
+  return settingsVM.settings?.plugins?.[id] != null
+}
+
 /* ---- Printer profile ---- */
 
 /** Nozzle diameter in mm assumed when the printer profile states none */

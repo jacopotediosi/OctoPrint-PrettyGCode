@@ -22,7 +22,7 @@ import type { SegmentColoring } from './gcode/colors/color-modes'
 import { clamp } from './utils/numbers'
 import { applyPageTheme, initPageLayout, PG_SETTINGS_TAB, PG_TAB } from './ui/page-layout'
 import { updateTopLeftWindows } from './ui/windows/top-left-windows'
-import { cancelObjectTag, defaultViewSettings, g90InfluencesExtruder, largeFileThresholdBytes, onPrinterProfileChange, printerProfileBedVolume, printerProfileNozzleDiameter, showSettingsDialog, DEFAULT_BED_VOLUME, DEFAULT_NOZZLE_DIAMETER_MM } from './octoprint/view-models'
+import { cancelObjectTag, defaultViewSettings, g90InfluencesExtruder, isPluginEnabled, largeFileThresholdBytes, onPrinterProfileChange, printerProfileBedVolume, printerProfileNozzleDiameter, showSettingsDialog, DEFAULT_BED_VOLUME, DEFAULT_NOZZLE_DIAMETER_MM } from './octoprint/view-models'
 import type { PrinterProfilesViewModel, SettingsViewModel } from './octoprint/view-models'
 import type { PluginMessagePayload, PrinterDataPayload, PrinterState } from './octoprint/push-payloads'
 import type { BedVolume } from './viewer/bed'
@@ -326,7 +326,11 @@ export class PrettyGCodeApp {
 
   /** Fetches the current exclusions and applies them to the view */
   private async fetchExclusions (): Promise<void> {
-    if (await this.exclusions.fetch()) this.updateView()
+    const enabledPlugins = {
+      excludeRegion: isPluginEnabled(this.settingsVM, 'excluderegion'),
+      cancelObject: isPluginEnabled(this.settingsVM, 'cancelobject')
+    }
+    if (await this.exclusions.fetch(enabledPlugins)) this.updateView()
   }
 
   /* ---- View updates ---- */
