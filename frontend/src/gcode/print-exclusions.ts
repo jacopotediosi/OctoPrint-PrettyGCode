@@ -73,15 +73,16 @@ export class PrintExclusions {
 
   /**
    * Fetches the exclusions currently defined by the Exclude Region or Cancel Object plugins
+   * @param enabledPlugins - Whether the Exclude Region and Cancel Object plugins are enabled
    * @returns True if the exclusions changed
    */
-  async fetch (): Promise<boolean> {
+  async fetch (enabledPlugins: { excludeRegion: boolean, cancelObject: boolean }): Promise<boolean> {
     let changed = false
 
-    const excludedRegions = await fetchExcludedRegions()
+    const excludedRegions = enabledPlugins.excludeRegion ? await fetchExcludedRegions() : null
     if (excludedRegions && this.setRegions(excludedRegions)) changed = true
 
-    const cancelObjectEntries = await fetchCancelObjects()
+    const cancelObjectEntries = enabledPlugins.cancelObject ? await fetchCancelObjects() : null
     if (cancelObjectEntries && this.setCancelledObjects(cancelObjectEntries)) changed = true
 
     return changed

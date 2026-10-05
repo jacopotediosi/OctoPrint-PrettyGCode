@@ -6,14 +6,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "OctoPrint-PrettyGCode"
-version = "2.5.0"
+version = "2.5.1"
 description = "Pretty G-code Visualizer"
 authors = [
     { name = "Jacopo Tediosi", email = "jacopotediosi@gmail.com" },
     { name = "Kragrathea", email = "redacted@example.com" },
 ]
 requires-python = ">=3.7,<4"
-dependencies = []
+dependencies = [
+    "typing_extensions>=4.4",  # For typing_extensions.override
+]
 dynamic = [
     "license",
 ]
@@ -28,6 +30,11 @@ Homepage = "https://github.com/jacopotediosi/OctoPrint-PrettyGCode"
 develop = [
     "go-task-bin",
     "nodeenv",
+]
+
+[dependency-groups]
+typechecking = [
+    "OctoPrint",
 ]
 
 [project.readme]
@@ -52,7 +59,17 @@ line-length = 120
 fix = true
 
 [tool.ruff.lint]
-extend-select = ["I"]
+select = [
+    "ALL",
+]
+ignore = [
+    "CPY001", # missing-copyright-notice
+    "D100", # undocumented-public-module
+    "D101", # undocumented-public-class
+    "D104", # undocumented-public-package
+    "E501", # line-too-long
+    "S101", # assert
+]
 
 [tool.codespell]
 skip = "octoprint_prettygcode/static/js/*.bundle.js,package-lock.json"
