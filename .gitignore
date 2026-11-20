@@ -8,3 +8,5 @@ dist
 .DS_Store
 node_modules
 .vscode
+__pycache__
+.ruff_cache

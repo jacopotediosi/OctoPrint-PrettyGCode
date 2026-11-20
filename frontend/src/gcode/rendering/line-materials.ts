@@ -12,10 +12,9 @@ export const isThickMaterial = (material: GcodeLineMaterial): material is THREE.
 
 /**
  * Makes the material for thin gcode lines
- * @param clippingPlanes - Clipping planes to apply, if any
  * @returns The new material
  */
-export const makeThinMaterial = (clippingPlanes: THREE.Plane[] | null = null): THREE.LineBasicMaterial => new THREE.LineBasicMaterial({ vertexColors: true, clippingPlanes })
+export const makeThinMaterial = (): THREE.LineBasicMaterial => new THREE.LineBasicMaterial({ vertexColors: true })
 
 /**
  * Fixes the thick-line shaders: in orthographic view and
@@ -84,11 +83,10 @@ const patchThickMaterialShaders = (parameters: THREE.WebGLProgramParametersWithU
 
 /**
  * Makes the material for thick gcode lines
- * @param clippingPlanes - Clipping planes to apply, if any
  * @returns The new material
  */
-export const makeThickMaterial = (clippingPlanes: THREE.Plane[] | null = null): THREE.LineMaterial => {
-  const material = new THREE.LineMaterial({ worldUnits: true, vertexColors: true, clippingPlanes })
+export const makeThickMaterial = (): THREE.LineMaterial => {
+  const material = new THREE.LineMaterial({ worldUnits: true, vertexColors: true })
   material.onBeforeCompile = patchThickMaterialShaders
   return material
 }
