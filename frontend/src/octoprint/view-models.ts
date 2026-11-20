@@ -87,7 +87,7 @@ export const DEFAULT_NOZZLE_DIAMETER_MM = 0.4
 const DEFAULT_BED_SIZE_MM = 200
 
 /** Print bed geometry assumed until the printer profile is read */
-export const DEFAULT_BED_VOLUME: BedVolume = { depth: DEFAULT_BED_SIZE_MM, height: DEFAULT_BED_SIZE_MM, origin: 'lowerleft', width: DEFAULT_BED_SIZE_MM }
+export const DEFAULT_BED_VOLUME: BedVolume = { depth: DEFAULT_BED_SIZE_MM, formFactor: 'rectangular', height: DEFAULT_BED_SIZE_MM, origin: 'lowerleft', width: DEFAULT_BED_SIZE_MM }
 
 /**
  * Reads the nozzle diameter of the active printer profile
@@ -109,7 +109,7 @@ export function printerProfileBedVolume (printerProfilesVM: PrinterProfilesViewM
   const volume = printerProfilesVM.currentProfileData()?.volume
   if (!volume) return null
 
-  return { depth: volume.depth(), height: volume.height(), origin: volume.origin(), width: volume.width() }
+  return { depth: volume.depth(), formFactor: volume.formFactor(), height: volume.height(), origin: volume.origin(), width: volume.width() }
 }
 
 /**

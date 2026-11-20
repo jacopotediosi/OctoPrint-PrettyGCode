@@ -1,5 +1,6 @@
 import { Settings, type SettingKey } from './settings'
 import { Viewer } from './viewer/viewer'
+import { BED_STENCIL_REF } from './viewer/bed'
 import { loadGcodeFile, cancelGcodeLoad } from './gcode/parsing/loader'
 import { ObservedPrintSpeed } from './gcode/timeline/observed-print-speed'
 import { PrintTimeline } from './gcode/timeline/print-timeline'
@@ -50,7 +51,7 @@ export class PrettyGCodeApp {
   /** Speed the running print is going at */
   private readonly observedPrintSpeed = new ObservedPrintSpeed()
   /** The rendered gcode model */
-  private readonly gcodeModel = new GcodeModel(this.settings, () => this.nozzleDiameter, this.printTimeline, this.viewer.mirrorBoundsPlanes)
+  private readonly gcodeModel = new GcodeModel(this.settings, () => this.nozzleDiameter, this.printTimeline, BED_STENCIL_REF)
   /** The panel editing the view settings of this browser */
   private viewSettingsPanel!: ViewSettingsPanel
 

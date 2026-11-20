@@ -97,9 +97,9 @@ export class GcodeModel {
   private readonly highlightThickMaterial = makeThickMaterial()
 
   /** Thick line material for the mirror, clipped to the bed */
-  private readonly mirrorThickMaterial: THREE.LineMaterial
+  private readonly mirrorThickMaterial = makeThickMaterial()
   /** Thin line material for the mirror, clipped to the bed */
-  private readonly mirrorThinMaterial: THREE.LineBasicMaterial
+  private readonly mirrorThinMaterial = makeThinMaterial()
 
   /** Material for the travel lines */
   private readonly travelMaterial = new THREE.LineBasicMaterial()
@@ -117,15 +117,19 @@ export class GcodeModel {
    * @param settings - Plugin frontend settings
    * @param getNozzleDiameter - Getter of the current nozzle diameter in mm
    * @param timeline - Print timeline of the loaded gcode
-   * @param mirrorBoundsPlanes - Planes clipping the mirror to the bed
+   * @param bedStencilRef - Stencil buffer marking the bed
    */
-  constructor (settings: Settings, getNozzleDiameter: () => number, timeline: PrintTimeline, mirrorBoundsPlanes: THREE.Plane[]) {
+  constructor (settings: Settings, getNozzleDiameter: () => number, timeline: PrintTimeline, bedStencilRef: number) {
     this.settings = settings
     this.getNozzleDiameter = getNozzleDiameter
     this.timeline = timeline
 
-    this.mirrorThickMaterial = makeThickMaterial(mirrorBoundsPlanes)
-    this.mirrorThinMaterial = makeThinMaterial(mirrorBoundsPlanes)
+    // Draw the mirror only on the bed stencil
+    for (const mirrorMaterial of [this.mirrorThickMaterial, this.mirrorThinMaterial]) {
+      mirrorMaterial.stencilWrite = true
+      mirrorMaterial.stencilFunc = THREE.EqualStencilFunc
+      mirrorMaterial.stencilRef = bedStencilRef
+    }
 
     // Dim the mirror colors
     this.mirrorThickMaterial.color.setRGB(MIRROR_BRIGHTNESS, MIRROR_BRIGHTNESS, MIRROR_BRIGHTNESS)

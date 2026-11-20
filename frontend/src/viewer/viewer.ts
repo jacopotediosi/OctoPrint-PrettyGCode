@@ -77,9 +77,6 @@ export class Viewer {
   /** Getter of the current nozzle diameter in mm */
   private readonly getNozzleDiameter: () => number
 
-  /** Planes clipping the gcode reflection to where the line of sight crosses the bed */
-  readonly mirrorBoundsPlanes = [new THREE.Plane(), new THREE.Plane(), new THREE.Plane(), new THREE.Plane()]
-
   /* ---- Setup ---- */
 
   /**
@@ -93,7 +90,7 @@ export class Viewer {
     this.getBedVolume = getBedVolume
     this.getNozzleDiameter = getNozzleDiameter
     this.onFrame = onFrame
-    this.bed = new Bed(settings, this.scene, this.mirrorBoundsPlanes, () => this.requestRender())
+    this.bed = new Bed(settings, this.scene, () => this.requestRender())
     this.nozzle = new Nozzle(settings, this.scene, () => this.requestRender())
   }
 
@@ -140,9 +137,8 @@ export class Viewer {
    * @param antialias - True to enable antialiasing
    */
   private createRenderer (canvas: HTMLCanvasElement, antialias: boolean): void {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias, logarithmicDepthBuffer: true })
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias, logarithmicDepthBuffer: true, stencil: true })
     this.antialias = antialias
-    this.renderer.localClippingEnabled = true // Needed for the gcode reflection on the bed surface
 
     // Redraw when the browser restores the WebGL context
     canvas.addEventListener('webglcontextrestored', () => this.requestRender())
@@ -191,7 +187,7 @@ export class Viewer {
     if (this.resizeCanvasToDisplaySize()) needRender = true
 
     // Update the bed
-    if (needRender) this.bed.update(this.camera.active, this.renderer, this.getBedVolume())
+    if (needRender) this.bed.update(this.camera.active, this.renderer)
 
     // Render only when something changed this frame
     if (needRender) {
